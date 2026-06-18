@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Local tooling
+.superpowers/
+.claude/
