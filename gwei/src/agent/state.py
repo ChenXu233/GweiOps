@@ -1,6 +1,6 @@
 # src/agent/state.py
 from enum import Enum
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, TypedDict
 import operator
 
 
@@ -32,10 +32,9 @@ class PatchProposal(TypedDict):
     description: str
 
 
-class AgentState:
-    """Agent state class for LangGraph with attribute access support."""
+class AgentState(TypedDict, total=False):
+    """Agent state for LangGraph (TypedDict with reducer annotations)."""
 
-    # Type hints for static analysis
     issue_title: str
     issue_body: str
     repo_url: str
@@ -53,47 +52,15 @@ class AgentState:
     error_count: int
     messages: Annotated[list[str], operator.add]
 
-    def __init__(self, **kwargs: Any):
-        # Set defaults
-        self.__dict__.update({
-            "issue_title": "",
-            "issue_body": "",
-            "repo_url": "",
-            "repo_name": "",
-            "issue_number": 0,
-            "status": SessionStatus.INIT,
-            "issue_type": None,
-            "analysis": "",
-            "reproduction_result": None,
-            "error_stack": None,
-            "patches": [],
-            "selected_patch": None,
-            "pr_url": None,
-            "pr_number": None,
-            "error_count": 0,
-            "messages": [],
-        })
-        # Override with provided values
-        self.__dict__.update(kwargs)
 
-    def __getitem__(self, key: str) -> Any:
-        return self.__dict__[key]
+def should_fail(state: AgentState) -> bool:
+    return state.get("error_count", 0) >= 3
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        self.__dict__[key] = value
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self.__dict__.get(key, default)
+def needs_reproduction(state: AgentState) -> bool:
+    return state.get("issue_type") == IssueType.BUG
 
-    @property
-    def should_fail(self) -> bool:
-        return self.error_count >= 3
 
-    @property
-    def needs_reproduction(self) -> bool:
-        return self.get("issue_type") == IssueType.BUG
-
-    @property
-    def needs_code_change(self) -> bool:
-        t = self.get("issue_type")
-        return t in (IssueType.BUG, IssueType.FEATURE)
+def needs_code_change(state: AgentState) -> bool:
+    t = state.get("issue_type")
+    return t in (IssueType.BUG, IssueType.FEATURE)

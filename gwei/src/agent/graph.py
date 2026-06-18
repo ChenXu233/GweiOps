@@ -6,21 +6,20 @@ from src.agent.nodes import (
     generate_patches,
     wait_for_user_selection,
     create_pr,
-    classify_issue_type,
 )
 
 
 def route_after_analysis(state: AgentState) -> str:
     """分析后路由：Bug 需要复现，其他类型直接生成方案。"""
-    issue_type = state.issue_type
+    issue_type = state.get("issue_type")
     if issue_type == IssueType.BUG:
         return "reproducing"
     return "generating"
 
 
 def route_after_patches(state: AgentState) -> str:
-    """生成 Patch 后：等待用户选择。"""
-    if state.selected_patch:
+    """生成 Patch 后：如果已选择方案则创建 PR，否则等待用户。"""
+    if state.get("selected_patch"):
         return "creating_pr"
     return "waiting"
 

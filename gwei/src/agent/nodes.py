@@ -4,8 +4,8 @@ from src.agent.state import AgentState, SessionStatus, IssueType
 
 def classify_issue_type(state: AgentState) -> dict:
     """根据 Issue 标题和内容判断类型。"""
-    title = state.issue_title.lower()
-    body = state.issue_body.lower()
+    title = state.get("issue_title", "").lower()
+    body = state.get("issue_body", "").lower()
     combined = f"{title} {body}"
 
     bug_keywords = ["crash", "bug", "error", "fail", "broken", "null", "segfault", "panic", "崩溃", "报错"]
@@ -24,13 +24,13 @@ def classify_issue_type(state: AgentState) -> dict:
 
 def analyze_issue(state: AgentState) -> dict:
     """分析 Issue，判断类型并生成分析报告。"""
-    issue_type = state.issue_type
+    issue_type = state.get("issue_type")
     if issue_type is None:
         type_result = classify_issue_type(state)
         issue_type = type_result["issue_type"]
 
-    title = state.issue_title
-    body = state.issue_body
+    title = state.get("issue_title", "")
+    body = state.get("issue_body", "")
 
     analysis = (
         f"## Issue Analysis\n\n"
@@ -49,7 +49,7 @@ def analyze_issue(state: AgentState) -> dict:
 
 def generate_patches(state: AgentState) -> dict:
     """生成三种 Patch 方案。"""
-    title = state.issue_title
+    title = state.get("issue_title", "")
 
     patches = [
         {
@@ -88,15 +88,16 @@ def wait_for_user_selection(state: AgentState) -> dict:
 
 def create_pr(state: AgentState) -> dict:
     """创建 PR。"""
-    selected = state.selected_patch or "PROPER"
-    title = state.issue_title
+    selected = state.get("selected_patch") or "PROPER"
+    title = state.get("issue_title", "")
+    repo_name = state.get("repo_name", "")
 
     return {
         "status": SessionStatus.DONE,
-        "pr_url": f"https://github.com/{state.repo_name}/pull/1",
+        "pr_url": f"https://github.com/{repo_name}/pull/1",
         "pr_number": 1,
         "messages": [
             f"PR created with {selected} fix for: {title}",
-            f"PR: https://github.com/{state.repo_name}/pull/1",
+            f"PR: https://github.com/{repo_name}/pull/1",
         ],
     }
