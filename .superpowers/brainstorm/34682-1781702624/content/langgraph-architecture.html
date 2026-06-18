@@ -1,0 +1,167 @@
+<h2>🤖 LangGraph 自驱动 Agent 架构</h2>
+<p class="subtitle">Agent 自主决策，不是固定流程</p>
+
+<div class="section">
+  <h3>核心理念</h3>
+  <p><strong>不是</strong>：先做 A → 再做 B → 再做 C（固定流程）</p>
+  <p><strong>而是</strong>：定义目标 + 工具 + 状态，Agent 自主决定路径</p>
+</div>
+
+<div class="section">
+  <h3>🏗️ 架构图</h3>
+  <div class="mockup">
+    <div class="mockup-header">既未 · Gwei 架构</div>
+    <div class="mockup-body" style="font-family: monospace; white-space: pre; line-height: 1.6;">
+┌─────────────────────────────────────────────────────────┐
+│                    GitHub App                            │
+│  • Webhook 接收                                          │
+│  • Issue/PR 事件处理                                      │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Gwei Agent（LangGraph）                  │
+│                                                          │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              状态机（State Machine）               │    │
+│  │  • Issue 分析状态                                  │    │
+│  │  • Bug 复现状态                                    │    │
+│  │  • Patch 生成状态                                  │    │
+│  │  • PR 创建状态                                     │    │
+│  └─────────────────────────────────────────────────┘    │
+│                          │                               │
+│                          ▼                               │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              工具集（Tools）                        │    │
+│  │  • GitHub API（Issue/PR 操作）                     │    │
+│  │  • Git 操作（clone, checkout, commit）             │    │
+│  │  • 代码分析（AST 解析、搜索）                       │    │
+│  │  • 测试执行（运行测试用例）                         │    │
+│  │  • LLM 调用（分析、生成）                           │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                          │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              决策引擎（Decision Engine）            │    │
+│  │  • 根据当前状态决定下一步                           │    │
+│  │  • 可跳过、回退、改变策略                           │    │
+│  │  • 遇到问题自主寻求帮助                             │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    数据层                                 │
+│  • PostgreSQL（关系数据）                                │
+│  • pgvector（向量搜索）                                  │
+│  • Redis（缓存/队列）                                    │
+└─────────────────────────────────────────────────────────┘
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔄 Agent 工作流程示例</h3>
+  <div class="mockup">
+    <div class="mockup-header">Issue 修复流程（动态决策）</div>
+    <div class="mockup-body" style="font-family: monospace; white-space: pre; line-height: 1.6;">
+用户创建 Issue
+      │
+      ▼
+┌─────────────────┐
+│  分析 Issue      │ ← Agent 自主决定：是 Bug？是功能请求？
+└─────────────────┘
+      │
+      ▼
+┌─────────────────┐
+│  需要复现吗？    │ ← Agent 判断：有复现步骤？需要验证？
+└─────────────────┘
+      │
+      ├─ 是 ──────────────────┐
+      │                       ▼
+      │              ┌─────────────────┐
+      │              │  复现 Bug        │ ← Agent 选择复现策略
+      │              └─────────────────┘
+      │                       │
+      │                       ▼
+      │              ┌─────────────────┐
+      │              │  分析代码        │ ← Agent 定位根因
+      │              └─────────────────┘
+      │                       │
+      ├─ 否 ──────────────────┤
+      │                       ▼
+      │              ┌─────────────────┐
+      │              │  生成 Patch      │ ← Agent 生成三种方案
+      │              └─────────────────┘
+      │                       │
+      ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐
+│  直接生成方案    │    │  展示给用户      │
+└─────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │  等待用户选择    │ ← 人类决策点
+                       └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │  创建 PR        │ ← Agent 执行
+                       └─────────────────┘
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🎯 关键设计点</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>✅ Agent 自主决策</h4>
+      <ul>
+        <li>根据 Issue 内容判断类型</li>
+        <li>选择是否需要复现</li>
+        <li>选择复现策略</li>
+        <li>生成三种 Patch 方案</li>
+        <li>遇到问题自主处理</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>⚠️ 人类决策点</h4>
+      <ul>
+        <li>选择 Patch 方案（三种之一）</li>
+        <li>确认 PR 内容</li>
+        <li>处理异常情况</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>💡 技术栈</h3>
+  <div class="cards">
+    <div class="card" data-choice="langgraph" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>LangGraph</h3>
+        <p>Agent 框架，状态机动态路由</p>
+      </div>
+    </div>
+    <div class="card" data-choice="fastapi" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>FastAPI</h3>
+        <p>Web 框架，API 服务</p>
+      </div>
+    </div>
+    <div class="card" data-choice="postgres" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>PostgreSQL + pgvector</h3>
+        <p>关系数据 + 向量搜索</p>
+      </div>
+    </div>
+    <div class="card" data-choice="redis" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>Redis</h3>
+        <p>缓存和任务队列</p>
+      </div>
+    </div>
+  </div>
+</div>
