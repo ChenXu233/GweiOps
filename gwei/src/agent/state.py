@@ -41,8 +41,8 @@ class AgentState:
     repo_url: str
     repo_name: str
     issue_number: int
-    status: str
-    issue_type: str | None
+    status: SessionStatus
+    issue_type: IssueType | None
     analysis: str
     reproduction_result: str | None
     error_stack: str | None
@@ -91,9 +91,9 @@ class AgentState:
 
     @property
     def needs_reproduction(self) -> bool:
-        return self.issue_type == IssueType.BUG.value
+        return self.get("issue_type") == IssueType.BUG
 
     @property
     def needs_code_change(self) -> bool:
-        t = self.issue_type
-        return t in (IssueType.BUG.value, IssueType.FEATURE.value)
+        t = self.get("issue_type")
+        return t in (IssueType.BUG, IssueType.FEATURE)
