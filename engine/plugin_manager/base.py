@@ -1,7 +1,7 @@
 # engine/plugin_manager/base.py
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -20,9 +20,9 @@ class PluginInfo:
     version: str
     type: PluginType
     description: str
-    triggers: List[Dict[str, Any]]
-    capabilities: List[str]
-    config: Dict[str, Any]
+    triggers: List[Dict[str, Any]] = field(default_factory=list)
+    capabilities: List[str] = field(default_factory=list)
+    config: Dict[str, Any] = field(default_factory=dict)
 
 
 class PluginBase(ABC):
