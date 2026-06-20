@@ -181,7 +181,7 @@ class ConfigManager:
             missing: list[str] = []
             for key in presets_required[scope_name]:
                 val = getattr(s, key, None)
-                if val is None or val == "" or val == 0:
+                if val is None or val == "":
                     missing.append(key.upper())
             return missing
 
@@ -194,7 +194,7 @@ class ConfigManager:
         for field_name in scope.required_keys:
             settings_key = self._resolve_settings_key(scope, field_name)
             val = getattr(s, settings_key, None)
-            if val is None or val == "" or val == 0:
+            if val is None or val == "":
                 # 返回环境变量风格的名称（大写）
                 env_name = self._field_to_env_key(scope.prefix or scope.name, field_name).upper()
                 missing.append(env_name)
@@ -227,30 +227,6 @@ class Settings(BaseSettings):
     deployment_mode: str = "saas"  # saas or self-hosted
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
-
-    def get_github_config(self) -> dict:
-        """获取 GitHub App 配置。"""
-        return {
-            "app_id": self.github_app_app_id,
-            "private_key": self.github_app_private_key,
-            "webhook_secret": self.github_app_webhook_secret,
-            "installation_id": self.github_app_installation_id,
-        }
-
-    def get_llm_config(self) -> dict:
-        """获取 LLM 配置。"""
-        return {
-            "provider": self.llm_provider,
-            "api_key": self.llm_api_key,
-            "model": self.llm_model,
-        }
-
-    def get_database_config(self) -> dict:
-        """获取数据库配置。"""
-        return {
-            "url": self.database_url,
-            "redis_url": self.redis_url,
-        }
 
 
 # 全局 ConfigManager 实例
