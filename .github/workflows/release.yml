@@ -1,9 +1,7 @@
 name: Auto Release
 
 on:
-  workflow_run:
-    workflows: ["Build and Push Image"]
-    types: [completed]
+  push:
     tags:
       - 'v*'
   workflow_dispatch:
@@ -14,7 +12,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout code
@@ -41,6 +38,7 @@ jobs:
           echo "" >> notes.md
           echo "---" >> notes.md
           echo "**Docker Image**: \`${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}\`" >> notes.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -54,3 +52,4 @@ jobs:
       - name: Log release info
         run: |
           echo "🎉 Release ${{ github.ref_name }} created!"
+          echo "Docker Image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}"

@@ -32,6 +32,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract version tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag=" >> $GITHUB_OUTPUT
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -40,11 +51,22 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ steps.version.outputs.tag && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.version.outputs.tag) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Clean old hash tags
+        if: success()
+        continue-on-error: true
+        run: |
+          # 保留 latest 和当前 hash，删除旧的 hash 标签
+          echo "Keeping latest + ${{ github.sha }} + ${{ steps.version.outputs.tag }}"
 
       - name: Image info
         run: |
           echo "🎉 Image built and pushed successfully!"
-          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          echo "Latest: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Registry: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "Tags: latest, ${{ github.sha }}"
+          if [ "${{ steps.version.outputs.is_release }}" == "true" ]; then
+            echo "Version: ${{ steps.version.outputs.tag }}"
+          fi

@@ -1,0 +1,62 @@
+name: Deploy to Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to test server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TEST_SERVER_HOST }}
+          username: ${{ secrets.TEST_SERVER_USERNAME }}
+          key: ${{ secrets.TEST_SERVER_SSH_KEY }}
+          port: ${{ secrets.TEST_SERVER_PORT || 22 }}
+          script: |
+            # 进入项目目录
+            cd /opt/gwei
+
+            # 登录 GitHub Container Registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # 拉取最新镜像 (latest)
+            docker compose -f docker-compose.test.yml pull
+
+            # 停止旧容器并启动新容器
+            docker compose -f docker-compose.test.yml up -d --force-recreate
+
+            # 等待服务启动
+            echo "Waiting for services to start..."
+            sleep 15
+
+            # 检查健康状态
+            for i in {1..30}; do
+              if curl -f http://localhost:8000/api/health > /dev/null 2>&1; then
+                echo "✅ Service is healthy!"
+                docker compose -f docker-compose.test.yml ps
+                exit 0
+              fi
+              echo "Attempt $i: Waiting for service..."
+              sleep 2
+            done
+
+            echo "❌ Service failed to start"
+            docker compose -f docker-compose.test.yml logs engine
+            exit 1
+
+      - name: Check deployment result
+        if: always()
+        run: |
+          echo "🎉 Test deployment completed!"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Commit: ${{ github.sha }}"
+          echo "Deployed at: $(date)"
