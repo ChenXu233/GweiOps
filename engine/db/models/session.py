@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.db.base import Base
+from engine.db.base import Base
 
 
 class AgentSession(Base):

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Integer, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.db.base import Base
+from engine.db.base import Base
 
 # pgvector's Vector type may not be available in all environments (e.g. SQLite for testing).
 # Fall back to a plain Text column so that tests can run without pgvector installed.
