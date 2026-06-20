@@ -36,8 +36,8 @@ async def github_webhook(request: Request):
     if not signature:
         raise HTTPException(status_code=401, detail="Missing signature")
 
-    if settings.github_webhook_secret:
-        if not verify_signature(settings.github_webhook_secret, body, signature):
+    if settings.github_app_webhook_secret:
+        if not verify_signature(settings.github_app_webhook_secret, body, signature):
             raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = json.loads(body)
