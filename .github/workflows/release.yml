@@ -1,0 +1,56 @@
+name: Auto Release
+
+on:
+  workflow_run:
+    workflows: ["Build and Push Image"]
+    types: [completed]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          # 获取上一个 tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "## What's Changed" > notes.md
+            echo "" >> notes.md
+            git log --oneline --no-merges >> notes.md
+          else
+            echo "## What's Changed" > notes.md
+            echo "" >> notes.md
+            git log ${PREV_TAG}..HEAD --oneline --no-merges >> notes.md
+          fi
+
+          echo "" >> notes.md
+          echo "---" >> notes.md
+          echo "**Docker Image**: \`${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}\`" >> notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log release info
+        run: |
+          echo "🎉 Release ${{ github.ref_name }} created!"
