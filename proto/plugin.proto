@@ -2,11 +2,19 @@ syntax = "proto3";
 
 package gweiops.plugin;
 
+// ============================================================
+# 插件服务定义
+# ============================================================
+
 service PluginService {
     // 生命周期
     rpc Startup(StartupRequest) returns (StartupResponse);
     rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
+
+    // Scope 注册
+    rpc RegisterScope(RegisterScopeRequest) returns (RegisterScopeResponse);
+    rpc GetScopeConfig(GetScopeConfigRequest) returns (GetScopeConfigResponse);
 
     // 事件处理
     rpc HandleEvent(EventRequest) returns (EventResponse);
@@ -15,20 +23,61 @@ service PluginService {
     rpc ExecuteTask(TaskRequest) returns (TaskResponse);
 }
 
+// ============================================================
+# 插件信息
+# ============================================================
+
 message PluginInfo {
     string name = 1;
     string version = 2;
-    repeated string supported_events = 3;
-    repeated string supported_tasks = 4;
+    PluginType type = 3;
+    string description = 4;
+    repeated TriggerInfo triggers = 5;
+    repeated string capabilities = 6;
 }
 
+enum PluginType {
+    ADAPTER = 0;
+    AGENT = 1;
+    ACTION = 2;
+    DASHBOARD_COMPONENT = 3;
+}
+
+message TriggerInfo {
+    string type = 1;  // "event" 或 "webhook"
+    repeated string events = 2;  // 事件类型列表
+    string path = 3;  // Webhook 路径
+}
+
+// ============================================================
+# Scope 定义
+# ============================================================
+
+message ScopeDefinition {
+    string name = 1;           // Scope 名称，如 "adapter-github-app"
+    string prefix = 2;         // 配置前缀，如 "GITHUB_APP_"
+    repeated string required = 3;   // 必需配置项
+    repeated string optional = 4;   // 可选配置项
+}
+
+message ScopeConfig {
+    string scope_name = 1;
+    map<string, string> config = 2;  // 配置键值对
+}
+
+// ============================================================
+# 生命周期消息
+# ============================================================
+
 message StartupRequest {
-    map<string, string> config = 1;
+    PluginInfo plugin_info = 1;
+    repeated ScopeDefinition scope_definitions = 2;  // 插件声明的 Scope
 }
 
 message StartupResponse {
     bool success = 1;
     string message = 2;
+    repeated ScopeConfig scope_configs = 3;  // 核心返回的配置
 }
 
 message ShutdownRequest {}
@@ -44,9 +93,38 @@ message HealthResponse {
     string message = 2;
 }
 
+// ============================================================
+# Scope 注册消息
+# ============================================================
+
+message RegisterScopeRequest {
+    ScopeDefinition scope_definition = 1;
+}
+
+message RegisterScopeResponse {
+    bool success = 1;
+    string message = 2;
+    ScopeConfig scope_config = 3;  // 返回的配置
+}
+
+message GetScopeConfigRequest {
+    string scope_name = 1;
+}
+
+message GetScopeConfigResponse {
+    bool success = 1;
+    ScopeConfig scope_config = 2;
+    repeated string missing_required = 3;  // 缺失的必需配置
+}
+
+// ============================================================
+# 事件处理消息
+# ============================================================
+
 message EventRequest {
     string event = 1;
     bytes data = 2;
+    map<string, string> metadata = 3;
 }
 
 message EventResponse {
@@ -55,9 +133,14 @@ message EventResponse {
     string error = 3;
 }
 
+// ============================================================
+# 任务执行消息
+# ============================================================
+
 message TaskRequest {
     string task = 1;
     bytes params = 2;
+    map<string, string> metadata = 3;
 }
 
 message TaskResponse {
