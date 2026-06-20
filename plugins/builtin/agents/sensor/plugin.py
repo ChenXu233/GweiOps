@@ -1,12 +1,8 @@
 # plugins/builtin/agents/sensor/plugin.py
 from typing import Dict, Any, List
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'engine'))
-
-from plugin_manager.base import PluginBase, PluginInfo, PluginType
-from llm.client import LLMService
+from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.llm.client import LLMService
 from .labeler import LabelGenerator
 from .completeness import CompletenessChecker
 from .duplicate import DuplicateDetector
@@ -137,7 +133,7 @@ Issue 内容:
 
         # 标签
         if analysis.get("labels"):
-            labels_str = ", ".join([f"`{l}`" for l in analysis["labels"]])
+            labels_str = ", ".join([f"`{label}`" for label in analysis["labels"]])
             lines.append(f"### 标签\n{labels_str}\n")
 
         # 完整性检查

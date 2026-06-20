@@ -1,6 +1,6 @@
-# src/services/duplicate_detector.py
+# plugins/builtin/agents/sensor/duplicate.py
 from dataclasses import dataclass
-from src.services.embedding import EmbeddingService, SearchResult
+from engine.llm.embedding import EmbeddingService, SearchResult
 
 
 @dataclass
