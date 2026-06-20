@@ -26,12 +26,14 @@ async def lifespan(app: FastAPI):
         logger.info("GitHubAppAdapter initialized")
     except Exception as e:
         logger.error(f"Failed to initialize GitHubAppAdapter: {e}")
+        raise
 
     try:
         await sensor.on_startup()
         logger.info("SensorAgent initialized")
     except Exception as e:
         logger.error(f"Failed to initialize SensorAgent: {e}")
+        raise
 
     yield
 

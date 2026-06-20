@@ -68,10 +68,6 @@ async def _process_issue_event(adapter, sensor, headers: dict, body: bytes) -> d
     if event is None:
         return {"status": "ignored", "message": "Unsupported or filtered event"}
 
-    # 处理 ping
-    if event["type"] == "ping":
-        return {"status": "ok", "message": "pong"}
-
     # 提取 issue 信息
     issue_info = adapter.webhook_handler.extract_issue_info(event)
     if issue_info is None:
@@ -142,7 +138,7 @@ async def _process_comment_event(adapter, sensor, headers: dict, body: bytes) ->
             "body": comment_body,
         }
     }
-    analysis = await sensor.handle_event("issue.created", sensor_data)
+    analysis = await sensor.handle_event("issue_comment.created", sensor_data)
 
     # 回复分析结果
     if analysis.get("reply") and issue_info.get("repo") and issue_info.get("issue_number"):
