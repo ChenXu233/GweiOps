@@ -1,4 +1,6 @@
 # engine/shared/config.py
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -10,19 +12,11 @@ class ScopeDefinition:
     """定义一个配置 scope，用于按功能域分发配置。"""
 
     name: str
+    prefix: str = ""
     description: str = ""
     required_keys: list[str] = field(default_factory=list)
+    optional_keys: list[str] = field(default_factory=list)
     validator: Optional[Callable[["Settings"], bool]] = None
-
-    def validate(self, settings: "Settings") -> bool:
-        """校验该 scope 所需的配置是否齐全。"""
-        for key in self.required_keys:
-            value = getattr(settings, key, None)
-            if value is None or value == "":
-                return False
-        if self.validator:
-            return self.validator(settings)
-        return True
 
 
 class ConfigManager:
@@ -36,9 +30,28 @@ class ConfigManager:
     # Scope 注册
     # ------------------------------------------------------------------
 
-    def register_scope(self, scope: ScopeDefinition) -> None:
-        """注册一个配置 scope。重复注册同名 scope 会被覆盖。"""
-        self._scopes[scope.name] = scope
+    def register_scope(
+        self,
+        name: str,
+        prefix: str,
+        required: list[str] | None = None,
+        optional: list[str] | None = None,
+    ) -> None:
+        """注册一个配置 scope。重复注册同名 scope 会被覆盖。
+
+        Args:
+            name:     scope 名称，例如 ``"github"``
+            prefix:   环境变量前缀，例如 ``"GITHUB_APP_"``
+            required: 必需的配置项字段名列表（不含前缀），例如 ``["app_id", "private_key"]``
+            optional: 可选的配置项字段名列表（不含前缀）
+        """
+        scope = ScopeDefinition(
+            name=name,
+            prefix=prefix,
+            required_keys=required or [],
+            optional_keys=optional or [],
+        )
+        self._scopes[name] = scope
 
     def get_scope(self, name: str) -> Optional[ScopeDefinition]:
         """按名称获取已注册的 scope。"""
@@ -103,21 +116,54 @@ class ConfigManager:
         if scope_name in presets:
             return presets[scope_name](self.settings)
 
-        # 否则查找自定义 scope，返回 Settings 全量字典中匹配 required_keys 的子集
+        # 否则查找自定义 scope，使用 prefix 映射获取配置
         scope = self._scopes.get(scope_name)
         if scope is not None:
-            data = self.settings.model_dump()
-            return {k: data[k] for k in scope.required_keys if k in data}
+            s = self.settings
+            data: dict[str, Any] = {}
+            all_keys = scope.required_keys + scope.optional_keys
+            for field_name in all_keys:
+                settings_key = self._resolve_settings_key(scope, field_name)
+                val = getattr(s, settings_key, None)
+                if val is not None:
+                    data[field_name] = val
+            return data
 
         raise KeyError(f"Unknown scope: {scope_name!r}")
+
+    # ------------------------------------------------------------------
+    # 内部工具
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _field_to_env_key(prefix: str, field_name: str) -> str:
+        """将 prefix + field_name 转换为 Settings 属性名。
+
+        例: prefix="GITHUB_APP_", field_name="app_id"
+          -> "github_app_app_id"
+        """
+        # prefix 去掉末尾下划线，与 field_name 拼接后统一小写
+        clean_prefix = prefix.rstrip("_").lower()
+        return f"{clean_prefix}_{field_name}"
+
+    def _resolve_settings_key(self, scope: ScopeDefinition, field_name: str) -> str:
+        """根据 scope 的 prefix 解析出 Settings 属性名。"""
+        if scope.prefix:
+            return self._field_to_env_key(scope.prefix, field_name)
+        return field_name
 
     # ------------------------------------------------------------------
     # 校验
     # ------------------------------------------------------------------
 
-    def validate_scope(self, scope_name: str) -> bool:
-        """校验某个 scope 的配置是否有效。"""
-        # 预置 scope 无额外校验，只检查对应字段非空
+    def validate_scope(self, scope_name: str) -> list[str]:
+        """验证 Scope 配置是否完整。返回缺失的必需配置项列表。
+
+        Returns:
+            缺失的配置项列表，如 ``["GITHUB_APP_APP_ID", "GITHUB_APP_PRIVATE_KEY"]``。
+            如果没有缺失，返回空列表 ``[]``。
+        """
+        # 预置 scope
         presets_required: dict[str, list[str]] = {
             "github": [
                 "github_app_app_id",
@@ -132,16 +178,27 @@ class ConfigManager:
 
         if scope_name in presets_required:
             s = self.settings
+            missing: list[str] = []
             for key in presets_required[scope_name]:
                 val = getattr(s, key, None)
                 if val is None or val == "" or val == 0:
-                    return False
-            return True
+                    missing.append(key.upper())
+            return missing
 
         scope = self._scopes.get(scope_name)
         if scope is None:
             raise KeyError(f"Unknown scope: {scope_name!r}")
-        return scope.validate(self.settings)
+
+        s = self.settings
+        missing = []
+        for field_name in scope.required_keys:
+            settings_key = self._resolve_settings_key(scope, field_name)
+            val = getattr(s, settings_key, None)
+            if val is None or val == "" or val == 0:
+                # 返回环境变量风格的名称（大写）
+                env_name = self._field_to_env_key(scope.prefix or scope.name, field_name).upper()
+                missing.append(env_name)
+        return missing
 
 
 class Settings(BaseSettings):
