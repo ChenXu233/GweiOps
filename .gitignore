@@ -44,6 +44,7 @@ htmlcov/
 
 # Superpowers (temporary brainstorm files)
 .superpowers/
+docs/superpowers/
 
 # OS files
 .DS_Store
