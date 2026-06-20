@@ -1,22 +1,22 @@
-# src/agent/state.py
+# engine/state_machine/states.py
 from enum import Enum
-from typing import Annotated, TypedDict
-import operator
 
 
-class SessionStatus(str, Enum):
-    INIT = "INIT"
-    ANALYZING = "ANALYZING"
-    REPRODUCING = "REPRODUCING"
-    LOCATING = "LOCATING"
-    GENERATING = "GENERATING"
-    WAITING = "WAITING"
-    CREATING_PR = "CREATING_PR"
-    DONE = "DONE"
-    FAILED = "FAILED"
+class WorkflowState(str, Enum):
+    """工作流状态定义"""
+    S0_PERCEIVED = "S0_PERCEIVED"   # 问题感知
+    S1_DIAGNOSED = "S1_DIAGNOSED"   # 诊断决策
+    S2_PLANNED = "S2_PLANNED"       # 方案生成
+    S3_EXECUTED = "S3_EXECUTED"     # 方案执行
+    S4_VERIFIED = "S4_VERIFIED"     # 验证
+    S5_CANARIED = "S5_CANARIED"     # 生产分流
+    S6_REVIEWED = "S6_REVIEWED"     # 最终审核
+    DONE = "DONE"                   # 完成
+    FAILED = "FAILED"               # 失败
 
 
 class IssueType(str, Enum):
+    """Issue 类型"""
     BUG = "bug"
     FEATURE = "feature"
     DOCS = "docs"
@@ -25,42 +25,8 @@ class IssueType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class PatchProposal(TypedDict):
-    type: str  # HOTFIX, PROPER, REFACTOR
-    diff: str
-    risk: str
-    description: str
-
-
-class AgentState(TypedDict, total=False):
-    """Agent state for LangGraph (TypedDict with reducer annotations)."""
-
-    issue_title: str
-    issue_body: str
-    repo_url: str
-    repo_name: str
-    issue_number: int
-    status: SessionStatus
-    issue_type: IssueType | None
-    analysis: str
-    reproduction_result: str | None
-    error_stack: str | None
-    patches: Annotated[list[PatchProposal], operator.add]
-    selected_patch: str | None
-    pr_url: str | None
-    pr_number: int | None
-    error_count: int
-    messages: Annotated[list[str], operator.add]
-
-
-def should_fail(state: AgentState) -> bool:
-    return state.get("error_count", 0) >= 3
-
-
-def needs_reproduction(state: AgentState) -> bool:
-    return state.get("issue_type") == IssueType.BUG
-
-
-def needs_code_change(state: AgentState) -> bool:
-    t = state.get("issue_type")
-    return t in (IssueType.BUG, IssueType.FEATURE)
+class ActionType(str, Enum):
+    """行动类型"""
+    CODE_FIX = "code_fix"           # 代码修复
+    UPSTREAM_UPDATE = "upstream_update"  # 上游更新
+    NON_CODE_ACTION = "non_code_action"  # 非代码运维

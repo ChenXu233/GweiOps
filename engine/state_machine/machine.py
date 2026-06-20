@@ -1,64 +1,61 @@
-# src/agent/graph.py
-from langgraph.graph import StateGraph, END
-from src.agent.state import AgentState, SessionStatus, IssueType
-from src.agent.nodes import (
-    analyze_issue,
-    generate_patches,
-    wait_for_user_selection,
-    create_pr,
-)
+# engine/state_machine/machine.py
+from typing import Dict, Any, Optional, Callable, Awaitable
+from .states import WorkflowState
+from .transitions import TransitionRule, DEFAULT_TRANSITIONS
 
 
-def route_after_analysis(state: AgentState) -> str:
-    """分析后路由：Bug 需要复现，其他类型直接生成方案。"""
-    issue_type = state.get("issue_type")
-    if issue_type == IssueType.BUG:
-        return "reproducing"
-    return "generating"
+class StateMachine:
+    """状态机核心"""
 
+    def __init__(self, initial_state: WorkflowState = WorkflowState.S0_PERCEIVED):
+        self.current_state = initial_state
+        self.transitions: Dict[str, TransitionRule] = {}
+        self.on_transition_callbacks: list[Callable] = []
 
-def route_after_patches(state: AgentState) -> str:
-    """生成 Patch 后：如果已选择方案则创建 PR，否则等待用户。"""
-    if state.get("selected_patch"):
-        return "creating_pr"
-    return "waiting"
+        # 加载默认转换规则
+        for rule in DEFAULT_TRANSITIONS:
+            key = f"{rule.from_state.value}:{rule.condition}"
+            self.transitions[key] = rule
 
+    def add_transition(self, rule: TransitionRule):
+        """添加转换规则"""
+        key = f"{rule.from_state.value}:{rule.condition}"
+        self.transitions[key] = rule
 
-def create_gwei_graph() -> StateGraph:
-    """构建 Gwei Agent 状态图。"""
-    workflow = StateGraph(AgentState)
+    def on_transition(self, callback: Callable):
+        """注册转换回调"""
+        self.on_transition_callbacks.append(callback)
 
-    # 添加节点
-    workflow.add_node("analyze", analyze_issue)
-    workflow.add_node("generate_patches", generate_patches)
-    workflow.add_node("wait_for_user", wait_for_user_selection)
-    workflow.add_node("create_pr", create_pr)
+    async def trigger(self, condition: str, context: Dict[str, Any] = None) -> bool:
+        """触发状态转换"""
+        key = f"{self.current_state.value}:{condition}"
+        rule = self.transitions.get(key)
 
-    # 设置入口
-    workflow.set_entry_point("analyze")
+        if not rule:
+            return False
 
-    # 添加边
-    workflow.add_conditional_edges(
-        "analyze",
-        route_after_analysis,
-        {
-            "reproducing": "generate_patches",
-            "generating": "generate_patches",
-        },
-    )
-    workflow.add_conditional_edges(
-        "generate_patches",
-        route_after_patches,
-        {
-            "waiting": "wait_for_user",
-            "creating_pr": "create_pr",
-        },
-    )
-    workflow.add_edge("wait_for_user", END)
-    workflow.add_edge("create_pr", END)
+        # 执行转换
+        old_state = self.current_state
+        self.current_state = rule.to_state
 
-    return workflow
+        # 调用回调
+        for callback in self.on_transition_callbacks:
+            await callback(old_state, rule.to_state, context or {})
 
+        return True
 
-# 全局 graph 实例
-gwei_graph = create_gwei_graph().compile()
+    def get_available_transitions(self) -> list[str]:
+        """获取当前状态可用的转换"""
+        return [
+            rule.condition
+            for key, rule in self.transitions.items()
+            if key.startswith(f"{self.current_state.value}:")
+        ]
+
+    def is_terminal(self) -> bool:
+        """是否为终止状态"""
+        return self.current_state in (WorkflowState.DONE, WorkflowState.FAILED)
+
+    def reset(self):
+        """重置状态机"""
+        self.current_state = WorkflowState.S0_PERCEIVED
