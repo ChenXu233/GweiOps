@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package gweiops.core;
+
+import "plugin.proto";
+import "models.proto";
+
+service CoreService {
+    // 插件管理
+    rpc RegisterPlugin(RegisterPluginRequest) returns (RegisterPluginResponse);
+    rpc UnregisterPlugin(UnregisterPluginRequest) returns (UnregisterPluginResponse);
+    rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+
+    // 事件分发
+    rpc DispatchEvent(DispatchEventRequest) returns (DispatchEventResponse);
+
+    // 任务调度
+    rpc DispatchTask(DispatchTaskRequest) returns (DispatchTaskResponse);
+
+    // 状态机
+    rpc GetState(GetStateRequest) returns (GetStateResponse);
+    rpc TriggerTransition(TriggerTransitionRequest) returns (TriggerTransitionResponse);
+}
+
+message RegisterPluginRequest {
+    string endpoint = 1;
+    gweiops.plugin.PluginInfo info = 2;
+}
+
+message RegisterPluginResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message UnregisterPluginRequest {
+    string name = 1;
+}
+
+message UnregisterPluginResponse {
+    bool success = 1;
+}
+
+message ListPluginsRequest {}
+
+message ListPluginsResponse {
+    repeated gweiops.plugin.PluginInfo plugins = 1;
+}
+
+message DispatchEventRequest {
+    string event = 1;
+    bytes data = 2;
+}
+
+message DispatchEventResponse {
+    bool success = 1;
+    repeated EventResult results = 2;
+}
+
+message EventResult {
+    string plugin = 1;
+    bool success = 2;
+    bytes result = 3;
+    string error = 4;
+}
+
+message DispatchTaskRequest {
+    string state = 1;
+    string task = 2;
+    bytes params = 3;
+}
+
+message DispatchTaskResponse {
+    bool success = 1;
+    repeated TaskResult results = 2;
+}
+
+message TaskResult {
+    string plugin = 1;
+    bool success = 2;
+    bytes result = 3;
+    string error = 4;
+}
+
+message GetStateRequest {}
+
+message GetStateResponse {
+    string current_state = 1;
+    repeated string available_transitions = 2;
+}
+
+message TriggerTransitionRequest {
+    string condition = 1;
+    bytes context = 2;
+}
+
+message TriggerTransitionResponse {
+    bool success = 1;
+    string new_state = 2;
+}

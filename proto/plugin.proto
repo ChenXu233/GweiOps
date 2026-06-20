@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package gweiops.plugin;
+
+service PluginService {
+    // 生命周期
+    rpc Startup(StartupRequest) returns (StartupResponse);
+    rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+    rpc HealthCheck(HealthRequest) returns (HealthResponse);
+
+    // 事件处理
+    rpc HandleEvent(EventRequest) returns (EventResponse);
+
+    // 任务执行
+    rpc ExecuteTask(TaskRequest) returns (TaskResponse);
+}
+
+message PluginInfo {
+    string name = 1;
+    string version = 2;
+    repeated string supported_events = 3;
+    repeated string supported_tasks = 4;
+}
+
+message StartupRequest {
+    map<string, string> config = 1;
+}
+
+message StartupResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message ShutdownRequest {}
+
+message ShutdownResponse {
+    bool success = 1;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+    bool healthy = 1;
+    string message = 2;
+}
+
+message EventRequest {
+    string event = 1;
+    bytes data = 2;
+}
+
+message EventResponse {
+    bool success = 1;
+    bytes result = 2;
+    string error = 3;
+}
+
+message TaskRequest {
+    string task = 1;
+    bytes params = 2;
+}
+
+message TaskResponse {
+    bool success = 1;
+    bytes result = 2;
+    string error = 3;
+}
