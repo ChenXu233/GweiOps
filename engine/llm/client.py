@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from engine.shared.config import Settings
 
 try:
-    from openai import AsyncOpenAI
-    HAS_OPENAI = True
+    from litellm import acompletion
+    HAS_LITELLM = True
 except ImportError:
-    HAS_OPENAI = False
+    HAS_LITELLM = False
 
 
 @dataclass
@@ -26,11 +26,8 @@ class LLMService:
         self.model = model or settings.llm_model
         self.provider = settings.llm_provider
 
-        # 初始化 OpenAI 客户端
-        if HAS_OPENAI and self.api_key:
-            self.client = AsyncOpenAI(api_key=self.api_key)
-        else:
-            self.client = None
+        # 是否启用真实调用
+        self.enabled = HAS_LITELLM and bool(self.api_key)
 
     async def call(
         self,
@@ -52,9 +49,23 @@ class LLMService:
 
         raise last_error or Exception("LLM call failed after max retries")
 
+    def _build_model_string(self) -> str:
+        """根据 provider 构建 litellm 模型字符串。"""
+        if "/" in self.model:
+            return self.model
+        provider_prefixes = {
+            "openai": "openai/",
+            "anthropic": "anthropic/",
+            "azure": "azure/",
+            "gemini": "gemini/",
+            "deepseek": "deepseek/",
+        }
+        prefix = provider_prefixes.get(self.provider, "")
+        return f"{prefix}{self.model}"
+
     async def _call_api(self, system_prompt: str, user_prompt: str) -> LLMCallResult:
-        """实际调用 LLM API。"""
-        if not self.client:
+        """实际调用 LLM API（通过 litellm）。"""
+        if not self.enabled:
             # 模拟模式（用于测试）
             return LLMCallResult(
                 content=f"Response to: {user_prompt[:50]}...",
@@ -62,14 +73,16 @@ class LLMService:
                 model=self.model,
             )
 
-        # 真实调用 OpenAI API
-        response = await self.client.chat.completions.create(
-            model=self.model,
+        # 通过 litellm 调用 LLM API
+        model_string = self._build_model_string()
+        response = await acompletion(
+            model=model_string,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,
+            api_key=self.api_key,
         )
 
         content = response.choices[0].message.content or ""

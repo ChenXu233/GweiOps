@@ -13,6 +13,7 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",
+    "litellm>=1.89.0",
     "httpx>=0.28.0",
     "pyyaml>=6.0",
     "pydantic>=2.10.0",
