@@ -112,6 +112,6 @@ jobs:
           echo "🎉 Image built and pushed successfully!"
           echo "Registry: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           echo "Tags: latest, ${{ github.sha }}"
-          if [ "${{ steps.version.outputs.is_release }}" == "true" ]; then
+          if [ "${{ steps.version.outputs.is_release }}" = "true" ]; then
             echo "Version: ${{ steps.version.outputs.tag }}"
           fi
