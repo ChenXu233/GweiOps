@@ -1,7 +1,7 @@
 # engine/llm/client.py
 import asyncio
 from dataclasses import dataclass
-from engine.shared.config import Settings
+from engine.shared.config import config
 
 try:
     from litellm import acompletion
@@ -21,7 +21,7 @@ class LLMService:
     """LLM 调用封装。支持重试和指数退避。"""
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
-        settings = Settings()
+        settings = config.settings
         self.api_key = api_key or settings.llm_api_key
         self.model = model or settings.llm_model
         self.provider = settings.llm_provider
