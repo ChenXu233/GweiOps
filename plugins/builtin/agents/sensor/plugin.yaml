@@ -1,15 +1,16 @@
 name: sensor-agent
-version: 1.0.0
+version: 2.0.0
 type: agent
-description: 感知智能体，监听事件
+description: 感知智能体，使用 LLM 分析 Issue 内容并提供智能回复
 
 triggers:
   - type: event
     events:
-      - webhook.received
       - issue.created
+      - issue.edited
 
 capabilities:
   - issue.label
   - issue.completeness_check
   - issue.duplicate_detection
+  - issue.llm_analysis
