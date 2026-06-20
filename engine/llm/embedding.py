@@ -1,4 +1,4 @@
-# src/services/embedding.py
+# engine/llm/embedding.py
 import math
 from dataclasses import dataclass
 

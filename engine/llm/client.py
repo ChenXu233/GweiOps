@@ -1,7 +1,7 @@
-# src/services/llm.py
+# engine/llm/client.py
 import asyncio
 from dataclasses import dataclass
-from src.config import Settings
+from engine.shared.config import Settings
 
 try:
     from openai import AsyncOpenAI
