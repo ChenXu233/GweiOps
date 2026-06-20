@@ -58,9 +58,54 @@ jobs:
       - name: Clean old hash tags
         if: success()
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 保留 latest 和当前 hash，删除旧的 hash 标签
-          echo "Keeping latest + ${{ github.sha }} + ${{ steps.version.outputs.tag }}"
+          # 获取所有版本
+          PACKAGE_NAME=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+          # 获取当前版本列表
+          VERSIONS=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/user/packages/container/${PACKAGE_NAME##*/}/versions" \
+            --paginate \
+            --jq '.[] | select(.metadata.container.tags | length > 0) | {id: .id, tags: .metadata.container.tags}')
+
+          # 当前要保留的 hash
+          CURRENT_HASH="${{ github.sha }}"
+          CURRENT_TAG="${{ steps.version.outputs.tag }}"
+
+          echo "Current hash: $CURRENT_HASH"
+          echo "Current tag: $CURRENT_TAG"
+          echo "Keeping: latest, $CURRENT_HASH, $CURRENT_TAG"
+
+          # 删除旧的 hash 标签（只保留 latest、当前 hash 和版本 tag）
+          echo "$VERSIONS" | jq -c '.' | while read -r version; do
+            VERSION_ID=$(echo "$version" | jq -r '.id')
+            TAGS=$(echo "$version" | jq -r '.tags[]')
+
+            # 检查是否应该保留
+            SHOULD_KEEP=false
+            for tag in $TAGS; do
+              if [[ "$tag" == "latest" || "$tag" == "$CURRENT_HASH" || "$tag" == "$CURRENT_TAG" ]]; then
+                SHOULD_KEEP=true
+                break
+              fi
+            done
+
+            # 如果不应该保留，删除
+            if [[ "$SHOULD_KEEP" == "false" ]]; then
+              echo "Deleting version $VERSION_ID (tags: $TAGS)"
+              gh api \
+                --method DELETE \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "/user/packages/container/${PACKAGE_NAME##*/}/versions/$VERSION_ID" || true
+            fi
+          done
+
+          echo "✅ Cleanup completed!"
 
       - name: Image info
         run: |
