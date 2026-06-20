@@ -1,7 +1,4 @@
-# src/services/github.py
-from src.config import Settings
-
-settings = Settings()
+# plugins/builtin/adapters/github/client.py
 
 
 class GitHubClient:

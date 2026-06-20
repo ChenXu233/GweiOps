@@ -1,4 +1,4 @@
-# src/services/git_tool.py
+# plugins/builtin/adapters/github/git.py
 import asyncio
 from dataclasses import dataclass
 

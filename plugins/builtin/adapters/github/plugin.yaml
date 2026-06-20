@@ -1,0 +1,28 @@
+name: github-adapter
+version: 1.0.0
+type: adapter
+description: GitHub 托管适配器
+
+triggers:
+  - type: event
+    events:
+      - webhook.received
+      - issue.created
+      - pr.merged
+
+capabilities:
+  - issue.read
+  - issue.write
+  - pr.read
+  - pr.write
+  - pr.merge
+  - comment.read
+  - comment.write
+  - webhook.receive
+
+config:
+  required:
+    - GITHUB_TOKEN
+    - GITHUB_WEBHOOK_SECRET
+  optional:
+    - GITHUB_API_URL
