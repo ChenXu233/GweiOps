@@ -1,20 +1,11 @@
-version: "3.8"
+# 既未 · Gwei - Docker Compose 配置
+# 用于本地开发和测试
 
 services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
+  # PostgreSQL + pgvector
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: gwei-postgres
     environment:
       POSTGRES_USER: gwei
       POSTGRES_PASSWORD: gwei
@@ -22,17 +13,49 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gwei"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
 
+  # Redis
   redis:
     image: redis:7-alpine
+    container_name: gwei-redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 后端 API 服务
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gwei-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://gwei:gwei@postgres:5432/gwei
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
-  pgdata:
+  postgres_data:
+  redis_data:

@@ -1,4 +1,5 @@
 # tests/test_agent_graph.py
+import pytest
 from src.agent.state import AgentState, SessionStatus, IssueType
 from src.agent.nodes import analyze_issue, classify_issue_type
 
@@ -30,7 +31,8 @@ def test_classify_issue_type_docs():
     assert result["issue_type"] in (IssueType.DOCS, IssueType.UNKNOWN)
 
 
-def test_analyze_issue_sets_status():
+@pytest.mark.asyncio
+async def test_analyze_issue_sets_status():
     state: AgentState = {
         "issue_title": "Bug: crash",
         "issue_body": "App crashes",
@@ -38,9 +40,26 @@ def test_analyze_issue_sets_status():
         "repo_name": "test/repo",
         "issue_number": 1,
     }
-    result = analyze_issue(state)
+    result = await analyze_issue(state)
     assert result["status"] == SessionStatus.GENERATING
     assert len(result["analysis"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_analyze_issue_with_llm_mock():
+    """测试 LLM 分析 Issue（模拟模式）。"""
+    state: AgentState = {
+        "issue_title": "Parser crashes on empty input",
+        "issue_body": "When I pass empty string, the parser throws NullPointerError",
+    }
+    result = await analyze_issue(state)
+
+    # 模拟模式应该返回有效的分析结果
+    assert result["status"] == SessionStatus.GENERATING
+    assert result["issue_type"] in (IssueType.BUG, IssueType.UNKNOWN)
+    assert "analysis" in result
+    assert "severity" in result
+    assert "labels" in result
 
 
 def test_route_after_analysis_bug_needs_reproduction():

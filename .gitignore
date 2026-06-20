@@ -1,11 +1,66 @@
-# Dependencies
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Local tooling
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+*.pid
+*.tmp
+*.log
+
+# Superpowers (temporary brainstorm files)
 .superpowers/
-docs/superpowers/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Claude
 .claude/
