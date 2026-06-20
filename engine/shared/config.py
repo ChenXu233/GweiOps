@@ -12,11 +12,12 @@ class Settings(BaseSettings):
 
     # GitHub App
     github_app_id: str = ""
-    github_private_key: str = ""
+    github_private_key: str = ""  # PEM 格式私钥
     github_webhook_secret: str = ""
+    github_installation_id: int = 0  # 安装 ID
 
     # LLM
-    llm_provider: str = "openai"
+    llm_provider: str = "litellm"
     llm_api_key: str = ""
     llm_model: str = "gpt-4o"
 
