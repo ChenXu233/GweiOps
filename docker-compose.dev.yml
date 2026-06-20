@@ -1,32 +1,37 @@
+# 开发环境配置
+# 使用方式: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
 services:
   engine:
     build:
       context: ./engine
       dockerfile: Dockerfile
-    container_name: gwei-engine
+    container_name: gwei-engine-dev
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://gwei:gwei@postgres:5432/gwei
       - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
     env_file:
       - .env
+    volumes:
+      - ./engine:/app
+    command: >
+      uvicorn engine.api.app:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: gwei-postgres
+    container_name: gwei-postgres-dev
     environment:
       POSTGRES_USER: gwei
       POSTGRES_PASSWORD: gwei
@@ -34,8 +39,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
+      - postgres_dev_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gwei -d gwei"]
       interval: 10s
@@ -44,12 +48,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: gwei-redis
+    container_name: gwei-redis-dev
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - redis_dev_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -57,5 +60,5 @@ services:
       retries: 5
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_dev_data:
+  redis_dev_data:
