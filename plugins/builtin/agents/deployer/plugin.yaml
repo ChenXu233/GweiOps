@@ -1,0 +1,14 @@
+name: deployer-agent
+version: 1.0.0
+type: agent
+description: 部署智能体，创建 PR 并处理迭代
+
+triggers:
+  - type: event
+    events:
+      - fix.generated
+      - patch.approved
+
+capabilities:
+  - pr.create
+  - pr.iterate

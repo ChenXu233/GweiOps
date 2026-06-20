@@ -1,0 +1,15 @@
+name: sensor-agent
+version: 1.0.0
+type: agent
+description: 感知智能体，监听事件
+
+triggers:
+  - type: event
+    events:
+      - webhook.received
+      - issue.created
+
+capabilities:
+  - issue.label
+  - issue.completeness_check
+  - issue.duplicate_detection

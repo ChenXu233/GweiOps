@@ -1,0 +1,14 @@
+name: learner-agent
+version: 1.0.0
+type: agent
+description: 学习智能体，从历史数据中学习
+
+triggers:
+  - type: event
+    events:
+      - workflow.completed
+      - pr.merged
+
+capabilities:
+  - knowledge.extract
+  - pattern.learn

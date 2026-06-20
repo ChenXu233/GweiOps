@@ -1,0 +1,15 @@
+name: diagnoser-agent
+version: 1.0.0
+type: agent
+description: 诊断智能体，分析问题根因
+
+triggers:
+  - type: event
+    events:
+      - issue.labeled
+      - sensor.processed
+
+capabilities:
+  - issue.analyze
+  - code.analyze
+  - bug.reproduce

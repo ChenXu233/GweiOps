@@ -1,0 +1,14 @@
+name: fixer-agent
+version: 1.0.0
+type: agent
+description: 修复智能体，生成修复补丁
+
+triggers:
+  - type: event
+    events:
+      - diagnosis.complete
+      - issue.analyzed
+
+capabilities:
+  - patch.generate
+  - code.review

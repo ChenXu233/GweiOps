@@ -1,0 +1,14 @@
+name: reporter-agent
+version: 1.0.0
+type: agent
+description: 报告智能体，生成审查报告和投票
+
+triggers:
+  - type: event
+    events:
+      - pr.created
+      - review.completed
+
+capabilities:
+  - report.generate
+  - vote.manage
