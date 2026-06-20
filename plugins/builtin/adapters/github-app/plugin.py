@@ -51,7 +51,7 @@ class GitHubAppAdapter(PluginBase):
             raise ValueError(f"GitHub App 配置错误: {'; '.join(errors)}")
 
         self.client = GitHubAppClient(self.config)
-        self.webhook_handler = WebhookHandler()
+        self.webhook_handler = WebhookHandler(self.config)
 
     async def on_shutdown(self):
         """关闭时释放资源。"""
@@ -99,31 +99,34 @@ class GitHubAppAdapter(PluginBase):
 
     async def _handle_webhook(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理 Webhook 事件。"""
-        headers = data.get("headers", {})
-        body = data.get("body", b"")
+        try:
+            headers = data.get("headers", {})
+            body = data.get("body", b"")
 
-        # 验证签名（如果配置了 webhook_secret）
-        signature = headers.get("X-Hub-Signature-256", "")
-        if self.config.webhook_secret and not self.webhook_handler.verify_signature(body, signature):
-            return {"status": "error", "message": "Invalid webhook signature"}
+            # 验证签名（如果配置了 webhook_secret）
+            signature = headers.get("X-Hub-Signature-256", "")
+            if self.config.webhook_secret and not self.webhook_handler.verify_signature(body, signature):
+                return {"status": "error", "message": "Invalid webhook signature"}
 
-        # 解析事件
-        event = self.webhook_handler.parse_event(headers, body)
-        if event is None:
-            return {"status": "ignored", "message": "Unsupported event type"}
+            # 解析事件
+            event = self.webhook_handler.parse_event(headers, body)
+            if event is None:
+                return {"status": "ignored", "message": "Unsupported event type"}
 
-        # 处理 ping 事件
-        if event["type"] == "ping":
-            return {"status": "ok", "message": "pong"}
+            # 处理 ping 事件
+            if event["type"] == "ping":
+                return {"status": "ok", "message": "pong"}
 
-        # 提取 issue 信息
-        issue_info = self.webhook_handler.extract_issue_info(event)
-        if issue_info is None:
-            return {"status": "ignored", "message": "Could not extract issue info"}
+            # 提取 issue 信息
+            issue_info = self.webhook_handler.extract_issue_info(event)
+            if issue_info is None:
+                return {"status": "ignored", "message": "Could not extract issue info"}
 
-        return {
-            "status": "ok",
-            "event_type": event["type"],
-            "action": event["action"],
-            "issue_info": issue_info,
-        }
+            return {
+                "status": "ok",
+                "event_type": event["type"],
+                "action": event["action"],
+                "issue_info": issue_info,
+            }
+        except Exception as e:
+            return {"status": "error", "message": f"Webhook 处理失败: {e}"}

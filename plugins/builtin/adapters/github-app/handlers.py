@@ -9,8 +9,8 @@ from .config import GitHubAppConfig
 class WebhookHandler:
     """GitHub Webhook 处理器。"""
 
-    def __init__(self):
-        self.config = GitHubAppConfig()
+    def __init__(self, config: GitHubAppConfig):
+        self.config = config
 
     def verify_signature(self, body: bytes, signature_header: str) -> bool:
         """验证 Webhook 签名。"""

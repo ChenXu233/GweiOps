@@ -22,6 +22,17 @@ class GitHubAppClient:
         self._config = config or GitHubAppConfig()
         self._github: Optional[GitHub] = None
 
+    def _parse_repo(self, repo: str) -> tuple[str, str]:
+        """解析仓库全名为 owner 和 repo_name。
+
+        Args:
+            repo: 仓库全名，例如 "owner/repo"
+
+        Returns:
+            (owner, repo_name) 元组
+        """
+        return repo.split("/", 1)
+
     @property
     def github(self) -> GitHub:
         """获取 GitHub 实例（懒加载）。"""
@@ -45,7 +56,7 @@ class GitHubAppClient:
         Returns:
             Issue 详情字典
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         response = await self.github.rest.issues.async_get(
             owner=owner, repo=repo_name, issue_number=issue_number
         )
@@ -62,7 +73,7 @@ class GitHubAppClient:
         Returns:
             创建的评论详情
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         response = await self.github.rest.issues.async_create_comment(
             owner=owner, repo=repo_name, issue_number=issue_number, body=body
         )
@@ -81,7 +92,7 @@ class GitHubAppClient:
         Returns:
             更新后的评论详情
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         response = await self.github.rest.issues.async_update_comment(
             owner=owner, repo=repo_name, comment_id=comment_id, body=body
         )
@@ -100,7 +111,7 @@ class GitHubAppClient:
         Returns:
             包含更新后标签的响应
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         response = await self.github.rest.issues.async_add_labels(
             owner=owner, repo=repo_name, issue_number=issue_number, labels=labels
         )
@@ -116,7 +127,7 @@ class GitHubAppClient:
             issue_number: Issue 编号
             labels: 要移除的标签名称列表
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         for label in labels:
             await self.github.rest.issues.async_remove_label(
                 owner=owner, repo=repo_name, issue_number=issue_number, name=label
@@ -134,7 +145,7 @@ class GitHubAppClient:
         Returns:
             评论列表
         """
-        owner, repo_name = repo.split("/", 1)
+        owner, repo_name = self._parse_repo(repo)
         response = await self.github.rest.issues.async_list_comments(
             owner=owner, repo=repo_name, issue_number=issue_number
         )
