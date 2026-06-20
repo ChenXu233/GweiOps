@@ -137,7 +137,8 @@ class MyPlugin(PluginBase):
 
 ## 许可证
 
-- engine/: AGPL
-- plugins/: MIT
-- dashboard/: MIT
+- engine/: AGPL-3.0
+- dashboard/: FSL-1.1-ALv2
+- plugins/builtin/: Apache-2.0
+- plugins/community/: MIT
 - proto/: MIT
