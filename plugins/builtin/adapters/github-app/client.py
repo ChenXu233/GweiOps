@@ -30,8 +30,14 @@ class GitHubAppClient:
 
         Returns:
             (owner, repo_name) 元组
+
+        Raises:
+            ValueError: 如果仓库名称格式不正确（不包含 "/"）
         """
-        return repo.split("/", 1)
+        parts = repo.split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(f"仓库名称格式错误：'{repo}'，期望格式为 'owner/repo'")
+        return (parts[0], parts[1])
 
     @property
     def github(self) -> GitHub:

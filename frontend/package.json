@@ -8,6 +8,11 @@
     "build:saas": "pnpm --filter @gwei/saas build"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

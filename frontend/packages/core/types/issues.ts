@@ -1,3 +1,4 @@
+import type { CanaryMetrics } from './dashboard'
 export type IssueSeverity = 'critical' | 'medium' | 'low'
 export type IssueSource = 'github_issue' | 'prometheus' | 'trivy' | 'cve' | 'sentry'
 export type IssueStatus = 'pending_review' | 'canary' | 'approved' | 'completed' | 'rolled_back'
@@ -19,12 +20,7 @@ export interface CanaryProgress {
   current: string
   steps: string[]
   completedSteps: string[]
-  metrics: {
-    passRate: number
-    errorRate: number
-    p99Latency: string
-    memoryPeak: string
-  }
+  metrics: CanaryMetrics
 }
 
 export interface TimelineStep {

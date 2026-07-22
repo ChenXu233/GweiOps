@@ -1,4 +1,14 @@
+import type { IssueSeverity } from './issues'
+
 export type SystemStatus = 'healthy' | 'warning' | 'critical'
+export type PendingIssueStatus = 'pending_review' | 'canary' | 'approved' | 'completed' | 'rolled_back'
+
+export interface CanaryMetrics {
+  passRate: number
+  errorRate: number
+  p99Latency: string
+  memoryPeak: string
+}
 
 export interface DashboardData {
   status: SystemStatus
@@ -16,9 +26,9 @@ export interface DashboardData {
 export interface PendingIssue {
   id: string
   title: string
-  severity: 'critical' | 'medium' | 'low'
+  severity: IssueSeverity
   patchCount: number
-  status: string
+  status: PendingIssueStatus
 }
 
 export interface OvernightEvent {
@@ -33,10 +43,5 @@ export interface CanaryStatus {
   issueTitle: string
   currentStep: string
   steps: string[]
-  metrics: {
-    passRate: number
-    errorRate: number
-    p99Latency: string
-    memoryPeak: string
-  }
+  metrics: CanaryMetrics
 }
