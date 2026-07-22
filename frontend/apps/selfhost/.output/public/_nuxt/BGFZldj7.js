@@ -1,0 +1,1 @@
+import{R as u,P as i}from"./D5keIc52.js";import{n as e}from"./DgSnYudl.js";const c=!1;function g(){const o=e([]),t=e([]),s=e(!0),l=e(null);async function a(){s.value=!0,l.value=null;try{if(!c){const[n,r]=await Promise.all([u.list(),i.list()]);o.value=n,t.value=r}}catch(n){l.value=n}finally{s.value=!1}}return a(),{repos:o,plugins:t,loading:s,error:l,refresh:a}}export{g as u};
