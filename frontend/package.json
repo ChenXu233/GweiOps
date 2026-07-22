@@ -1,0 +1,13 @@
+{
+  "name": "gwei-frontend",
+  "private": true,
+  "scripts": {
+    "dev:selfhost": "pnpm --filter @gwei/selfhost dev",
+    "build:selfhost": "pnpm --filter @gwei/selfhost build",
+    "dev:saas": "pnpm --filter @gwei/saas dev",
+    "build:saas": "pnpm --filter @gwei/saas build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  }
+}
