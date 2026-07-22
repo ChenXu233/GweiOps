@@ -10,12 +10,14 @@
     "preview": "nuxt preview"
   },
   "dependencies": {
+    "@gwei/core": "workspace:*",
     "nuxt": "^3.15.0",
     "vue": "^3.5.0",
-    "vue-router": "^4.5.0",
-    "@gwei/core": "workspace:*"
+    "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "@types/node": "^26.1.1",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.8"
   }
 }
