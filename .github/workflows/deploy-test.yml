@@ -28,11 +28,11 @@ jobs:
             # 登录 GitHub Container Registry
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # 拉取最新镜像 (latest)
-            docker compose -f docker-compose.test.yml pull
+            # 拉取最新镜像
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 
             # 停止旧容器并启动新容器
-            docker compose -f docker-compose.test.yml up -d --force-recreate
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate
 
             # 等待服务启动
             echo "Waiting for services to start..."
@@ -42,7 +42,7 @@ jobs:
             for i in {1..30}; do
               if curl -f http://localhost:8000/api/health > /dev/null 2>&1; then
                 echo "✅ Service is healthy!"
-                docker compose -f docker-compose.test.yml ps
+                docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
                 exit 0
               fi
               echo "Attempt $i: Waiting for service..."
@@ -50,7 +50,7 @@ jobs:
             done
 
             echo "❌ Service failed to start"
-            docker compose -f docker-compose.test.yml logs engine
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs engine
             exit 1
 
       - name: Check deployment result

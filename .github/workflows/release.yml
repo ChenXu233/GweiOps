@@ -37,7 +37,9 @@ jobs:
 
           echo "" >> notes.md
           echo "---" >> notes.md
-          echo "**Docker Image**: \`${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}\`" >> notes.md
+          echo "**Docker Images**: " >> notes.md
+          echo "- Engine: \`${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}\`" >> notes.md
+          echo "- Web: \`${{ env.REGISTRY }}/${{ github.repository }}-web:${{ github.ref_name }}\`" >> notes.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> notes.md
 
       - name: Create GitHub Release
@@ -52,4 +54,5 @@ jobs:
       - name: Log release info
         run: |
           echo "🎉 Release ${{ github.ref_name }} created!"
-          echo "Docker Image: ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          echo "Engine: ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          echo "Web: ghcr.io/${{ github.repository }}-web:${{ github.ref_name }}"
