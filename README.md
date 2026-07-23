@@ -4,13 +4,58 @@
 
 **GweiOps —— 摆渡未济，恒守既济。**
 
-## 目录结构
-
-```
-├── engine/          # 大脑核心（Python）
+├── engine/          # 大脑核心（Python FastAPI）
+├── frontend/        # 前端（Nuxt 3 + Vue SSR）
 ├── plugins/         # 插件（任何语言）
-├── dashboard/       # Dashboard（Node.js）
 └── proto/           # gRPC 定义
+```
+
+## 快速开始
+
+### 使用 Docker（开发）
+
+```bash
+# 启动全部服务（自动加载 docker-compose.override.yml 开发配置）
+docker compose up
+
+# 访问 API
+open http://localhost:8000/docs
+
+# 访问前端
+open http://localhost:3000
+```
+
+### 使用 Docker（生产）
+
+```bash
+# 创建生产环境变量
+cp .env.prod.example .env.prod
+# 编辑 .env.prod 填入 POSTGRES_PASSWORD 等必填项
+
+# 启动服务
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+### 手动安装
+
+```bash
+# 安装后端依赖
+cd engine
+pip install -e .
+
+# 运行测试
+pytest tests/
+
+# 启动开发服务器
+uvicorn engine.api.app:app --reload
+
+# 安装前端依赖
+cd frontend
+pnpm install
+
+# 启动前端开发服务器
+cd apps/selfhost
+pnpm dev
 ```
 
 ## 核心组件
@@ -43,42 +88,6 @@ Next.js 前端项目，提供态势感知面板。
 ### proto/ - gRPC 定义
 
 语言无关的接口定义，支持任何语言实现插件。
-
-## 快速开始
-
-### 使用 Docker
-
-```bash
-# 启动服务
-docker-compose up -d
-
-# 访问 Dashboard
-open http://localhost:3000
-
-# 访问 API
-open http://localhost:8000/docs
-```
-
-### 手动安装
-
-```bash
-# 安装后端依赖
-cd engine
-pip install -e .
-
-# 运行测试
-pytest tests/
-
-# 启动开发服务器
-uvicorn engine.api.app:app --reload
-
-# 安装前端依赖
-cd dashboard
-npm install
-
-# 启动前端开发服务器
-npm run dev
-```
 
 ## 插件开发
 

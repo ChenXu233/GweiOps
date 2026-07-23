@@ -1,0 +1,52 @@
+# =============================================================================
+# Gwei — 开发环境（docker compose up 自动加载）
+# =============================================================================
+
+services:
+  postgres:
+    container_name: gwei-postgres-dev
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: gwei
+
+  redis:
+    container_name: gwei-redis-dev
+    ports:
+      - "6379:6379"
+
+  engine:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    container_name: gwei-engine-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./engine:/app
+    command: ["--reload", "--reload-dir", "/app"]
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://gwei:gwei@postgres:5432/gwei"
+      REDIS_URL: "redis://redis:6379/0"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: gwei
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+
+  web:
+    image: node:22-alpine
+    container_name: gwei-web-dev
+    working_dir: /app
+    command: >
+      sh -c "
+        corepack enable &&
+        pnpm install --frozen-lockfile &&
+        pnpm dev:selfhost
+      "
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+    environment:
+      NUXT_PUBLIC_USE_MOCK: "true"

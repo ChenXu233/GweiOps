@@ -1,67 +1,91 @@
-version: '3.8'
+# =============================================================================
+# Gwei — 生产环境覆盖
+# 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
 
 services:
+  postgres:
+    container_name: gwei-postgres
+    ports: []                    # 不暴露给宿主机
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?必须设置 POSTGRES_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  redis:
+    container_name: gwei-redis
+    ports: []                    # 不暴露给宿主机
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
   engine:
-    image: ghcr.io/chenxu233/gweiops:latest
+    image: ghcr.io/chenxu233/gweiops:${GWEI_VERSION:-latest}
     container_name: gwei-engine
-    restart: unless-stopped
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://gwei:gwei@postgres:5432/gwei
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      DATABASE_URL: "postgresql+asyncpg://gwei:${POSTGRES_PASSWORD}@postgres:5432/gwei"
+      REDIS_URL: "redis://redis:6379/0"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: gwei
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "2"
+          memory: 2G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - gwei-network
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: gwei-postgres
-    restart: unless-stopped
+  web:
+    image: ghcr.io/chenxu233/gwei-web:${GWEI_VERSION:-latest}
+    container_name: gwei-web
+    ports:
+      - "3000:3000"
     environment:
-      - POSTGRES_DB=gwei
-      - POSTGRES_USER=gwei
-      - POSTGRES_PASSWORD=gwei
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gwei"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - gwei-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: gwei-redis
+      NUXT_PUBLIC_API_BASE: "/api"
+      NUXT_PUBLIC_USE_MOCK: "false"
     restart: unless-stopped
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - gwei-network
-
-volumes:
-  postgres-data:
-  redis-data:
-
-networks:
-  gwei-network:
-    driver: bridge
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "1"
+          memory: 512M
+    depends_on:
+      engine:
+        condition: service_healthy

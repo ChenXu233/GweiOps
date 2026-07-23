@@ -53,11 +53,8 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+.env.prod
 .env.*.local
-
-# Docker
-docker-compose.override.yml
-
 # Node.js
 node_modules/
 .next/

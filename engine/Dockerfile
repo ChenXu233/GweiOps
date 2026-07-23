@@ -1,25 +1,50 @@
-FROM python:3.12-slim AS base
+# =============================================================================
+# Gwei Engine -- multi-stage build
+# =============================================================================
+
+# Stage 1: Builder -- compile C extensions (grpcio, pgvector, etc.)
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    git \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 Python 依赖（利用缓存层）
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --prefix=/install .
 
-# 复制应用代码
+# =============================================================================
+# Stage 2: Runtime -- copy only compiled artifacts, no build tools
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    postgresql-client \
+    redis-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application code
 COPY . .
 
-# 暴露端口
+# Ensure entrypoint is executable
+RUN chmod +x entrypoint.sh
+
+# Create non-root user
+RUN groupadd -r gwei && useradd -r -g gwei -d /app -s /bin/false gwei \
+    && chown -R gwei:gwei /app
+USER gwei
+
 EXPOSE 8000
 
-# 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+    CMD curl -sf http://localhost:8000/api/health || exit 1
 
-# 启动命令
-CMD ["uvicorn", "engine.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["./entrypoint.sh"]

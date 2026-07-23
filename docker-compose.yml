@@ -1,0 +1,82 @@
+# =============================================================================
+# Gwei — 共享骨架（dev/prod 通用）
+# 定义服务结构、网络、卷、健康检查、依赖关系
+# 环境差异在 override.yml（dev）或 prod.yml 中覆盖
+# =============================================================================
+# 使用方式：
+#   开发：docker compose up                     （自动加载 override.yml）
+#   生产：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL（pgvector 扩展）
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gwei
+      POSTGRES_USER: gwei
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gwei"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gwei-network
+
+  # ---------------------------------------------------------------------------
+  # Redis
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gwei-network
+
+  # ---------------------------------------------------------------------------
+  # Engine — FastAPI 后端
+  # ---------------------------------------------------------------------------
+  engine:
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gwei-network
+
+  # ---------------------------------------------------------------------------
+  # Web — Nuxt 3 前端（SSR）
+  # ---------------------------------------------------------------------------
+  web:
+    depends_on:
+      - engine
+    networks:
+      - gwei-network
+
+# ---------------------------------------------------------------------------
+# 持久化卷
+# ---------------------------------------------------------------------------
+volumes:
+  postgres-data:
+  redis-data:
+
+# ---------------------------------------------------------------------------
+# 网络
+# ---------------------------------------------------------------------------
+networks:
+  gwei-network:
+    driver: bridge
