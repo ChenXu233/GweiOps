@@ -96,10 +96,6 @@ Redis（`engine/shared/cache.py`）只承载可丢失的临时状态：webhook �
 | `agents/` | 智能体（感知、诊断、修复、部署、观测、汇报、学习） |
 | `actions/` | 运维动作（K8s 扩容、流量调度...） |
 
-### dashboard/ - Dashboard
-
-Next.js 前端项目，提供态势感知面板。
-
 ### proto/ - gRPC 定义
 
 语言无关的接口定义，支持任何语言实现插件。
@@ -162,7 +158,7 @@ class MyPlugin(PluginBase):
 ## 许可证
 
 - engine/: AGPL-3.0
-- dashboard/: FSL-1.1-ALv2
+- frontend/: AGPL-3.0
 - plugins/builtin/: Apache-2.0
 - plugins/community/: MIT
 - proto/: MIT
