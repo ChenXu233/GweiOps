@@ -25,6 +25,7 @@ class LLMService:
         self.api_key = api_key or settings.llm_api_key
         self.model = model or settings.llm_model
         self.provider = settings.llm_provider
+        self.api_base = settings.llm_base_url or None
 
         # 是否启用真实调用
         self.enabled = HAS_LITELLM and bool(self.api_key)
@@ -61,6 +62,9 @@ class LLMService:
             "deepseek": "deepseek/",
         }
         prefix = provider_prefixes.get(self.provider, "")
+        # 自定义 OpenAI 兼容端点：litellm 要求 openai/ 前缀 + api_base
+        if self.api_base and not prefix:
+            prefix = "openai/"
         return f"{prefix}{self.model}"
 
     async def _call_api(self, system_prompt: str, user_prompt: str) -> LLMCallResult:
@@ -83,6 +87,7 @@ class LLMService:
             ],
             temperature=0.7,
             api_key=self.api_key,
+            api_base=self.api_base,
         )
 
         content = response.choices[0].message.content or ""

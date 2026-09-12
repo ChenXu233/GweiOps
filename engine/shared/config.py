@@ -216,6 +216,7 @@ class Settings(BaseSettings):
     llm_provider: str = "litellm"
     llm_api_key: str = ""
     llm_model: str = "gpt-4o"
+    llm_base_url: str = ""  # OpenAI 兼容自定义端点（如自建 vLLM/one-api），空则用官方默认
 
     # ---- GitHub App 配置（统一 GITHUB_APP_ 前缀） ----
     github_app_app_id: str = ""
@@ -226,7 +227,12 @@ class Settings(BaseSettings):
     # ---- 部署配置 ----
     deployment_mode: str = "saas"  # saas or self-hosted
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # .env 可能包含部署侧附加变量（如 prod 密码），容忍未知键避免启动崩溃
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 # 全局 ConfigManager 实例
