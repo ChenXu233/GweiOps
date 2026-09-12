@@ -1,35 +1,27 @@
 # engine/api/routes/webhook.py
-"""Webhook 路由 - 处理 GitHub Webhook 事件。"""
+"""Webhook 路由 - 处理 GitHub Webhook 事件。
 
+职责收窄为：验签 → 解析 → 去重 → 入 DBOS 队列。
+实际处理逻辑在 engine/workflows/pipeline.py 的工作流中持久化执行。
+"""
+
+import json
 import logging
+import uuid
 
-from fastapi import APIRouter, Request, HTTPException
+from dbos import DBOS, SetWorkflowID
+from fastapi import APIRouter, HTTPException, Request
+
+from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
+from engine.shared.runtime import get_adapter, get_sensor  # noqa: F401 — 兼容既有导入
+from engine.workflows.pipeline import (
+    WORKFLOW_QUEUE,
+    fix_suggestion_workflow,
+    issue_triage_workflow,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# 延迟导入的插件实例缓存
-_adapter_instance = None
-_sensor_instance = None
-
-
-def get_adapter():
-    """获取 GitHubAppAdapter 实例（延迟导入避免循环依赖）。"""
-    global _adapter_instance
-    if _adapter_instance is None:
-        import importlib
-        module = importlib.import_module("plugins.builtin.adapters.github-app.plugin")
-        _adapter_instance = module.GitHubAppAdapter()
-    return _adapter_instance
-
-
-def get_sensor():
-    """获取 SensorAgent 实例（延迟导入避免循环依赖）。"""
-    global _sensor_instance
-    if _sensor_instance is None:
-        from plugins.builtin.agents.sensor.plugin import SensorAgent
-        _sensor_instance = SensorAgent()
-    return _sensor_instance
 
 
 async def _validate_webhook(request: Request) -> bytes:
@@ -61,127 +53,98 @@ def _build_headers_dict(request: Request) -> dict:
     }
 
 
-async def _process_issue_event(adapter, sensor, headers: dict, body: bytes) -> dict:
-    """处理 Issue 事件（issues opened/edited）。"""
-    # 通过 adapter 解析事件
+def _extract_payload(raw: dict, issue_info: dict, event_type: str) -> dict | None:
+    """从原始 payload 提取工作流入参（GitHub 数字 ID 用于业务表幂等 upsert）。"""
+    repo = raw.get("repository") or {}
+    issue = raw.get("issue") or {}
+    comment = raw.get("comment") or {}
+    repo_id = repo.get("id")
+    issue_id = issue.get("id")
+    if repo_id is None or issue_id is None:
+        logger.warning("Webhook payload missing repository.id/issue.id; ignoring")
+        return None
+
+    if event_type == "issue_comment":
+        # 评论触发：以评论内容为分析对象，标题取真实 Issue 标题
+        body = comment.get("body") or ""
+        source = "comment"
+    else:
+        body = issue.get("body") or ""
+        source = "issue"
+
+    return {
+        "repo_full_name": f"{issue_info['owner']}/{issue_info['repo']}",
+        "repo_github_id": repo_id,
+        "issue_github_id": issue_id,
+        "issue_number": issue_info["issue_number"],
+        "title": issue.get("title") or issue_info["title"],
+        "body": body,
+        "source": source,
+    }
+
+
+async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: dict) -> dict:
+    """以投递 ID 为幂等键入队（Redis 去重失效时由 DBOS workflow ID 兜底）。"""
+    workflow_id = f"{prefix}-{delivery_id}"
+    with SetWorkflowID(workflow_id):
+        await DBOS.enqueue_workflow_async(WORKFLOW_QUEUE, workflow, payload)
+    logger.info(
+        "Enqueued workflow %s (%s#%s)",
+        workflow_id,
+        payload["repo_full_name"],
+        payload["issue_number"],
+    )
+    return {"status": "queued", "workflow_id": workflow_id}
+
+
+async def _handle_event(event_type: str, delivery_id: str, headers: dict, body: bytes) -> dict:
+    adapter = get_adapter()
+
     event = adapter.webhook_handler.parse_event(headers, body)
     if event is None:
         return {"status": "ignored", "message": "Unsupported or filtered event"}
 
-    # 提取 issue 信息
+    action = event.get("action", "")
+    if event_type == "issues" and action not in ("opened", "edited"):
+        return {"status": "ignored", "message": f"Unsupported action: {action}"}
+    if event_type == "issue_comment" and action not in ("created", "edited"):
+        return {"status": "ignored", "message": f"Unsupported action: {action}"}
+
     issue_info = adapter.webhook_handler.extract_issue_info(event)
     if issue_info is None:
         return {"status": "ignored", "message": "Could not extract issue info"}
 
-    logger.info(
-        f"Issue event: {event['type']}/{event['action']} "
-        f"repo={issue_info['owner']}/{issue_info['repo']} "
-        f"issue=#{issue_info['issue_number']}"
-    )
+    payload = _extract_payload(json.loads(body), issue_info, event_type)
+    if payload is None:
+        return {"status": "ignored", "message": "Missing repository/issue id"}
 
-    # 通过 sensor 分析 issue
-    sensor_data = {
-        "issue": {
-            "title": issue_info["title"],
-            "body": issue_info["body"],
-        }
-    }
-    analysis = await sensor.handle_event("issue.created", sensor_data)
+    # 投递去重：GitHub 会重试投递，防止重复触发工作流
+    if not await dedup_once(f"gwei:webhook-dedup:{delivery_id}", WEBHOOK_DEDUP_TTL_S):
+        return {"status": "duplicate", "workflow_id": f"gwei-dedup-{delivery_id}"}
 
-    # 如果分析成功，通过 adapter 回复评论
-    if analysis.get("reply") and issue_info.get("repo") and issue_info.get("issue_number"):
-        repo = f"{issue_info['owner']}/{issue_info['repo']}"
-        try:
-            await adapter.execute_task("create_comment", {
-                "repo": repo,
-                "issue_number": issue_info["issue_number"],
-                "body": analysis["reply"],
-            })
-            logger.info(f"Posted analysis comment on {repo}#{issue_info['issue_number']}")
-        except Exception as e:
-            logger.error(f"Failed to post comment: {e}")
+    if event_type == "issue_comment":
+        if "@gwei" not in (payload["body"] or "").lower():
+            return {"status": "ignored", "message": "Comment does not mention @gwei"}
+        return await _enqueue_workflow("gwei-fix", fix_suggestion_workflow, delivery_id, payload)
 
-    return {
-        "status": "ok",
-        "event_type": event["type"],
-        "action": event["action"],
-        "issue_info": issue_info,
-        "analysis": analysis,
-    }
-
-
-async def _process_comment_event(adapter, sensor, headers: dict, body: bytes) -> dict:
-    """处理评论事件（issue_comment created/edited），仅当评论包含 @gwei 时触发。"""
-    event = adapter.webhook_handler.parse_event(headers, body)
-    if event is None:
-        return {"status": "ignored", "message": "Unsupported or filtered event"}
-
-    issue_info = adapter.webhook_handler.extract_issue_info(event)
-    if issue_info is None:
-        return {"status": "ignored", "message": "Could not extract comment info"}
-
-    comment_body = issue_info.get("comment_body", "")
-
-    # 检查是否包含 @gwei 触发词
-    if "@gwei" not in comment_body.lower():
-        return {"status": "ignored", "message": "Comment does not mention @gwei"}
-
-    logger.info(
-        f"Comment event with @gwei: repo={issue_info['owner']}/{issue_info['repo']} "
-        f"issue=#{issue_info['issue_number']} comment_id={issue_info.get('comment_id')}"
-    )
-
-    # 通过 sensor 分析评论内容
-    sensor_data = {
-        "issue": {
-            "title": f"Comment on issue #{issue_info['issue_number']}",
-            "body": comment_body,
-        }
-    }
-    analysis = await sensor.handle_event("issue_comment.created", sensor_data)
-
-    # 回复分析结果
-    if analysis.get("reply") and issue_info.get("repo") and issue_info.get("issue_number"):
-        repo = f"{issue_info['owner']}/{issue_info['repo']}"
-        try:
-            await adapter.execute_task("create_comment", {
-                "repo": repo,
-                "issue_number": issue_info["issue_number"],
-                "body": analysis["reply"],
-            })
-            logger.info(f"Posted reply to @gwei mention on {repo}#{issue_info['issue_number']}")
-        except Exception as e:
-            logger.error(f"Failed to post reply: {e}")
-
-    return {
-        "status": "ok",
-        "event_type": event["type"],
-        "action": event["action"],
-        "issue_info": issue_info,
-        "analysis": analysis,
-    }
+    return await _enqueue_workflow("gwei-triage", issue_triage_workflow, delivery_id, payload)
 
 
 @router.post("/webhook/github")
 async def github_webhook(request: Request):
-    """处理 GitHub Webhook Issue 事件。"""
+    """处理 GitHub Webhook（issues / issue_comment / ping）。"""
     body = await _validate_webhook(request)
     headers = _build_headers_dict(request)
     event_type = headers.get("X-GitHub-Event", "")
+    delivery_id = headers.get("X-GitHub-Delivery", "") or str(uuid.uuid4())
 
     logger.info(f"Received webhook: {event_type}, delivery: {headers.get('X-GitHub-Delivery')}")
 
-    adapter = get_adapter()
-    sensor = get_sensor()
-
-    if event_type == "issues":
-        return await _process_issue_event(adapter, sensor, headers, body)
-
-    elif event_type == "issue_comment":
-        return await _process_comment_event(adapter, sensor, headers, body)
-
-    elif event_type == "ping":
+    if event_type == "ping":
         return {"status": "ok", "message": "pong"}
+
+    if event_type in ("issues", "issue_comment"):
+        return await _handle_event(event_type, delivery_id, headers, body)
 
     return {"status": "ignored", "event": event_type}
 
@@ -192,12 +155,11 @@ async def github_comment_webhook(request: Request):
     body = await _validate_webhook(request)
     headers = _build_headers_dict(request)
     event_type = headers.get("X-GitHub-Event", "")
+    delivery_id = headers.get("X-GitHub-Delivery", "") or str(uuid.uuid4())
 
     logger.info(f"Received comment webhook: {event_type}, delivery: {headers.get('X-GitHub-Delivery')}")
 
     if event_type != "issue_comment":
         return {"status": "ignored", "message": "Not a comment event"}
 
-    adapter = get_adapter()
-    sensor = get_sensor()
-    return await _process_comment_event(adapter, sensor, headers, body)
+    return await _handle_event(event_type, delivery_id, headers, body)

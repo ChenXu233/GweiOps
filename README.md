@@ -64,6 +64,7 @@ pnpm dev
 
 | 组件 | 职责 |
 |------|------|
+| `workflows/` | 工作流管道（DBOS 持久化执行） |
 | `scheduler/` | 统一调度层 |
 | `state_machine/` | 状态机引擎（S0-S6） |
 | `memory/` | 记忆系统 |
@@ -71,7 +72,21 @@ pnpm dev
 | `llm/` | LLM 客户端 |
 | `db/` | 数据库 |
 | `api/` | HTTP API |
-| `shared/` | 共享工具 |
+| `shared/` | 共享工具（含 Redis 增益层） |
+
+#### 工作流层（DBOS + Redis）
+
+webhook 事件的处理由 [DBOS](https://docs.dbos.dev) 持久化执行（`engine/workflows/pipeline.py`）：
+步骤状态、重试与恢复记录存放在业务库同实例的 `dbos` schema 中，engine 重启后未完成的工作流自动从断点恢复。
+
+| 工作流 | 触发 | 链路 |
+|--------|------|------|
+| `issue_triage_workflow` | issues opened/edited | Sensor 感知分析 → 落库 → 回评 |
+| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → Fixer 补丁建议 → 回评（不自动建 PR） |
+
+Redis（`engine/shared/cache.py`）只承载可丢失的临时状态：webhook 投递去重（防 GitHub 重试）
+与 LLM 分析结果缓存（issue 内容未变不重调 LLM）；Redis 不可用时自动降级放行，
+幂等由 DBOS workflow ID 兜底。工作流的持久化状态一律在 Postgres，不进 Redis。
 
 ### plugins/ - 插件系统
 

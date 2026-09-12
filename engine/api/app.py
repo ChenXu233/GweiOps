@@ -4,18 +4,30 @@
 import logging
 from contextlib import asynccontextmanager
 
+from dbos import DBOS, DBOSConfig
 from fastapi import FastAPI
 
 from engine.api.routes.health import router as health_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.api.routes.webhook import get_adapter, get_sensor
+from engine.shared.config import config
+import engine.workflows.pipeline as pipeline  # noqa: F401 — 导入即注册 DBOS 工作流/步骤
 
 logger = logging.getLogger(__name__)
+
+# DBOS 持久化执行：系统表位于同一 Postgres 实例的独立 dbos schema，
+# URL 归一为同步驱动（DBOS 内部使用 psycopg）。
+dbos = DBOS(
+    config=DBOSConfig(
+        name=config.settings.app_name,
+        system_database_url=config.settings.database_url.replace("+asyncpg", ""),
+    )
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理 - startup 初始化插件，shutdown 关闭插件。"""
+    """应用生命周期管理 - startup 初始化插件与 DBOS，shutdown 逆序关闭。"""
     # Startup: 初始化插件
     logger.info("Initializing plugins...")
     adapter = get_adapter()
@@ -35,9 +47,18 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize SensorAgent: {e}")
         raise
 
+    # Startup: 启动 DBOS 并注册工作流队列
+    logger.info("Launching DBOS...")
+    DBOS.launch()
+    await DBOS.register_queue_async(pipeline.WORKFLOW_QUEUE, worker_concurrency=4)
+    logger.info("DBOS launched (queue: %s)", pipeline.WORKFLOW_QUEUE)
+
     yield
 
-    # Shutdown: 关闭插件
+    # Shutdown: 先停工作流执行器，再关闭插件
+    logger.info("Shutting down DBOS...")
+    dbos.destroy()
+
     logger.info("Shutting down plugins...")
     try:
         await adapter.on_shutdown()
