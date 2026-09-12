@@ -47,8 +47,16 @@ async def dedup_once(key: str, ttl_s: int) -> bool:
         return True
 
 
-async def cached_json(key: str, ttl_s: int, factory: Callable[[], Awaitable[Any]]) -> Any:
-    """读缓存 → 未命中则执行 factory 并回写。Redis 故障时等价于直连 factory。"""
+async def cached_json(
+    key: str,
+    ttl_s: int,
+    factory: Callable[[], Awaitable[Any]],
+    cacheable: Callable[[Any], bool] | None = None,
+) -> Any:
+    """读缓存 → 未命中则执行 factory 并回写。Redis 故障时等价于直连 factory。
+
+    cacheable 返回 False 的结果只返回不缓存（例如降级产物）。
+    """
     client: aredis.Redis | None
     try:
         client = _get_client()
@@ -61,7 +69,7 @@ async def cached_json(key: str, ttl_s: int, factory: Callable[[], Awaitable[Any]
 
     value = await factory()
 
-    if client is not None:
+    if client is not None and (cacheable is None or cacheable(value)):
         try:
             await client.set(key, json.dumps(value, ensure_ascii=False), ex=ttl_s)
         except Exception as e:

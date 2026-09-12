@@ -44,9 +44,18 @@ async def _analyze_via_sensor(payload: dict) -> dict:
 
 
 async def _analyze_with_cache(payload: dict) -> dict:
-    """感知分析 + Redis 结果缓存（内容哈希键，内容未变不重调 LLM）。"""
+    """感知分析 + Redis 结果缓存（内容哈希键，内容未变不重调 LLM）。
+
+    LLM 调用失败时 sensor 会降级返回失败文案——这类结果不缓存，
+    避免 24 小时内反复命中失败产物。
+    """
     key = cache_key("llm-analysis", payload["title"], payload["body"])
-    return await cached_json(key, LLM_ANALYSIS_TTL_S, lambda: _analyze_via_sensor(payload))
+    return await cached_json(
+        key,
+        LLM_ANALYSIS_TTL_S,
+        lambda: _analyze_via_sensor(payload),
+        cacheable=lambda r: "LLM 分析失败" not in str(r.get("llm_analysis", "")),
+    )
 
 
 async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> dict:
