@@ -219,6 +219,7 @@ Hook 管线与能力覆盖就位。红线:平台执行点(租户隔离/认证/�
 | A 租户原语 | [phase-a-tenancy.md](phase-a-tenancy.md) | **已完成**(`0e39f98`..`513050b`);Spike 结论已回写子计划:分区队列 keyless 入队会静默 ENQUEUED,partition key 必须在唯一入队点设置;issues 约束扩展为 (project_id, github_id) |
 | B 插件系统 v2 | [phase-b-plugins.md](phase-b-plugins.md) | **已完成**(`c89b57b`..`51e0cea`);9 个 builtin 插件全部经 manifest 加载;附带修复 engine 镜像缺 plugins/ 的打包 bug 与 4 处潜伏的 `src.services.*` 断链导入 |
 | C 前端门控 | [phase-c-frontend.md](phase-c-frontend.md) | **已完成**(`5cf6cb1`..`9468b7d`);selfhost 档 `/` 与 `/login` 重定向 /dashboard,saas 档显示营销落地页;附带移除 dashboard/ 尸体目录、死脚本与 FSL 许可遗留,补 frontend/LICENSE(AGPL) |
+| B2 UI 插槽 v1 | [phase-b2-ui-slots.md](phase-b2-ui-slots.md) | **已完成**;manifest `ui.widgets` 声明式卡片 + `GET /api/plugins[/widgets]` + Nitro 同源代理(修复前后端通路);dashboard 插槽渲染与 marketplace 真实数据即通 |
 
 每份子计划完成后在本表打勾并附实施 commit 区间;Phase 间发现的新事实回写本总纲
 (例如 A3 的 DBOS 分区实测结论)。
