@@ -32,6 +32,32 @@ class HookSubscription:
     handler: str = "handle_hook"  # 插件实例上的方法名
 
 
+UI_WIDGET_KINDS = ("metric", "list")
+UI_VARIANTS = ("default", "green", "yellow", "red")
+
+
+@dataclass
+class UiWidget:
+    """声明式 UI 卡片——由核心前端按 schema 渲染,插件不注入代码。"""
+
+    slot: str
+    kind: str = "metric"  # metric | list
+    span: int = 1  # 1..4(BentoGrid 列跨度)
+    title: str = ""
+    metrics: list[dict[str, Any]] = field(default_factory=list)  # {label,value,sub?,variant?}
+    items: list[dict[str, Any]] = field(default_factory=list)  # {text}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "slot": self.slot,
+            "kind": self.kind,
+            "span": self.span,
+            "title": self.title,
+            "metrics": self.metrics,
+            "items": self.items,
+        }
+
+
 @dataclass
 class Manifest:
     name: str
@@ -45,6 +71,8 @@ class Manifest:
     hooks_subscribed: list[HookSubscription] = field(default_factory=list)
     capabilities_priority: dict[str, int] = field(default_factory=dict)
     tasks: dict[str, str] = field(default_factory=dict)  # capability -> execute_task 任务名
+    ui_widgets: list[UiWidget] = field(default_factory=list)
+    ui_pages: list[dict[str, Any]] = field(default_factory=list)  # v1 预留透传
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -94,6 +122,32 @@ class Manifest:
             if not point:
                 raise ManifestError(f"{path}: hooks.offered 含空扩展点")
 
+        ui_raw = raw.get("ui") or {}
+        widgets: list[UiWidget] = []
+        for w in ui_raw.get("widgets", []):
+            if not w.get("slot"):
+                raise ManifestError(f"{path}: ui.widget 缺少 slot")
+            if w.get("kind", "metric") not in UI_WIDGET_KINDS:
+                raise ManifestError(f"{path}: 非法 widget kind {w.get('kind')}")
+            span = int(w.get("span", 1))
+            if not 1 <= span <= 4:
+                raise ManifestError(f"{path}: widget span 超出 1-4: {span}")
+            for metric in w.get("metrics", []):
+                variant = metric.get("variant", "default")
+                if variant not in UI_VARIANTS:
+                    raise ManifestError(f"{path}: 非法 widget variant {variant}")
+            widgets.append(
+                UiWidget(
+                    slot=w["slot"],
+                    kind=w.get("kind", "metric"),
+                    span=span,
+                    title=w.get("title", ""),
+                    metrics=list(w.get("metrics") or []),
+                    items=list(w.get("items") or []),
+                )
+            )
+        pages = list(ui_raw.get("pages") or [])
+
         return cls(
             name=raw["name"],
             version=str(raw["version"]),
@@ -108,4 +162,6 @@ class Manifest:
                 str(k): int(v) for k, v in (raw.get("capabilities_priority") or {}).items()
             },
             tasks={str(k): str(v) for k, v in (raw.get("tasks") or {}).items()},
+            ui_widgets=widgets,
+            ui_pages=pages,
         )

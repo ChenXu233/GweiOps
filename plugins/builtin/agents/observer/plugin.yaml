@@ -9,3 +9,14 @@ capabilities:
 - system.monitor
 - metrics.collect
 class_name: ObserverAgent
+ui:
+  widgets:
+  - slot: dashboard.bento
+    kind: metric
+    span: 1
+    title: 观测采样
+    metrics:
+    - label: 采样间隔
+      value: 60s
+      sub: 周期触发(静态演示)
+      variant: green
