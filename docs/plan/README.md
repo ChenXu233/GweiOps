@@ -217,7 +217,7 @@ Hook 管线与能力覆盖就位。红线:平台执行点(租户隔离/认证/�
 | Phase | 子计划文档 | 状态 |
 |---|---|---|
 | A 租户原语 | [phase-a-tenancy.md](phase-a-tenancy.md) | **已完成**(`0e39f98`..`513050b`);Spike 结论已回写子计划:分区队列 keyless 入队会静默 ENQUEUED,partition key 必须在唯一入队点设置;issues 约束扩展为 (project_id, github_id) |
-| B 插件系统 v2 | `docs/plan/phase-b-plugins.md` | 待撰写 |
+| B 插件系统 v2 | [phase-b-plugins.md](phase-b-plugins.md) | **已完成**(`c89b57b`..`51e0cea`);9 个 builtin 插件全部经 manifest 加载;附带修复 engine 镜像缺 plugins/ 的打包 bug 与 4 处潜伏的 `src.services.*` 断链导入 |
 | C 前端门控 | `docs/plan/phase-c-frontend.md` | 待撰写 |
 
 每份子计划完成后在本表打勾并附实施 commit 区间;Phase 间发现的新事实回写本总纲
