@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
+# 构建上下文为仓库根（见 docker-compose*.yml / .github/workflows/build.yml）
+COPY engine/pyproject.toml ./
 RUN pip install --no-cache-dir --prefix=/install .
 
 # =============================================================================
@@ -31,8 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application code
-COPY . .
+# Copy application code（engine 包 + plugins 目录,插件是运行时的组成部分）
+COPY engine/ ./engine/
+COPY plugins/ ./plugins/
 
 # Ensure entrypoint is executable
 RUN chmod +x entrypoint.sh

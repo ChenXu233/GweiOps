@@ -20,9 +20,9 @@ while ! redis-cli -h "$REDIS_HOST" -p "${REDIS_PORT:-6379}" ping >/dev/null 2>&1
 done
 echo "Redis is ready."
 
-# 执行数据库迁移
+# 执行数据库迁移（ini 用 %(here)s 定位 migrations,容器内工作目录为 /app）
 echo "Running Alembic migrations..."
-alembic upgrade head
+alembic -c engine/alembic.ini upgrade head
 
 # 启动 uvicorn，$@ 传入额外参数（如 --reload）
 exec uvicorn engine.api.app:app \

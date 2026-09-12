@@ -17,14 +17,15 @@ services:
 
   engine:
     build:
-      context: ./engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: engine/Dockerfile
     container_name: gwei-engine-dev
     ports:
       - "8000:8000"
     volumes:
-      - ./engine:/app
-    command: ["--reload", "--reload-dir", "/app"]
+      - ./engine:/app/engine
+      - ./plugins:/app/plugins
+    command: ["--reload", "--reload-dir", "/app/engine", "--reload-dir", "/app/plugins"]
     environment:
       DATABASE_URL: "postgresql+asyncpg://gwei:gwei@postgres:5432/gwei"
       REDIS_URL: "redis://redis:6379/0"
