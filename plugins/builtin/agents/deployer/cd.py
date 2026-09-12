@@ -1,6 +1,7 @@
 # src/services/pr_iteration.py
 from dataclasses import dataclass
-from src.services.llm import LLMService
+
+from engine.llm.client import LLMService
 
 
 @dataclass

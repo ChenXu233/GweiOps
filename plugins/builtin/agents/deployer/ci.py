@@ -1,6 +1,7 @@
 # src/services/pr_creator.py
 from dataclasses import dataclass
-from src.services.github import GitHubClient
+
+from plugins.builtin.adapters.github.client import GitHubClient
 
 
 @dataclass

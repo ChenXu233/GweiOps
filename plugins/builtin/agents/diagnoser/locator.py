@@ -1,7 +1,8 @@
 # src/services/reproducer.py
 import asyncio
 from dataclasses import dataclass
-from src.services.git_tool import GitTool
+
+from plugins.builtin.adapters.github.git import GitTool
 
 
 @dataclass

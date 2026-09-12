@@ -34,6 +34,21 @@ message PluginInfo {
     string description = 4;
     repeated TriggerInfo triggers = 5;
     repeated string capabilities = 6;
+    // v2 增量（wire-compatible）：Hook 声明与能力元数据
+    repeated string hooks_offered = 7;
+    repeated HookSubscription hooks_subscribed = 8;
+    // 能力名 -> execute_task 任务名映射（缺省为能力名下划线形式）
+    map<string, string> tasks = 9;
+    // 能力名 -> 覆盖优先级（缺省 0，高者优先）
+    map<string, int32> capabilities_priority = 10;
+}
+
+message HookSubscription {
+    string point = 1;          // 扩展点，如 "comment.posting"
+    string mode = 2;           // observe | transform | veto
+    int32 priority = 3;
+    string failure_mode = 4;   // fail_open | fail_closed
+    string handler = 5;        // 插件实例上的方法名，缺省 handle_hook
 }
 
 enum PluginType {

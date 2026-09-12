@@ -21,6 +21,7 @@ from dbos import DBOS
 
 from engine.db import async_session_factory
 from engine.db.models import AgentSession, Issue, Project, Tenant
+from engine.plugin_manager import events, hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
 from engine.shared.runtime import get_adapter, get_sensor
 
@@ -143,7 +144,19 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
 
 
 async def _generate_patches_impl(payload: dict) -> list[dict]:
-    """调用 Fixer 智能体生成候选补丁建议。"""
+    """经能力通道调用修复智能体;注册表不可用时回退直连(单测与降级路径)。"""
+    try:
+        result = await registry.run_capability("patch.generate", {
+            "title": payload["title"],
+            "body": payload["body"],
+            "file_path": "",
+        })
+        return list(result.get("patches", []))
+    except LookupError:
+        logger.info("No provider for patch.generate; falling back to direct FixerAgent")
+    except Exception as e:
+        logger.warning("Capability patch.generate failed, falling back: %s", e)
+
     from plugins.builtin.agents.fixer.plugin import FixerAgent
 
     fixer = FixerAgent()
@@ -227,28 +240,80 @@ async def post_comment_step(payload: dict, body: str) -> dict:
     return await _post_comment_impl(payload, body)
 
 
+@DBOS.step()
+async def publish_event_step(event: str, payload: dict) -> bool:
+    """事件以 step 封装获得 checkpoint——恢复重放不会重复发布。"""
+    await events.publish(event, payload)
+    return True
+
+
+@DBOS.step()
+async def apply_hooks_step(point: str, payload: dict) -> dict:
+    """Hook 管线以 step 封装获得 checkpoint,返回 {"allowed", "payload"}。"""
+    return await hooks.apply(point, payload)
+
+
 @DBOS.workflow()
 async def issue_triage_workflow(payload: dict) -> dict:
-    """Issue 感知工作流：分析 → 落库 → 回评。"""
+    """Issue 感知工作流：分析 → 落库 → Hook 观察点 → 事件链 → 回评。"""
     analysis: dict[str, Any] = await analyze_issue_step(payload)
     record = await persist_triage_step(payload, analysis, status="TRIAGED")
+
+    hooked = await apply_hooks_step("issue.triaged", {
+        "tenant_slug": payload["tenant_slug"],
+        "repo_full_name": payload["repo_full_name"],
+        "issue": {"title": payload["title"], "body": payload["body"]},
+        "analysis": analysis,
+    })
+    hooked_payload = hooked["payload"]
+
+    # 保守事件链:diagnoser 经 manifest 订阅 sensor.processed 自动触发
+    await publish_event_step("sensor.processed", hooked_payload)
 
     posted: dict[str, Any] = {"posted": False}
     reply = analysis.get("reply")
     if reply:
-        posted = await post_comment_step(payload, reply)
+        gated = await apply_hooks_step("comment.posting", {
+            "tenant_slug": payload["tenant_slug"],
+            "repo_full_name": payload["repo_full_name"],
+            "issue_number": payload["issue_number"],
+            "body": reply,
+        })
+        if gated["allowed"]:
+            posted = await post_comment_step(payload, gated["payload"]["body"])
+        else:
+            posted = {"posted": False, "vetoed": True}
 
     return {"record": record, "posted": posted}
 
 
 @DBOS.workflow()
 async def fix_suggestion_workflow(payload: dict) -> dict:
-    """@gwei 修复建议工作流：落库 → 补丁建议 → 格式化 → 回评（不自动建 PR）。"""
+    """@gwei 修复建议工作流：落库 → 补丁建议 → Hook → 格式化 → 回评（不自动建 PR）。"""
     analysis = await analyze_issue_step(payload)
     record = await persist_triage_step(payload, analysis, status="FIX_REQUESTED")
 
     patches = await generate_patches_step(payload)
+    hooked = await apply_hooks_step("patch.generated", {
+        "tenant_slug": payload["tenant_slug"],
+        "repo_full_name": payload["repo_full_name"],
+        "patches": patches,
+    })
+    if hooked["allowed"]:
+        patches = hooked["payload"]["patches"]
+
     reply = _format_suggestion_reply(payload, patches)
-    posted = await post_comment_step(payload, reply)
+    gated = await apply_hooks_step("comment.posting", {
+        "tenant_slug": payload["tenant_slug"],
+        "repo_full_name": payload["repo_full_name"],
+        "issue_number": payload["issue_number"],
+        "body": reply,
+    })
+
+    posted: dict[str, Any] = {"posted": False}
+    if gated["allowed"]:
+        posted = await post_comment_step(payload, gated["payload"]["body"])
+    else:
+        posted = {"posted": False, "vetoed": True}
 
     return {"record": record, "patch_count": len(patches), "posted": posted}

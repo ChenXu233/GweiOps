@@ -57,3 +57,7 @@ class PluginBase(ABC):
     async def execute_task(self, task: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """执行任务（调度智能体触发）"""
         pass
+
+    async def handle_hook(self, point: str, payload: Dict[str, Any]) -> Any:
+        """Hook 订阅处理器（默认恒等返回，插件按清单声明的 mode 自行约定返回值）"""
+        return payload

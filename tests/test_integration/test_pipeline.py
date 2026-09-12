@@ -291,6 +291,24 @@ class TestWorkflowEndToEnd:
 
             session, added = _make_fake_session_factory()
 
+            # 注册一个事件链 spy,验证 triage 发布 sensor.processed 且载荷带租户
+            from engine.plugin_manager import registry as plugin_registry
+            from engine.plugin_manager.manifest import Manifest
+
+            received = []
+
+            class SpyPlugin:
+                async def handle_event(self, event, data):
+                    received.append((event, data))
+
+            spy_manifest = Manifest(
+                name="spy-agent", version="1.0.0", description="spy",
+                type=__import__("engine.plugin_manager.base", fromlist=["PluginType"]).PluginType.AGENT,
+                class_name="SpyPlugin",
+                triggers=[{"type": "event", "events": ["sensor.processed"]}],
+            )
+            plugin_registry.register(spy_manifest, SpyPlugin())
+
             with patch.object(pipeline_module, "get_sensor") as mock_get_sensor, patch.object(
                 pipeline_module, "get_adapter"
             ) as mock_get_adapter, patch.object(
@@ -344,5 +362,8 @@ class TestWorkflowEndToEnd:
                 assert len(added) == 4  # Tenant + Project + Issue + AgentSession
                 sensor.handle_event.assert_awaited_once()
                 adapter.execute_task.assert_awaited_once()
+                # 保守事件链:spy 订阅者收到 sensor.processed 且载荷带租户
+                assert received and received[0][0] == "sensor.processed"
+                assert received[0][1]["tenant_slug"] == "default"
         finally:
             DBOS.destroy(destroy_registry=True)

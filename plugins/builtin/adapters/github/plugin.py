@@ -1,12 +1,6 @@
 # plugins/builtin/adapters/github/plugin.py
 from typing import Dict, Any
-import sys
-import os
-
-# 添加 engine 到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'engine'))
-
-from plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 from .client import GitHubClient
 from .git import GitTool
 

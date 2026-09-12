@@ -1,10 +1,5 @@
 from typing import Dict, Any
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'engine'))
-
-from plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 from .ci import PRCreator
 from .cd import PRIterationService
 

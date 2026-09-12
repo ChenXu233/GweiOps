@@ -1,5 +1,19 @@
 # src/services/review_report.py
-from src.services.code_reviewer import ReviewResult, ReviewIssue
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ReviewIssue:
+    severity: str
+    message: str
+    line: int | None = None
+
+
+@dataclass
+class ReviewResult:
+    issues: list[ReviewIssue] = field(default_factory=list)
+    score: int = 0
+    summary: str = ""
 
 
 class ReviewReportGenerator:
