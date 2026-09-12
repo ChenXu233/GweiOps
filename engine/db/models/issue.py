@@ -1,6 +1,15 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, BigInteger, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import (
+    String,
+    Integer,
+    BigInteger,
+    Text,
+    DateTime,
+    ForeignKey,
+    JSON,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from engine.db.base import Base
@@ -17,9 +26,10 @@ except ImportError:
 
 class Issue(Base):
     __tablename__ = "issues"
+    __table_args__ = (UniqueConstraint("project_id", "github_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    github_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    github_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"))
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -227,6 +227,9 @@ class Settings(BaseSettings):
     # ---- 部署配置 ----
     deployment_mode: str = "saas"  # saas or self-hosted
 
+    # ---- 租户 ----
+    default_tenant_slug: str = "default"  # webhook 事件的缺省租户(多租户映射接入前)
+
     # .env 可能包含部署侧附加变量（如 prod 密码），容忍未知键避免启动崩溃
     model_config = {
         "env_file": ".env",

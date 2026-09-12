@@ -47,11 +47,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize SensorAgent: {e}")
         raise
 
-    # Startup: 启动 DBOS 并注册工作流队列
+    # Startup: 启动 DBOS 并注册工作流队列(按租户分区,公平性执行点)
     logger.info("Launching DBOS...")
     DBOS.launch()
-    await DBOS.register_queue_async(pipeline.WORKFLOW_QUEUE, worker_concurrency=4)
-    logger.info("DBOS launched (queue: %s)", pipeline.WORKFLOW_QUEUE)
+    await DBOS.register_queue_async(pipeline.WORKFLOW_QUEUE, partition_concurrency=4)
+    logger.info("DBOS launched (partitioned queue: %s)", pipeline.WORKFLOW_QUEUE)
 
     yield
 

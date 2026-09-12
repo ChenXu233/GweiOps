@@ -9,10 +9,11 @@ import json
 import logging
 import uuid
 
-from dbos import DBOS, SetWorkflowID
+from dbos import DBOS, SetEnqueueOptions, SetWorkflowID
 from fastapi import APIRouter, HTTPException, Request
 
 from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
+from engine.shared.config import config
 from engine.shared.runtime import get_adapter, get_sensor  # noqa: F401 — 兼容既有导入
 from engine.workflows.pipeline import (
     WORKFLOW_QUEUE,
@@ -73,6 +74,7 @@ def _extract_payload(raw: dict, issue_info: dict, event_type: str) -> dict | Non
         source = "issue"
 
     return {
+        "tenant_slug": config.settings.default_tenant_slug,
         "repo_full_name": f"{issue_info['owner']}/{issue_info['repo']}",
         "repo_github_id": repo_id,
         "issue_github_id": issue_id,
@@ -84,13 +86,21 @@ def _extract_payload(raw: dict, issue_info: dict, event_type: str) -> dict | Non
 
 
 async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: dict) -> dict:
-    """以投递 ID 为幂等键入队（Redis 去重失效时由 DBOS workflow ID 兜底）。"""
+    """以投递 ID 为幂等键、租户为分区键入队。
+
+    分区队列的入队必须携带 partition_key（Spike 实测：缺 key 的工作流行会被
+    静默创建且永不被执行），因此三个上下文管理器缺一不可：
+    SetWorkflowID 幂等 + SetEnqueueOptions 分区 + enqueue_workflow_async。
+    """
     workflow_id = f"{prefix}-{delivery_id}"
-    with SetWorkflowID(workflow_id):
+    with SetWorkflowID(workflow_id), SetEnqueueOptions(
+        queue_partition_key=payload["tenant_slug"]
+    ):
         await DBOS.enqueue_workflow_async(WORKFLOW_QUEUE, workflow, payload)
     logger.info(
-        "Enqueued workflow %s (%s#%s)",
+        "Enqueued workflow %s (tenant=%s %s#%s)",
         workflow_id,
+        payload["tenant_slug"],
         payload["repo_full_name"],
         payload["issue_number"],
     )
@@ -118,8 +128,11 @@ async def _handle_event(event_type: str, delivery_id: str, headers: dict, body: 
     if payload is None:
         return {"status": "ignored", "message": "Missing repository/issue id"}
 
-    # 投递去重：GitHub 会重试投递，防止重复触发工作流
-    if not await dedup_once(f"gwei:webhook-dedup:{delivery_id}", WEBHOOK_DEDUP_TTL_S):
+    # 投递去重（键带租户段）：GitHub 会重试投递，防止重复触发工作流
+    if not await dedup_once(
+        f"gwei:{payload['tenant_slug']}:webhook-dedup:{delivery_id}",
+        WEBHOOK_DEDUP_TTL_S,
+    ):
         return {"status": "duplicate", "workflow_id": f"gwei-dedup-{delivery_id}"}
 
     if event_type == "issue_comment":

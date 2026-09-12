@@ -314,6 +314,7 @@ class TestWorkflowEndToEnd:
                 mock_get_adapter.return_value = adapter
 
                 payload = {
+                    "tenant_slug": "default",
                     "repo_full_name": "my-org/my-repo",
                     "repo_github_id": 1,
                     "issue_github_id": 100,
@@ -339,7 +340,8 @@ class TestWorkflowEndToEnd:
                 )
 
                 assert result["posted"]["posted"] is True
-                assert len(added) == 3  # Project + Issue + AgentSession
+                assert result["record"]["tenant_id"]
+                assert len(added) == 4  # Tenant + Project + Issue + AgentSession
                 sensor.handle_event.assert_awaited_once()
                 adapter.execute_task.assert_awaited_once()
         finally:

@@ -20,7 +20,7 @@ from sqlalchemy import select
 from dbos import DBOS
 
 from engine.db import async_session_factory
-from engine.db.models import AgentSession, Issue, Project
+from engine.db.models import AgentSession, Issue, Project, Tenant
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
 from engine.shared.runtime import get_adapter, get_sensor
 
@@ -49,7 +49,9 @@ async def _analyze_with_cache(payload: dict) -> dict:
     LLM 调用失败时 sensor 会降级返回失败文案——这类结果不缓存，
     避免 24 小时内反复命中失败产物。
     """
-    key = cache_key("llm-analysis", payload["title"], payload["body"])
+    key = cache_key(
+        "llm-analysis", payload.get("tenant_slug", ""), payload["title"], payload["body"]
+    )
     return await cached_json(
         key,
         LLM_ANALYSIS_TTL_S,
@@ -59,16 +61,28 @@ async def _analyze_with_cache(payload: dict) -> dict:
 
 
 async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> dict:
-    """按 GitHub ID 幂等 upsert Project/Issue，并新建 AgentSession 记录本次运行。"""
+    """按租户与 GitHub ID 幂等 upsert Tenant/Project/Issue,并新建 AgentSession。"""
     async with async_session_factory() as session:
         try:
+            tenant = (
+                await session.execute(select(Tenant).where(Tenant.slug == payload["tenant_slug"]))
+            ).scalar_one_or_none()
+            if tenant is None:
+                tenant = Tenant(slug=payload["tenant_slug"], name=payload["tenant_slug"])
+                session.add(tenant)
+                await session.flush()
+
             project = (
                 await session.execute(
-                    select(Project).where(Project.github_id == payload["repo_github_id"])
+                    select(Project).where(
+                        Project.tenant_id == tenant.id,
+                        Project.github_id == payload["repo_github_id"],
+                    )
                 )
             ).scalar_one_or_none()
             if project is None:
                 project = Project(
+                    tenant_id=tenant.id,
                     github_id=payload["repo_github_id"],
                     name=payload["repo_full_name"],
                 )
@@ -77,7 +91,10 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
 
             issue = (
                 await session.execute(
-                    select(Issue).where(Issue.github_id == payload["issue_github_id"])
+                    select(Issue).where(
+                        Issue.project_id == project.id,
+                        Issue.github_id == payload["issue_github_id"],
+                    )
                 )
             ).scalar_one_or_none()
             if issue is None:
@@ -102,6 +119,7 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
                 status=status,
                 state={
                     "workflow_id": DBOS.workflow_id,
+                    "tenant_id": str(tenant.id),
                     "source": payload.get("source"),
                     "analysis": {
                         "labels": analysis.get("labels"),
@@ -114,6 +132,7 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
             session.add(agent_session)
             await session.commit()
             return {
+                "tenant_id": str(tenant.id),
                 "project_id": str(project.id),
                 "issue_id": str(issue.id),
                 "session_id": str(agent_session.id),
