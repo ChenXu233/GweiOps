@@ -15,6 +15,6 @@ class ApprovalVote(Base):
     voter_role: Mapped[str] = mapped_column(String(50), nullable=False)
     vote: Mapped[str] = mapped_column(String(50), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     pr: Mapped["PullRequest"] = relationship(back_populates="votes")
