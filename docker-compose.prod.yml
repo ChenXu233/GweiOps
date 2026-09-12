@@ -72,6 +72,7 @@ services:
     environment:
       NUXT_PUBLIC_API_BASE: "/api"
       NUXT_PUBLIC_USE_MOCK: "false"
+      NUXT_PUBLIC_DEPLOYMENT_MODE: "selfhost"
     restart: unless-stopped
     logging:
       driver: "json-file"

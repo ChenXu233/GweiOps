@@ -1,5 +1,6 @@
 <script setup lang="ts">
-definePageMeta({ layout: false })
+// 登录页仅 SaaS 档可见(selfhost 使用本地管理员令牌,尚无认证后端)
+definePageMeta({ layout: false, modes: ['saas'] })
 </script>
 
 <template>

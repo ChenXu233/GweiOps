@@ -1,5 +1,6 @@
 <script setup lang="ts">
-definePageMeta({ layout: false })
+// 营销落地页仅 SaaS 档可见;selfhost 档由全局 middleware 重定向到 /dashboard
+definePageMeta({ layout: false, modes: ['saas'] })
 </script>
 
 <template>
