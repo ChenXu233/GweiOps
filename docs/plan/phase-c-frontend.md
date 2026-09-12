@@ -1,6 +1,6 @@
 # Phase C 子计划:前端单应用模式门控
 
-> 状态:实施中 | 母本:[docs/plan/README.md](README.md) Phase C
+> 状态:已实施(`5cf6cb1` 子计划,`58d2823` 门控,`9468b7d` 清理) | 母本:[docs/plan/README.md](README.md) Phase C
 
 ## 探索结论
 
