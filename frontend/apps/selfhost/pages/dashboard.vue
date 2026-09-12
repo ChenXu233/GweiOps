@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDashboard } from '@gwei/core/composables/useDashboard'
+import { usePluginWidgets } from '@gwei/core/composables/usePluginWidgets'
 import BentoGrid from '@gwei/core/components/BentoGrid.vue'
 import BentoCell from '@gwei/core/components/BentoCell.vue'
 import StatusDot from '@gwei/core/components/StatusDot.vue'
 import MetricCard from '@gwei/core/components/MetricCard.vue'
 import CanaryProgress from '@gwei/core/components/CanaryProgress.vue'
 import EmptyState from '@gwei/core/components/EmptyState.vue'
+import PluginWidgetCard from '@gwei/core/components/PluginWidgetCard.vue'
 import Badge from '@gwei/core/components/ui/Badge.vue'
 
 const severityColors = {
@@ -16,6 +18,9 @@ const severityColors = {
 }
 
 const { data: dashboard, pendingIssues, overnightEvents, canaryStatuses, loading } = useDashboard()
+
+// 插件 UI 插槽:插件经 manifest 声明的卡片(失败静默为空)
+const { widgets: pluginWidgets } = usePluginWidgets('dashboard.bento')
 
 const canary = computed(() => canaryStatuses.value[0])
 
@@ -182,6 +187,13 @@ function statusLabel(status: string): string {
           </div>
         </div>
       </BentoCell>
+
+      <!-- 插件插槽:manifest 声明的声明式卡片 -->
+      <PluginWidgetCard
+        v-for="widget in pluginWidgets"
+        :key="`${widget.plugin}:${widget.title}`"
+        :widget="widget"
+      />
 
       <!-- 昨夜回顾 -->
       <BentoCell :span="4">

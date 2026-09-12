@@ -1,6 +1,7 @@
 import type { DashboardData, PendingIssue, OvernightEvent, CanaryStatus } from '../types/dashboard'
 import type { Issue } from '../types/issues'
 import type { Repo, Plugin, TeamSettings } from '../types/repos'
+import type { PluginWidget } from '../types/plugin'
 
 export const mockDashboard: DashboardData = {
   status: 'healthy',
@@ -137,3 +138,14 @@ export const mockTeamSettings: TeamSettings = {
   notificationChannels: ['飞书', '邮件'],
   ssoProvider: 'GitHub OAuth',
 }
+
+export const mockPluginWidgets: PluginWidget[] = [
+  {
+    plugin: 'observer-agent',
+    slot: 'dashboard.bento',
+    kind: 'metric',
+    span: 1,
+    title: '观测采样',
+    metrics: [{ label: '采样间隔', value: '60s', sub: '周期触发(静态演示)', variant: 'green' }],
+  },
+]

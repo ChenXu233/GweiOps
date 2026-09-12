@@ -1,6 +1,7 @@
 import type { DashboardData, PendingIssue, OvernightEvent, CanaryStatus } from '../types/dashboard'
 import type { Issue } from '../types/issues'
 import type { Repo, Plugin, TeamSettings } from '../types/repos'
+import type { PluginManifestDTO, PluginWidgetDTO } from '../types/plugin'
 
 const BASE_URL = import.meta.env.NUXT_PUBLIC_API_BASE || '/api'
 
@@ -49,6 +50,10 @@ export const ReposApi = {
 
 export const PluginsApi = {
   list: () => apiClient.get<Plugin[]>('/plugins'),
+  // engine 原始清单(含 capabilities/widgets/pages 声明)
+  manifests: () => apiClient.get<PluginManifestDTO[]>('/plugins'),
+  widgets: (slot: string) =>
+    apiClient.get<PluginWidgetDTO[]>(`/plugins/widgets?slot=${encodeURIComponent(slot)}`),
 }
 
 export const SettingsApi = {

@@ -20,6 +20,30 @@ export interface Plugin {
   installed: boolean
 }
 
+export type PluginWidgetVariant = 'default' | 'green' | 'yellow' | 'red'
+
+export interface PluginWidgetMetric {
+  label: string
+  value: string | number
+  sub?: string
+  variant?: PluginWidgetVariant
+}
+
+export interface PluginWidgetItem {
+  text: string
+}
+
+/** 插件经 manifest 声明的 UI 卡片(声明式 schema,核心渲染) */
+export interface PluginWidget {
+  plugin: string
+  slot: string
+  kind: 'metric' | 'list'
+  span: number
+  title: string
+  metrics?: PluginWidgetMetric[]
+  items?: PluginWidgetItem[]
+}
+
 export interface TeamSettings {
   teamName: string
   memberCount: number
