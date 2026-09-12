@@ -1,6 +1,6 @@
 # Phase A 子计划:租户原语
 
-> 状态:实施中 | 母本:[docs/plan/README.md](README.md) Phase A | 实施区间:待填
+> 状态:已实施(`0e39f98` 子计划,`513050b` 实现) | 母本:[docs/plan/README.md](README.md) Phase A
 
 相对总纲的三个细化决策(实施前已核实 API/Schema):
 
