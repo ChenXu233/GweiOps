@@ -73,3 +73,26 @@ def test_plugin_ui_unknown_plugin_404():
     client = _client()
     resp = client.get("/api/plugins/no-such-plugin/ui/index.html")
     assert resp.status_code == 404
+
+
+def test_metrics_endpoint_snapshot():
+    from engine.shared.metrics import metrics as collector
+
+    collector.increment("gwei_test_probe_total", {"k": "v"})
+    client = _client()
+    resp = client.get("/api/metrics", params={"prefix": "gwei_test_probe_total"})
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert any(r["name"] == "gwei_test_probe_total" for r in rows)
+
+
+def test_widget_live_metric_fills_value():
+    from engine.shared.metrics import metrics as collector
+
+    collector.increment("gwei_llm_calls_total")
+    client = _client()
+    resp = client.get("/api/plugins/widgets", params={"slot": "dashboard.bento"})
+    widgets = [w for w in resp.json() if w["plugin"] == "observer-agent"]
+    assert widgets, "observer widget 缺失"
+    llm = next(m for m in widgets[0]["metrics"] if m["label"] == "LLM 调用")
+    assert llm["value"] >= 1, "widget 应填充收集器实时值"

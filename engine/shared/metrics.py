@@ -54,6 +54,27 @@ class MetricsCollector:
             labels=labels or {},
         ))
 
+    def snapshot(self, prefix: str | None = None) -> list[Metric]:
+        """当前各时间序列的最新值(按 name+labels 去重,可按名称前缀过滤)。"""
+        latest: dict[tuple[str, tuple[tuple[str, str], ...]], Metric] = {}
+        for m in self._metrics:
+            if prefix and not m.name.startswith(prefix):
+                continue
+            key = (m.name, tuple(sorted(m.labels.items())))
+            latest[key] = m
+        return list(latest.values())
+
+    def sum_metric(self, name: str, labels: dict[str, str] | None = None) -> float:
+        """汇总同名(且匹配给定标签)序列的当前值;计数器语义下即总增量。"""
+        total = 0.0
+        for m in self.snapshot(prefix=name):
+            if m.name != name:
+                continue
+            if labels and any(m.labels.get(k) != v for k, v in labels.items()):
+                continue
+            total += m.value
+        return total
+
     def get_counter(self, name: str, labels: dict[str, str] | None = None) -> int:
         """获取计数器值。"""
         key = self._make_key(name, labels)

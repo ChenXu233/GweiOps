@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from engine.plugin_manager.registry import registry
+from engine.shared.metrics import metrics
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -48,8 +49,25 @@ async def list_widgets(slot: str = Query("dashboard.bento")) -> list[dict]:
                 continue
             entry = w.to_dict()
             entry["plugin"] = manifest.name
+            # 实时值:metric 条目声明 metric.name 时以收集器当前值填充
+            for metric in entry.get("metrics", []):
+                ref = metric.get("metric")
+                if isinstance(ref, dict) and ref.get("name"):
+                    metric["value"] = metrics.sum_metric(
+                        ref["name"], ref.get("labels")
+                    )
             widgets.append(entry)
     return widgets
+
+
+@router.get("/api/metrics")
+async def list_metrics(prefix: str = Query("")) -> list[dict]:
+    """指标快照(最新值序列),供插件页面经桥只读拉取。"""
+    rows = metrics.snapshot(prefix=prefix or None)
+    return [
+        {"name": m.name, "labels": m.labels, "value": m.value}
+        for m in sorted(rows, key=lambda m: m.name)
+    ]
 
 
 @router.get("/api/plugins/{name}/ui/{file_path:path}")

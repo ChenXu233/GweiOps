@@ -13,13 +13,27 @@ ui:
   widgets:
   - slot: dashboard.bento
     kind: metric
-    span: 1
-    title: 观测采样
+    span: 2
+    title: 观测总览
     metrics:
-    - label: 采样间隔
-      value: 60s
-      sub: 周期触发(静态演示)
+    - label: 事件发布
+      value: 0
+      sub: 累计
       variant: green
+      metric:
+        name: plugin_events_published_total
+    - label: LLM 调用
+      value: 0
+      sub: 累计
+      variant: green
+      metric:
+        name: gwei_llm_calls_total
+    - label: Hook 否决
+      value: 0
+      sub: 累计
+      variant: yellow
+      metric:
+        name: plugin_hook_veto_total
   pages:
   - title: 观测采样
     entry: index.html
