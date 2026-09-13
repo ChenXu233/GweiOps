@@ -221,6 +221,10 @@ Hook 管线与能力覆盖就位。红线:平台执行点(租户隔离/认证/�
 | C 前端门控 | [phase-c-frontend.md](phase-c-frontend.md) | **已完成**(`5cf6cb1`..`9468b7d`);selfhost 档 `/` 与 `/login` 重定向 /dashboard,saas 档显示营销落地页;附带移除 dashboard/ 尸体目录、死脚本与 FSL 许可遗留,补 frontend/LICENSE(AGPL) |
 | B2 UI 插槽 v1 | [phase-b2-ui-slots.md](phase-b2-ui-slots.md) | **已完成**;manifest `ui.widgets` 声明式卡片 + `GET /api/plugins[/widgets]` + Nitro 同源代理(修复前后端通路);dashboard 插槽渲染与 marketplace 真实数据即通 |
 | B3 iframe 页面 | [phase-b3-iframe-pages.md](phase-b3-iframe-pages.md) | **已完成**;manifest `ui.pages` + engine 资产服务(穿越防护)+ `/plugins/[name]` 沙箱页 + marketplace 入口;postMessage 桥随认证阶段 |
+| B4' 指标与桥 | `9829a46`+`101fa78` | **已完成**;`GET /api/metrics` 快照、widget 实时值填充、只读 postMessage 桥(白名单)与 observer 页面实时化 |
+| B4'' 控制台数据 | `35b4ca9` | **已完成**;dashboard/issues/repos/settings 真实接口(诚实零值口径),前端真实模式全端点即通;conftest 门控约定与隔离修复 |
+| B4''' 用量计量 | `3f3ed6d` | **已完成**;LLM 调用时长/次数/token 计入收集器,session state 记录 llm_tokens(计费插件聚合源) |
+| B5 gRPC 插件 | [phase-b4-grpc.md](phase-b4-grpc.md) | **骨架完成**(`b594c62`);stub 代码生成管线与 demo 插件待实施 |
 
 每份子计划完成后在本表打勾并附实施 commit 区间;Phase 间发现的新事实回写本总纲
 (例如 A3 的 DBOS 分区实测结论)。
