@@ -20,3 +20,6 @@ ui:
       value: 60s
       sub: 周期触发(静态演示)
       variant: green
+  pages:
+  - title: 观测采样
+    entry: index.html

@@ -41,3 +41,35 @@ def test_widgets_unknown_slot_returns_empty():
     resp = client.get("/api/plugins/widgets", params={"slot": "no.such.slot"})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_plugin_manifest_exposes_observer_page():
+    client = _client()
+    plugins = {p["name"]: p for p in client.get("/api/plugins").json()}
+    observer = plugins["observer-agent"]
+    assert observer["pages"] == [{"title": "观测采样", "entry": "index.html"}]
+
+
+def test_plugin_ui_asset_served():
+    client = _client()
+    resp = client.get("/api/plugins/observer-agent/ui/index.html")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "观测采样" in resp.text
+
+
+def test_plugin_ui_path_traversal_rejected():
+    client = _client()
+    for evil in (
+        "/api/plugins/observer-agent/ui/..%2f..%2fplugin.yaml",
+        "/api/plugins/observer-agent/ui/../plugin.yaml",
+        "/api/plugins/observer-agent/ui/%2e%2e/plugin.yaml",
+    ):
+        resp = client.get(evil)
+        assert resp.status_code == 404, evil
+
+
+def test_plugin_ui_unknown_plugin_404():
+    client = _client()
+    resp = client.get("/api/plugins/no-such-plugin/ui/index.html")
+    assert resp.status_code == 404

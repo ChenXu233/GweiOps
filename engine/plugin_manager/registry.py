@@ -37,6 +37,7 @@ class PluginRegistry:
     def __init__(self) -> None:
         self._manifests: dict[str, Manifest] = {}
         self._instances: dict[str, PluginBase] = {}
+        self._dirs: dict[str, Path] = {}
         self._event_index: dict[str, list[str]] = {}
         self._capability_index: dict[str, list[_CapabilityProvider]] = {}
         self._hook_index: dict[str, list[tuple[int, str]]] = {}
@@ -104,14 +105,22 @@ class PluginRegistry:
         module_name = ".".join((([prefix] if prefix else []) + list(rel.parts) + ["plugin"]))
         module = importlib.import_module(module_name)
         instance = getattr(module, manifest.class_name)()
-        self.register(manifest, instance)
+        self.register(manifest, instance, plugin_dir=manifest_path.parent)
 
-    def register(self, manifest: Manifest, instance: PluginBase) -> None:
+    def plugin_dir(self, name: str) -> Path | None:
+        """插件目录(含 plugin.yaml 的目录);未注册返回 None。"""
+        return self._dirs.get(name)
+
+    def register(
+        self, manifest: Manifest, instance: PluginBase, plugin_dir: Path | None = None
+    ) -> None:
         if manifest.name in self._manifests:
             raise ValueError(f"Duplicate plugin name: {manifest.name}")
 
         self._manifests[manifest.name] = manifest
         self._instances[manifest.name] = instance
+        if plugin_dir is not None:
+            self._dirs[manifest.name] = plugin_dir
 
         for event in manifest.event_subscriptions:
             self._event_index.setdefault(event, []).append(manifest.name)
@@ -131,6 +140,7 @@ class PluginRegistry:
     def _reset(self) -> None:
         self._manifests.clear()
         self._instances.clear()
+        self._dirs.clear()
         self._event_index.clear()
         self._capability_index.clear()
         self._hook_index.clear()

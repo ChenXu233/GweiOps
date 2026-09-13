@@ -32,6 +32,17 @@ class HookSubscription:
     handler: str = "handle_hook"  # 插件实例上的方法名
 
 
+@dataclass
+class UiPage:
+    """插件经 iframe 沙箱提供的完整页面(静态资产由 engine 服务)。"""
+
+    title: str
+    entry: str = "index.html"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"title": self.title, "entry": self.entry}
+
+
 UI_WIDGET_KINDS = ("metric", "list")
 UI_VARIANTS = ("default", "green", "yellow", "red")
 
@@ -72,7 +83,7 @@ class Manifest:
     capabilities_priority: dict[str, int] = field(default_factory=dict)
     tasks: dict[str, str] = field(default_factory=dict)  # capability -> execute_task 任务名
     ui_widgets: list[UiWidget] = field(default_factory=list)
-    ui_pages: list[dict[str, Any]] = field(default_factory=list)  # v1 预留透传
+    ui_pages: list[UiPage] = field(default_factory=list)
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -146,7 +157,21 @@ class Manifest:
                     items=list(w.get("items") or []),
                 )
             )
-        pages = list(ui_raw.get("pages") or [])
+        pages_raw = ui_raw.get("pages") or []
+        pages: list[UiPage] = []
+        for p in pages_raw:
+            if not p.get("title"):
+                raise ManifestError(f"{path}: ui.page 缺少 title")
+            entry = p.get("entry", "index.html")
+            # 路径安全:禁绝对路径、.. 段与反斜杠,防 iframe 资产穿越
+            if (
+                not entry
+                or "\\" in entry
+                or entry.startswith("/")
+                or any(seg == ".." for seg in entry.split("/"))
+            ):
+                raise ManifestError(f"{path}: 非法 ui.page entry {entry!r}")
+            pages.append(UiPage(title=p["title"], entry=entry))
 
         return cls(
             name=raw["name"],

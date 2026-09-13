@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>观测采样 · Observer</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+         margin: 0; padding: 24px; background: #0b0e14; color: #e6e8ee; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: #8b93a7; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .card { background: #141926; border: 1px solid #232a3d; border-radius: 10px; padding: 16px; }
+  .label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #8b93a7; }
+  .value { font-size: 26px; font-weight: 700; margin: 6px 0 2px; }
+  .sub { font-size: 11px; margin: 0; }
+  .ok { color: #34d399; }
+  .warn { color: #fbbf24; }
+  footer { margin-top: 20px; font-size: 11px; color: #8b93a7; }
+</style>
+</head>
+<body>
+  <h1>观测采样</h1>
+  <p class="sub">observer-agent · 静态演示页(沙箱 iframe,数据接口下轮接入)</p>
+  <div class="grid">
+    <div class="card">
+      <div class="label">采样间隔</div>
+      <div class="value">60s</div>
+      <p class="sub">周期触发器</p>
+    </div>
+    <div class="card">
+      <div class="label">监控目标</div>
+      <div class="value ok">12</div>
+      <p class="sub">全部健康</p>
+    </div>
+    <div class="card">
+      <div class="label">待观测事件</div>
+      <div class="value warn">2</div>
+      <p class="sub">近一小时</p>
+    </div>
+  </div>
+  <footer>GweiOps · sandboxed plugin page — 由 engine 提供资产,与本应用隔离运行</footer>
+</body>
+</html>
