@@ -37,7 +37,15 @@ const { plugins, loading } = useRepoList()
             <template v-if="plugin.price !== null"> · ${{ plugin.price }}/月</template>
             <template v-else> · 免费</template>
           </span>
+          <NuxtLink
+            v-if="plugin.pageTitle"
+            :to="`/plugins/${plugin.id}`"
+            class="text-[11px] h-7 px-3 inline-flex items-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            打开页面
+          </NuxtLink>
           <Button
+            v-else
             :class="[
               'text-[11px] h-7 px-3',
               plugin.installed

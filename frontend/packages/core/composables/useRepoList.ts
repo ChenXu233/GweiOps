@@ -16,6 +16,7 @@ function toPlugin(m: PluginManifestDTO): Plugin {
     author: 'official',
     price: null,
     installed: true,
+    pageTitle: m.pages?.[0]?.title,
   }
 }
 

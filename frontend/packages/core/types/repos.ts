@@ -18,6 +18,8 @@ export interface Plugin {
   author: 'official' | 'community'
   price: number | null
   installed: boolean
+  /** 插件声明了 iframe 页面时的页面标题(用于"打开页面"入口) */
+  pageTitle?: string
 }
 
 export type PluginWidgetVariant = 'default' | 'green' | 'yellow' | 'red'
