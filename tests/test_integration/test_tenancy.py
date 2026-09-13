@@ -60,11 +60,11 @@ requires_postgres = pytest.mark.skipif(
 @requires_postgres
 class TestCompositeUnique:
     def test_same_repo_two_tenants_ok_same_tenant_rejected(self):
-        """同仓库可被两个租户分别安装;同租户重复被拒。"""
-        from sqlalchemy.dialects.postgresql import UUID as PGUUID
+        """同仓库可被两个租户分别安装;同租户重复被拒。(幂等:随机标识,可重复运行)"""
+        import uuid as uuid_mod
 
         from engine.db.base import Base
-        from engine.db.models import Project, Tenant
+        from engine.db.models import Tenant  # noqa: F401 — 注册模型
 
         url = os.environ["GWEI_TEST_DATABASE_URL"]
         engine = sa.create_engine(url)
@@ -73,13 +73,26 @@ class TestCompositeUnique:
             conn.commit()
         Base.metadata.create_all(engine)
 
-        ins_tenant = sa.text(
-            "INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name)"
-        )
-        tenant_a, tenant_b = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+        run = uuid_mod.uuid4().hex[:8]
+        tenant_a = str(uuid_mod.uuid4())
+        tenant_b = str(uuid_mod.uuid4())
+
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name)"
+                ),
+                {"id": tenant_a, "slug": f"a-{run}", "name": "A"},
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO tenants (id, slug, name) VALUES (:id, :slug, :name)"
+                ),
+                {"id": tenant_b, "slug": f"b-{run}", "name": "B"},
+            )
 
         def _try_insert_project(tenant_id: str, github_id: int) -> bool:
-            """成功返回 True;唯一冲突返回 False(并回滚到 savepoint 外)。"""
+            """成功返回 True;唯一冲突返回 False。"""
             try:
                 with engine.begin() as conn:
                     conn.execute(
@@ -93,18 +106,10 @@ class TestCompositeUnique:
             except sa.exc.IntegrityError:
                 return False
 
-        with engine.begin() as conn:
-            conn.execute(
-                ins_tenant, {"id": tenant_a, "slug": "a-test", "name": "A"}
-            )
-            conn.execute(
-                ins_tenant, {"id": tenant_b, "slug": "b-test", "name": "B"}
-            )
-
-        assert _try_insert_project(tenant_a, 900) is True
+        assert _try_insert_project(tenant_a, 900 + int(run[:2], 16)) is True
         # 同租户同 github_id → 拒绝
-        assert _try_insert_project(tenant_a, 900) is False
+        assert _try_insert_project(tenant_a, 900 + int(run[:2], 16)) is False
         # 不同租户同 github_id → 允许
-        assert _try_insert_project(tenant_b, 900) is True
+        assert _try_insert_project(tenant_b, 900 + int(run[:2], 16)) is True
 
         engine.dispose()
