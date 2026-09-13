@@ -220,6 +220,7 @@ Hook 管线与能力覆盖就位。红线:平台执行点(租户隔离/认证/�
 | B 插件系统 v2 | [phase-b-plugins.md](phase-b-plugins.md) | **已完成**(`c89b57b`..`51e0cea`);9 个 builtin 插件全部经 manifest 加载;附带修复 engine 镜像缺 plugins/ 的打包 bug 与 4 处潜伏的 `src.services.*` 断链导入 |
 | C 前端门控 | [phase-c-frontend.md](phase-c-frontend.md) | **已完成**(`5cf6cb1`..`9468b7d`);selfhost 档 `/` 与 `/login` 重定向 /dashboard,saas 档显示营销落地页;附带移除 dashboard/ 尸体目录、死脚本与 FSL 许可遗留,补 frontend/LICENSE(AGPL) |
 | B2 UI 插槽 v1 | [phase-b2-ui-slots.md](phase-b2-ui-slots.md) | **已完成**;manifest `ui.widgets` 声明式卡片 + `GET /api/plugins[/widgets]` + Nitro 同源代理(修复前后端通路);dashboard 插槽渲染与 marketplace 真实数据即通 |
+| B3 iframe 页面 | [phase-b3-iframe-pages.md](phase-b3-iframe-pages.md) | **已完成**;manifest `ui.pages` + engine 资产服务(穿越防护)+ `/plugins/[name]` 沙箱页 + marketplace 入口;postMessage 桥随认证阶段 |
 
 每份子计划完成后在本表打勾并附实施 commit 区间;Phase 间发现的新事实回写本总纲
 (例如 A3 的 DBOS 分区实测结论)。
