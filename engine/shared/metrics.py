@@ -21,10 +21,10 @@ class MetricsCollector:
         self._histograms: dict[str, list[float]] = defaultdict(list)
         self._metrics: list[Metric] = []
 
-    def increment(self, name: str, labels: dict[str, str] | None = None):
+    def increment(self, name: str, labels: dict[str, str] | None = None, amount: float = 1):
         """增加计数器。"""
         key = self._make_key(name, labels)
-        self._counters[key] += 1
+        self._counters[key] += amount
 
         self._metrics.append(Metric(
             name=name,

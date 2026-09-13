@@ -107,8 +107,10 @@ Issue 内容:
         try:
             llm_result = await self.llm.call(system_prompt, user_prompt)
             analysis = llm_result.content
+            llm_tokens = llm_result.tokens_used
         except Exception as e:
             analysis = f"LLM 分析失败: {str(e)}"
+            llm_tokens = 0
 
         return {
             "status": "ok",
@@ -117,6 +119,7 @@ Issue 内容:
             "missing_fields": completeness.missing_fields,
             "completeness_score": completeness.score,
             "llm_analysis": analysis,
+            "llm_tokens": llm_tokens,
         }
 
     def _format_reply(self, analysis: Dict[str, Any]) -> str:

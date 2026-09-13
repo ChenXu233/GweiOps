@@ -127,6 +127,7 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
                         "is_complete": analysis.get("is_complete"),
                         "completeness_score": analysis.get("completeness_score"),
                         "llm_analysis": analysis.get("llm_analysis"),
+                        "llm_tokens": analysis.get("llm_tokens", 0),
                     },
                 },
             )

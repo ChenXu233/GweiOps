@@ -1,7 +1,9 @@
 # engine/llm/client.py
 import asyncio
+import time
 from dataclasses import dataclass
 from engine.shared.config import config
+from engine.shared.metrics import metrics
 
 try:
     from litellm import acompletion
@@ -37,11 +39,24 @@ class LLMService:
         max_retries: int = 3,
         base_delay: float = 1.0,
     ) -> LLMCallResult:
-        """调用 LLM，带重试和指数退避。"""
+        """调用 LLM，带重试和指数退避；调用耗时/次数计入指标(计费计量源)。"""
         last_error = None
         for attempt in range(max_retries):
             try:
-                return await self._call_api(system_prompt, user_prompt)
+                start = time.monotonic()
+                result = await self._call_api(system_prompt, user_prompt)
+                metrics.observe(
+                    "gwei_llm_call_duration_seconds",
+                    time.monotonic() - start,
+                    {"model": self.model},
+                )
+                metrics.increment("gwei_llm_calls_total", {"model": self.model})
+                metrics.increment(
+                    "gwei_llm_tokens_total",
+                    {"model": self.model},
+                    amount=result.tokens_used,
+                )
+                return result
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
