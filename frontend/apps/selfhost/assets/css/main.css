@@ -2,58 +2,180 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 语义色 token:组件只引用名字,换主题只改这里 */
+/* ===========================================================================
+   设计令牌
+   纸(paper)/ 面板(panel)/ 井(well) 是三层平面,层次靠 1px 描边而不是阴影。
+   信号色只有四个:lime = 活着且已验证、amber = 等你判断、coral = 失控、
+   brand = 可交互。solid 是可反色的大色块。
+   =========================================================================== */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
+    --paper: 247 246 242;
+    --panel: 255 255 255;
+    --well: 240 239 233;
+    --ink: 18 18 16;
+    --ink-soft: 96 95 89;
+    --ink-faint: 140 139 130;
+    --line: 227 225 216;
+    --line-soft: 237 235 227;
+    --solid: 18 18 16;
+    --solid-ink: 247 246 242;
+    --brand: 88 78 232;
+    --lime: 214 249 79;
+    --lime-ink: 24 42 4;
+    --amber: 198 134 12;
+    --coral: 214 66 38;
+    --ok: 24 138 78;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --paper: 8 8 10;
+    --panel: 16 16 19;
+    --well: 12 12 15;
+    --ink: 240 239 233;
+    --ink-soft: 158 157 150;
+    --ink-faint: 106 105 100;
+    --line: 36 36 41;
+    --line-soft: 26 26 30;
+    --solid: 26 26 31;
+    --solid-ink: 240 239 233;
+    --brand: 137 124 255;
+    --lime: 198 242 78;
+    --lime-ink: 20 34 4;
+    --amber: 245 186 62;
+    --coral: 255 110 76;
+    --ok: 74 222 128;
   }
 
   * {
-    @apply border-border;
+    border-color: rgb(var(--line));
+  }
+
+  html {
+    color-scheme: light;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: rgb(var(--paper));
+    color: rgb(var(--ink));
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: rgb(var(--lime));
+    color: rgb(var(--lime-ink));
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--line));
+    border: 3px solid rgb(var(--paper));
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--ink-faint));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-panel border border-line bg-panel;
+  }
+
+  .card-well {
+    @apply rounded-panel border border-line-soft bg-well;
+  }
+
+  /* 小号等宽标签:全站唯一的"仪表盘语气" */
+  .mono-label {
+    @apply font-mono text-[10px] uppercase leading-none tracking-[0.16em] text-ink-faint;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .btn {
+    @apply inline-flex h-9 select-none items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-solid {
+    @apply btn bg-ink text-paper hover:bg-ink/85;
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-soft hover:bg-well hover:text-ink;
+  }
+
+  .btn-outline {
+    @apply btn border border-line bg-panel text-ink hover:border-ink/25 hover:bg-well;
+  }
+
+  .btn-icon {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-well hover:text-ink;
+  }
+
+  .tab {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium text-ink-soft transition-colors hover:bg-well hover:text-ink;
+  }
+
+  .tab-active {
+    @apply bg-ink text-paper hover:bg-ink hover:text-paper;
+  }
+
+  .glass {
+    background-color: rgb(var(--panel) / 0.72);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    backdrop-filter: blur(22px) saturate(180%);
+  }
+
+  .glass-bar {
+    background-color: rgb(var(--paper) / 0.68);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  .kbd {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line bg-panel px-1 font-mono text-[10px] text-ink-faint;
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgb(var(--line) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--line) / 0.55) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, black 30%, transparent 78%);
+    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, black 30%, transparent 78%);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .text-balance {
+    text-wrap: balance;
   }
 }

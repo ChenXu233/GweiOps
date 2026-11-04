@@ -4,23 +4,21 @@ import { mockRepos, mockPlugins } from '../mock'
 import type { Repo, Plugin } from '../types/repos'
 import type { PluginManifestDTO } from '../types/plugin'
 
-const USE_MOCK = import.meta.env.NUXT_PUBLIC_USE_MOCK === 'true'
-
 // engine 清单 DTO → 前端 Plugin 形状(市场卡片所需字段)
 function toPlugin(m: PluginManifestDTO): Plugin {
   return {
     id: m.name,
     name: m.name,
-    icon: '🧩',
     description: m.description,
     author: 'official',
     price: null,
     installed: true,
-    pageTitle: m.pages?.[0]?.title,
+    pageTitle: m.pages?.[0]?.title || undefined,
   }
 }
 
 export function useRepoList() {
+  const useMock = useRuntimeConfig().public.useMock === true
   const repos = ref<Repo[]>([])
   const plugins = ref<Plugin[]>([])
   const loading = ref(true)
@@ -30,7 +28,7 @@ export function useRepoList() {
     loading.value = true
     error.value = null
     try {
-      if (USE_MOCK) {
+      if (useMock) {
         repos.value = mockRepos
         plugins.value = mockPlugins
       } else {

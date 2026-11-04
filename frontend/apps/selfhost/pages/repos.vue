@@ -1,84 +1,78 @@
 <script setup lang="ts">
 import { useRepoList } from '@gwei/core/composables/useRepoList'
-import StatusDot from '@gwei/core/components/StatusDot.vue'
-import Badge from '@gwei/core/components/ui/Badge.vue'
-import Button from '@gwei/core/components/ui/Button.vue'
-import EmptyState from '@gwei/core/components/EmptyState.vue'
 
-const statusLabels: Record<string, string> = {
-  running: '运行中',
-  configuring: '待配置',
+const { repos, loading, error, refresh } = useRepoList()
+
+const statusTone: Record<string, 'ok' | 'warn' | 'idle'> = {
+  running: 'ok',
+  configuring: 'warn',
+  paused: 'idle',
+}
+
+const statusLabel: Record<string, string> = {
+  running: '在跑',
+  configuring: '配置中',
   paused: '已暂停',
 }
-
-const statusDotColors: Record<string, 'healthy' | 'warning' | 'critical'> = {
-  running: 'healthy',
-  configuring: 'warning',
-  paused: 'critical',
-}
-
-const { repos, loading } = useRepoList()
 </script>
 
 <template>
-  <!-- Skeleton loader -->
-  <div v-if="loading" class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold tracking-tight">仓库管理</h1>
-    </div>
-    <div v-for="i in 3" :key="i" class="h-14 bg-card border border-border rounded-lg animate-pulse" />
-  </div>
-
-  <!-- Empty state -->
-  <div v-else-if="!repos || repos.length === 0" class="space-y-6">
-    <h1 class="text-2xl font-bold tracking-tight">仓库管理</h1>
-    <EmptyState
-      icon="📦"
-      title="还没有订阅仓库"
-      description="订阅一个 GitHub 仓库，GweiOps 会自动监控 Issue 并生成修复方案。"
-      :action="{ label: '订阅第一个仓库', href: '#' }"
-    />
-  </div>
-
-  <!-- Table -->
-  <div v-else class="space-y-6">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold tracking-tight">仓库管理</h1>
-      <Button>+ 订阅新仓库</Button>
-    </div>
-
-    <div class="border border-border rounded-lg overflow-hidden">
-      <div class="grid grid-cols-[1fr_120px_100px_100px_80px] gap-4 px-4 py-2 bg-muted/50 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <div>仓库</div>
-        <div>状态</div>
-        <div>Issues</div>
-        <div>Agent</div>
-        <div>操作</div>
+  <div class="space-y-4">
+    <header class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <div class="mono-label">REPOSITORIES</div>
+        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">仓库</h1>
+        <p class="mt-2 text-[12.5px] text-ink-soft">引擎订阅的仓库,以及它当前盯着的执行体数量。</p>
       </div>
-      <div
+      <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh">
+        <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
+        刷新
+      </button>
+    </header>
+
+    <div v-if="error" class="card border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
+      拉不到仓库列表。确认引擎在跑,或开启 mock 模式。
+    </div>
+
+    <div v-if="loading && !repos.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div v-for="i in 6" :key="i" class="h-[186px] animate-pulse rounded-panel bg-well/60" />
+    </div>
+
+    <EmptyState
+      v-else-if="!repos.length"
+      icon="repos"
+      title="还没有接入仓库"
+      hint="安装 GitHub 适配器后,把仓库绑定到当前租户。"
+    />
+
+    <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <article
         v-for="repo in repos"
         :key="repo.id"
-        class="grid grid-cols-[1fr_120px_100px_100px_80px] gap-4 px-4 py-3 border-t border-border items-center"
+        class="group flex flex-col rounded-panel border border-line bg-panel p-5 transition-colors hover:border-ink/20"
       >
-        <div class="flex items-center gap-3">
-          <span class="text-base">{{ repo.icon }}</span>
-          <span class="text-sm font-medium">{{ repo.name }}</span>
+        <div class="flex items-start justify-between gap-3">
+          <span class="grid h-9 w-9 place-items-center rounded-xl bg-well text-ink-soft transition-colors group-hover:bg-ink group-hover:text-paper">
+            <AppIcon name="repos" :size="16" />
+          </span>
+          <StatusPip :tone="statusTone[repo.status]" :label="statusLabel[repo.status]" />
         </div>
-        <div class="flex items-center gap-2">
-          <StatusDot :status="statusDotColors[repo.status]" />
-          <span class="text-xs">{{ statusLabels[repo.status] }}</span>
+
+        <h2 class="mt-4 break-all font-mono text-[13px] font-medium leading-snug">{{ repo.name }}</h2>
+
+        <div class="mt-auto grid grid-cols-2 gap-3 border-t border-line/70 pt-3.5">
+          <div>
+            <div class="mono-label">议题</div>
+            <div class="num mt-1 text-[15px] font-semibold">{{ repo.issueCount }}</div>
+          </div>
+          <div>
+            <div class="mono-label">执行体</div>
+            <div class="num mt-1 text-[15px] font-semibold">{{ repo.activeAgents }}</div>
+          </div>
         </div>
-        <div class="text-sm">{{ repo.issueCount }} 个</div>
-        <div>
-          <Badge v-if="repo.activeAgents > 0" variant="secondary" class="bg-green-500/15 text-green-500 text-[10px]">
-            {{ repo.activeAgents }} 活跃
-          </Badge>
-          <span v-else class="text-xs text-muted-foreground">—</span>
-        </div>
-        <div>
-          <Button class="bg-transparent hover:bg-accent hover:text-accent-foreground text-xs h-7 px-2">配置</Button>
-        </div>
-      </div>
+
+        <div class="mt-3 font-mono text-[10.5px] text-ink-faint">同步于 {{ repo.lastSyncAt }}</div>
+      </article>
     </div>
   </div>
 </template>

@@ -1,9 +1,10 @@
-// packages/core/composables/useChanges.ts
 import { onMounted, ref } from 'vue'
 import { ChangesApi } from '../api/client'
+import { mockChanges } from '../mock'
 import type { ChangeRow } from '../types/changes'
 
 export function useChanges() {
+  const useMock = useRuntimeConfig().public.useMock === true
   const items = ref<ChangeRow[]>([])
   const total = ref(0)
   const loading = ref(true)
@@ -14,14 +15,17 @@ export function useChanges() {
     loading.value = true
     error.value = null
     try {
+      if (useMock) {
+        items.value = verdict ? mockChanges.filter(r => r.verdict === verdict) : mockChanges
+        total.value = items.value.length
+        return
+      }
       const data = await ChangesApi.list({ verdict, limit: 200 })
       items.value = data.items
       total.value = data.total
-    }
-    catch (e) {
+    } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
-    }
-    finally {
+    } finally {
       loading.value = false
     }
   }
@@ -30,13 +34,11 @@ export function useChanges() {
     rollingBack.value = id
     error.value = null
     try {
-      await ChangesApi.rollback(id, '人工回滚')
+      if (!useMock) await ChangesApi.rollback(id, '人工回滚')
       await refresh()
-    }
-    catch (e) {
+    } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
-    }
-    finally {
+    } finally {
       rollingBack.value = null
     }
   }

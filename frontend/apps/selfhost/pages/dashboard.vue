@@ -1,226 +1,333 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useDashboard } from '@gwei/core/composables/useDashboard'
 import { usePluginWidgets } from '@gwei/core/composables/usePluginWidgets'
-import BentoGrid from '@gwei/core/components/BentoGrid.vue'
-import BentoCell from '@gwei/core/components/BentoCell.vue'
-import StatusDot from '@gwei/core/components/StatusDot.vue'
-import MetricCard from '@gwei/core/components/MetricCard.vue'
-import CanaryProgress from '@gwei/core/components/CanaryProgress.vue'
-import EmptyState from '@gwei/core/components/EmptyState.vue'
-import PluginWidgetCard from '@gwei/core/components/PluginWidgetCard.vue'
-import Badge from '@gwei/core/components/ui/Badge.vue'
 
-const severityColors = {
-  critical: 'bg-red-500/15 text-red-500',
-  medium: 'bg-yellow-500/15 text-yellow-500',
-  low: 'bg-green-500/15 text-green-500',
-}
-
-const { data: dashboard, pendingIssues, overnightEvents, canaryStatuses, loading } = useDashboard()
-
-// 插件 UI 插槽:插件经 manifest 声明的卡片(失败静默为空)
+const { data, pendingIssues, overnightEvents, canaryStatuses, loading, error, refresh } =
+  useDashboard()
 const { widgets: pluginWidgets } = usePluginWidgets('dashboard.bento')
 
-const canary = computed(() => canaryStatuses.value[0])
-
-const pendingSub = computed(() => {
-  const criticalCount = pendingIssues.value.filter(i => i.severity === 'critical').length
-  const otherCount = pendingIssues.value.filter(i => i.severity !== 'critical').length
-  return `${criticalCount} 紧急 · ${otherCount} 其他`
-})
-
-const canaryCompletedSteps = computed(() => {
-  if (!canary.value) return []
-  const idx = canary.value.steps.indexOf(canary.value.currentStep)
-  return canary.value.steps.slice(0, idx)
-})
-
-function severityLabel(severity: string): string {
-  if (severity === 'critical') return '紧急'
-  if (severity === 'medium') return '中等'
-  return '低风险'
+const statusText: Record<string, string> = {
+  healthy: '稳定运行',
+  warning: '需要留意',
+  critical: '故障中',
 }
 
-function statusLabel(status: string): string {
-  if (status === 'healthy') return '系统正常运行'
-  if (status === 'warning') return '有告警处理中'
-  return '有紧急事件'
+const metrics = computed(() => {
+  const d = data.value
+  if (!d) return []
+  return [
+    { label: 'MTTR', value: d.mttr, unit: 'min', icon: 'timer' },
+    { label: '修复成功率', value: d.successRate, unit: '%', icon: 'trending-up' },
+    { label: '记忆条目', value: d.memoryEntries, unit: '条', icon: 'database' },
+    { label: '活跃执行体', value: d.activeAgents, unit: '个', icon: 'cpu' },
+  ]
+})
+
+function severityBar(severity: string) {
+  if (severity === 'critical') return 'bg-coral'
+  if (severity === 'medium') return 'bg-amber'
+  return 'bg-ink-faint'
+}
+
+const issueStatusLabel: Record<string, string> = {
+  pending_review: '待审',
+  canary: '金丝雀',
+  approved: '已放行',
+  completed: '已完成',
+  rolled_back: '已回滚',
+}
+
+const issueStatusClass: Record<string, string> = {
+  pending_review: 'border-amber/30 bg-amber/10 text-amber',
+  canary: 'border-brand/25 bg-brand/10 text-brand',
+  approved: 'border-ok/25 bg-ok/10 text-ok',
+  completed: 'border-ok/25 bg-ok/10 text-ok',
+  rolled_back: 'border-line bg-well text-ink-soft',
+}
+
+function stepIndex(steps: string[], current: string) {
+  const i = steps.indexOf(current)
+  return i < 0 ? 0 : i
 }
 </script>
 
 <template>
-  <div v-if="loading || !dashboard" class="space-y-6">
-    <div class="h-8 w-32 bg-muted rounded animate-pulse" />
-    <BentoGrid>
-      <BentoCell :span="2">
-        <div class="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-        <div class="h-6 w-48 bg-muted rounded animate-pulse mb-2" />
-        <div class="h-3 w-64 bg-muted rounded animate-pulse mb-3" />
-        <div class="flex gap-0.5">
-          <div v-for="i in 10" :key="i" class="h-1 flex-1 bg-muted rounded-full animate-pulse" />
-        </div>
-      </BentoCell>
-      <BentoCell>
-        <div class="h-3 w-16 bg-muted rounded animate-pulse mb-2" />
-        <div class="h-8 w-12 bg-muted rounded animate-pulse" />
-      </BentoCell>
-      <BentoCell>
-        <div class="h-3 w-20 bg-muted rounded animate-pulse mb-2" />
-        <div class="h-8 w-12 bg-muted rounded animate-pulse" />
-      </BentoCell>
-      <BentoCell :span="3">
-        <div class="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-        <div v-for="i in 3" :key="i" class="h-10 bg-muted rounded animate-pulse mb-2" />
-      </BentoCell>
-      <BentoCell>
-        <div class="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-        <div class="h-8 w-16 bg-muted rounded animate-pulse" />
-      </BentoCell>
-      <BentoCell :span="4">
-        <div class="h-4 w-24 bg-muted rounded animate-pulse mb-3" />
-        <div class="h-6 w-full bg-muted rounded animate-pulse" />
-      </BentoCell>
-    </BentoGrid>
-  </div>
+  <div class="space-y-4">
+    <header class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <div class="mono-label">CONTROL ROOM</div>
+        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">控制室</h1>
+      </div>
+      <div class="flex items-center gap-3">
+        <StatusPip tone="ok" pulse label="实时同步" />
+        <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh">
+          <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
+          刷新
+        </button>
+      </div>
+    </header>
 
-  <div v-else class="space-y-6">
-    <h1 class="text-2xl font-bold tracking-tight">态势感知</h1>
+    <div v-if="loading && !data" class="grid grid-cols-12 gap-4">
+      <div class="col-span-12 h-64 animate-pulse rounded-panel bg-well lg:col-span-7" />
+      <div class="col-span-12 grid gap-4 lg:col-span-5">
+        <div class="h-[122px] animate-pulse rounded-panel bg-well" />
+        <div class="h-[122px] animate-pulse rounded-panel bg-well" />
+      </div>
+    </div>
 
-    <BentoGrid>
-      <!-- 整体态势 -->
-      <BentoCell :span="2">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          整体态势
+    <div v-else-if="error" class="card border-coral/30 bg-coral/5 p-6">
+      <div class="flex items-center gap-2 text-[13px] font-medium text-coral">
+        <AppIcon name="alert" :size="15" />
+        拉不到控制室数据
+      </div>
+      <p class="mt-1.5 text-[12px] text-ink-soft">
+        确认引擎在跑(NUXT_ENGINE_URL),或者用 NUXT_PUBLIC_USE_MOCK=true 看演示数据。
+      </p>
+      <button class="btn-outline mt-4 h-8 px-3 text-[12px]" @click="refresh">重试</button>
+    </div>
+
+    <template v-else-if="data">
+      <div class="grid grid-cols-12 gap-4">
+        <!-- 主色块:系统态势 -->
+        <section class="col-span-12 flex flex-col justify-between rounded-panel bg-lime p-6 text-lime-ink lg:col-span-7">
+          <div class="flex items-start justify-between">
+            <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">系统态势</span>
+            <span class="rounded-full border border-lime-ink/15 px-2 py-0.5 font-mono text-[10px] tracking-wider text-lime-ink/60">
+              {{ data.status.toUpperCase() }}
+            </span>
+          </div>
+
+          <div class="mt-6">
+            <h2 class="text-[38px] font-semibold leading-none tracking-tightest">
+              {{ statusText[data.status] }}
+            </h2>
+            <p class="mt-2.5 text-[13px] text-lime-ink/65">
+              连续 {{ data.consecutiveDays }} 天无事故 · 上次事故 {{ data.lastIncident }}
+            </p>
+          </div>
+
+          <div class="mt-7">
+            <div class="flex h-12 items-end gap-1.5">
+              <div
+                v-for="(ok, i) in data.healthHistory"
+                :key="i"
+                class="flex-1 rounded-sm transition-all"
+                :class="ok ? 'bg-lime-ink/70' : 'bg-lime-ink/20'"
+                :style="{ height: ok ? '100%' : '46%' }"
+                :title="ok ? '正常' : '异常'"
+              />
+            </div>
+            <div class="mt-2 flex justify-between font-mono text-[10px] tracking-wider text-lime-ink/45">
+              <span>{{ data.healthHistory.length }} 天前</span>
+              <span>今天</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="col-span-12 grid gap-4 lg:col-span-5 lg:grid-rows-2">
+          <NuxtLink
+            to="/issues"
+            class="group flex flex-col justify-between rounded-panel border border-amber/30 bg-amber/10 p-5 transition-colors hover:bg-amber/[0.16]"
+          >
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-amber">等你判断</span>
+              <AppIcon
+                name="arrow-up-right"
+                :size="15"
+                class="text-amber transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+              />
+            </div>
+            <div class="mt-5 flex items-baseline gap-2.5">
+              <span class="num text-[34px] font-semibold leading-none tracking-tightest text-amber">
+                {{ data.pendingReview }}
+              </span>
+              <span class="text-[12px] leading-tight text-ink-soft">件事已经做完,只差一个人点头</span>
+            </div>
+          </NuxtLink>
+
+          <div class="flex flex-col justify-between rounded-panel bg-solid p-5 text-solid-ink">
+            <div class="flex items-center justify-between">
+              <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-solid-ink/45">昨夜自动修复</span>
+              <AppIcon name="moon" :size="15" class="text-solid-ink/40" />
+            </div>
+            <div class="mt-5 flex items-baseline gap-2.5">
+              <span class="num text-[34px] font-semibold leading-none tracking-tightest">
+                {{ data.overnightFixed }}
+              </span>
+              <span class="text-[12px] leading-tight text-solid-ink/50">件在你睡觉时完成并验证</span>
+            </div>
+          </div>
         </div>
-        <div class="flex items-center gap-2 mb-2">
-          <StatusDot :status="dashboard!.status" size="md" />
-          <span class="text-lg font-semibold">
-            {{ statusLabel(dashboard!.status) }}
-          </span>
+
+        <div
+          v-for="m in metrics"
+          :key="m.label"
+          class="col-span-6 rounded-panel border border-line bg-panel p-4 lg:col-span-3"
+        >
+          <div class="flex items-center justify-between">
+            <span class="mono-label">{{ m.label }}</span>
+            <AppIcon :name="m.icon" :size="13" class="text-ink-faint" />
+          </div>
+          <div class="mt-3.5 flex items-baseline gap-1">
+            <span class="num text-[23px] font-semibold leading-none tracking-tight">{{ m.value }}</span>
+            <span class="text-[11px] text-ink-faint">{{ m.unit }}</span>
+          </div>
         </div>
-        <div class="text-xs text-muted-foreground mb-3">
-          连续 {{ dashboard!.consecutiveDays }} 天无故障 · 上次事故 {{ dashboard!.lastIncident }}
-        </div>
-        <div class="flex gap-0.5">
-          <div
-            v-for="(ok, i) in dashboard!.healthHistory"
-            :key="i"
-            :class="['h-1 flex-1 rounded-full', ok ? 'bg-green-500' : 'bg-yellow-500']"
+
+        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-7">
+          <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <h2 class="text-[13px] font-semibold">待你判断</h2>
+            <NuxtLink to="/issues" class="flex items-center gap-1 text-[12px] text-ink-faint transition-colors hover:text-ink">
+              全部
+              <AppIcon name="arrow-right" :size="12" />
+            </NuxtLink>
+          </div>
+
+          <ul v-if="pendingIssues.length" class="divide-y divide-line/70">
+            <li v-for="item in pendingIssues" :key="item.id">
+              <NuxtLink
+                :to="'/issues/' + encodeURIComponent(item.id)"
+                class="group flex items-center gap-3.5 px-5 py-3.5 transition-colors hover:bg-well/60"
+              >
+                <span class="h-7 w-[3px] shrink-0 rounded-full" :class="severityBar(item.severity)" />
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-[13px] font-medium">{{ item.title }}</div>
+                  <div class="mt-1 font-mono text-[11px] text-ink-faint">
+                    {{ item.id }} · {{ item.patchCount }} 个方案
+                  </div>
+                </div>
+                <span
+                  class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                  :class="issueStatusClass[item.status]"
+                >
+                  {{ issueStatusLabel[item.status] }}
+                </span>
+                <AppIcon
+                  name="chevron-right"
+                  :size="14"
+                  class="text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+                />
+              </NuxtLink>
+            </li>
+          </ul>
+
+          <EmptyState
+            v-else
+            icon="check-circle"
+            title="没有待审条目"
+            hint="夜里发生的改变都已经落在可回滚状态,醒来不需要做任何判断。"
           />
-        </div>
-      </BentoCell>
+        </section>
 
-      <!-- 待审 -->
-      <BentoCell>
-        <MetricCard
-          label="待审"
-          :value="dashboard!.pendingReview"
-          :sub="pendingSub"
-          variant="yellow"
-        />
-      </BentoCell>
+        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-5">
+          <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <h2 class="text-[13px] font-semibold">金丝雀</h2>
+            <span class="mono-label">CANARY</span>
+          </div>
 
-      <!-- 昨夜修复 -->
-      <BentoCell>
-        <MetricCard
-          label="昨夜修复"
-          :value="dashboard!.overnightFixed"
-          sub="全部自动完成"
-          variant="green"
-        />
-      </BentoCell>
+          <div v-for="c in canaryStatuses" :key="c.issueId" class="p-5">
+            <div class="flex items-baseline justify-between gap-3">
+              <span class="truncate text-[13px] font-medium">{{ c.issueTitle }}</span>
+              <span class="shrink-0 font-mono text-[11px] text-ink-faint">{{ c.issueId }}</span>
+            </div>
 
-      <!-- 待审案件 -->
-      <BentoCell :span="3">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          待审案件
-        </div>
-        <div v-if="pendingIssues.length > 0" class="space-y-0">
-          <div
-            v-for="issue in pendingIssues"
-            :key="issue.id"
-            class="flex items-center justify-between py-2.5 border-b border-border last:border-0"
+            <div class="mt-4 flex items-center">
+              <template v-for="(step, i) in c.steps" :key="step">
+                <div class="flex flex-col items-center gap-1.5">
+                  <span
+                    class="grid h-6 w-6 place-items-center rounded-full text-[10px] font-semibold"
+                    :class="
+                      i < stepIndex(c.steps, c.currentStep)
+                        ? 'bg-ink text-paper'
+                        : i === stepIndex(c.steps, c.currentStep)
+                          ? 'bg-brand text-white'
+                          : 'border border-line text-ink-faint'
+                    "
+                  >
+                    <AppIcon v-if="i < stepIndex(c.steps, c.currentStep)" name="check" :size="11" />
+                    <template v-else>{{ i + 1 }}</template>
+                  </span>
+                  <span
+                    class="font-mono text-[9px] tracking-wider"
+                    :class="i <= stepIndex(c.steps, c.currentStep) ? 'text-ink-soft' : 'text-ink-faint'"
+                  >{{ step }}</span>
+                </div>
+                <div
+                  v-if="i < c.steps.length - 1"
+                  class="mb-4 h-px flex-1"
+                  :class="i < stepIndex(c.steps, c.currentStep) ? 'bg-ink/40' : 'bg-line'"
+                />
+              </template>
+            </div>
+
+            <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line">
+              <div class="bg-panel px-3 py-2.5">
+                <div class="mono-label">通过率</div>
+                <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.passRate }}%</div>
+              </div>
+              <div class="bg-panel px-3 py-2.5">
+                <div class="mono-label">错误率</div>
+                <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.errorRate }}%</div>
+              </div>
+              <div class="bg-panel px-3 py-2.5">
+                <div class="mono-label">P99</div>
+                <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.p99Latency }}</div>
+              </div>
+              <div class="bg-panel px-3 py-2.5">
+                <div class="mono-label">内存峰值</div>
+                <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.memoryPeak }}</div>
+              </div>
+            </div>
+          </div>
+
+          <EmptyState
+            v-if="!canaryStatuses.length"
+            icon="activity"
+            title="没有进行中的金丝雀"
+            hint="有变更进入灰度时,这里会显示每一步的实时指标。"
+          />
+        </section>
+
+        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-7">
+          <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <h2 class="text-[13px] font-semibold">昨夜回顾</h2>
+            <span class="mono-label">NIGHT SHIFT</span>
+          </div>
+
+          <ol v-if="overnightEvents.length" class="divide-y divide-line/70">
+            <li v-for="(e, i) in overnightEvents" :key="i" class="flex gap-3.5 px-5 py-3.5">
+              <span class="mt-0.5 shrink-0 font-mono text-[11px] text-ink-faint">{{ e.time }}</span>
+              <span
+                class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
+                :class="e.result === 'success' ? 'bg-ok' : 'bg-coral'"
+              />
+              <div class="min-w-0">
+                <div class="text-[13px] font-medium">{{ e.title }}</div>
+                <div class="mt-1 text-[12px] leading-relaxed text-ink-soft">{{ e.description }}</div>
+              </div>
+            </li>
+          </ol>
+
+          <EmptyState v-else icon="moon" title="昨夜无事" hint="没有信号需要处理。" />
+        </section>
+
+        <div class="col-span-12 space-y-4 lg:col-span-5">
+          <section
+            v-for="w in pluginWidgets"
+            :key="w.plugin + w.title"
+            class="overflow-hidden rounded-panel border border-line bg-panel"
           >
-            <div class="flex items-center gap-3">
-              <span class="text-xs text-muted-foreground font-mono">{{ issue.id }}</span>
-              <span class="text-sm">{{ issue.title }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <Badge variant="secondary" :class="severityColors[issue.severity]">
-                {{ severityLabel(issue.severity) }}
-              </Badge>
-              <Badge variant="secondary" class="bg-blue-500/15 text-blue-500">
-                {{ issue.patchCount }} 方案
-              </Badge>
-            </div>
-          </div>
-        </div>
-        <EmptyState
-          v-else
-          icon="☕"
-          title="昨夜平安无事"
-          description="没有告警触发，GweiOps 什么都没做。这其实是最好的消息。"
-        />
-      </BentoCell>
+            <PluginWidget :widget="w" />
+          </section>
 
-      <!-- 系统健康 -->
-      <BentoCell>
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          系统健康
-        </div>
-        <div class="space-y-4">
-          <MetricCard label="" :value="`${dashboard!.successRate}%`" sub="成功率（7日）" variant="green" />
-          <MetricCard label="" :value="dashboard!.mttr" suffix="min" sub="平均修复时间" />
-          <MetricCard label="" :value="dashboard!.activeAgents" sub="活跃 Agent" />
-          <div v-if="canary">
-            <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              金丝雀进度
-            </div>
-            <div class="text-xs mb-1">{{ canary.issueTitle }}</div>
-            <CanaryProgress
-              :steps="canary.steps"
-              :completed-steps="canaryCompletedSteps"
-              :current-step="canary.currentStep"
-              :metrics="canary.metrics"
-            />
-          </div>
-        </div>
-      </BentoCell>
-
-      <!-- 插件插槽:manifest 声明的声明式卡片 -->
-      <PluginWidgetCard
-        v-for="widget in pluginWidgets"
-        :key="`${widget.plugin}:${widget.title}`"
-        :widget="widget"
-      />
-
-      <!-- 昨夜回顾 -->
-      <BentoCell :span="4">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-          昨夜回顾
-        </div>
-        <div v-if="overnightEvents.length > 0" class="flex gap-6 overflow-x-auto">
-          <div
-            v-for="(event, i) in overnightEvents"
-            :key="i"
-            class="flex items-start gap-3 min-w-0"
+          <section
+            v-if="!pluginWidgets.length"
+            class="rounded-panel border border-dashed border-line bg-panel/40 px-5 py-8 text-center"
           >
-            <span class="text-xs text-muted-foreground font-mono whitespace-nowrap">{{ event.time }}</span>
-            <div class="h-1.5 w-1.5 rounded-full bg-green-500 mt-1.5 flex-shrink-0" />
-            <div class="min-w-0">
-              <div class="text-sm font-medium">{{ event.title }}</div>
-              <div class="text-xs text-muted-foreground truncate">{{ event.description }}</div>
-            </div>
-          </div>
+            <p class="text-[12px] text-ink-faint">插件可以往这里放自己的卡片。</p>
+          </section>
         </div>
-        <EmptyState
-          v-else
-          icon="🌙"
-          title="夜间无事件"
-          description="一切平静，GweiOps 在安静守护。"
-        />
-      </BentoCell>
-    </BentoGrid>
+      </div>
+    </template>
   </div>
 </template>

@@ -1,124 +1,276 @@
 <script setup lang="ts">
-import { cn } from '@gwei/core/utils/cn'
-import Badge from '@gwei/core/components/ui/Badge.vue'
-import Button from '@gwei/core/components/ui/Button.vue'
-import Timeline from '@gwei/core/components/Timeline.vue'
-import CanaryProgress from '@gwei/core/components/CanaryProgress.vue'
 import { useIssueDetail } from '@gwei/core/composables/useIssueDetail'
 
 const route = useRoute()
-const id = route.params.id as string
-const { data: issue, loading: isLoading } = useIssueDetail(id)
+const id = computed(() => String(route.params.id || ''))
+const { data, loading, error } = useIssueDetail(id.value)
 
-const severityColors: Record<string, string> = {
-  critical: 'bg-red-500/15 text-red-500',
-  medium: 'bg-yellow-500/15 text-yellow-500',
-  low: 'bg-green-500/15 text-green-500',
+const selectedPatch = ref<string | null>(null)
+
+watch(
+  data,
+  (v) => {
+    if (!v) return
+    const preset = v.patches.find(p => p.selected)
+    selectedPatch.value = preset?.id ?? v.patches[0]?.id ?? null
+  },
+  { immediate: true },
+)
+
+const typeLabel: Record<string, string> = {
+  hotfix: '应急止血',
+  proper: '根治',
+  refactor: '重构',
+  upstream: '上游升级',
+  patch: '补丁',
+  docs: '文档',
 }
 
-const riskColors: Record<string, string> = {
-  low: 'text-green-500',
-  medium: 'text-yellow-500',
-  high: 'text-red-500',
+const riskLabel: Record<string, string> = { low: '低风险', medium: '中风险', high: '高风险' }
+
+const riskCls: Record<string, string> = {
+  low: 'border-ok/25 bg-ok/10 text-ok',
+  medium: 'border-amber/30 bg-amber/10 text-amber',
+  high: 'border-coral/30 bg-coral/10 text-coral',
 }
 
-const typeLabels: Record<string, string> = {
-  hotfix: '快速修复',
-  proper: '根因修复',
-  refactor: '架构重构',
-  upstream: '上游更新',
-  patch: '应急补丁',
-  docs: '文档修复',
+const statusLabel: Record<string, string> = {
+  pending_review: '待审',
+  canary: '金丝雀',
+  approved: '已放行',
+  completed: '已完成',
+  rolled_back: '已回滚',
+}
+
+const statusCls: Record<string, string> = {
+  pending_review: 'border-amber/30 bg-amber/10 text-amber',
+  canary: 'border-brand/25 bg-brand/10 text-brand',
+  approved: 'border-ok/25 bg-ok/10 text-ok',
+  completed: 'border-ok/25 bg-ok/10 text-ok',
+  rolled_back: 'border-line bg-well text-ink-soft',
+}
+
+const sourceLabel: Record<string, string> = {
+  github_issue: 'GitHub',
+  prometheus: 'Prometheus',
+  trivy: 'Trivy',
+  cve: 'CVE',
+  sentry: 'Sentry',
+}
+
+function stepIndex(steps: string[], current: string) {
+  const i = steps.indexOf(current)
+  return i < 0 ? 0 : i
 }
 </script>
 
 <template>
-  <div v-if="isLoading || !issue" class="space-y-6">
-    <div class="h-8 w-64 bg-muted rounded animate-pulse" />
-    <div class="h-12 bg-card border border-border rounded-lg animate-pulse" />
-    <div class="grid grid-cols-3 gap-px bg-border rounded-lg overflow-hidden">
-      <div v-for="i in 3" :key="i" class="h-48 bg-card animate-pulse" />
-    </div>
-  </div>
+  <div class="space-y-5">
+    <NuxtLink
+      to="/issues"
+      class="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink"
+    >
+      <AppIcon name="arrow-right" :size="13" class="rotate-180" />
+      回到议题
+    </NuxtLink>
 
-  <div v-else class="space-y-6 max-w-4xl">
-    <!-- Header -->
-    <div class="flex items-start justify-between pb-5 border-b border-border">
-      <div>
-        <h1 class="text-xl font-bold tracking-tight mb-2">{{ issue.title }}</h1>
-        <div class="flex items-center gap-3 text-xs text-muted-foreground">
-          <Badge variant="secondary" :class="severityColors[issue.severity]">
-            {{ issue.severity === 'critical' ? '紧急' : issue.severity === 'medium' ? '中等' : '低风险' }}
-          </Badge>
-          <span>来源: {{ issue.source }}</span>
-          <span>仓库: {{ issue.repo }}</span>
-          <span>{{ issue.triggeredAt }} 触发</span>
+    <div v-if="loading" class="space-y-3">
+      <div class="h-8 w-2/3 animate-pulse rounded-lg bg-well" />
+      <div class="h-4 w-1/3 animate-pulse rounded bg-well" />
+    </div>
+
+    <div v-else-if="error || !data" class="card p-6">
+      <p class="text-[13px] font-medium">找不到这个议题</p>
+      <p class="mt-1 text-[12px] text-ink-soft">它可能已经完成并被归档。</p>
+    </div>
+
+    <template v-else>
+      <header class="space-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="font-mono text-[11px] text-ink-faint">{{ data.id }}</span>
+          <span
+            class="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+            :class="statusCls[data.status]"
+          >
+            {{ statusLabel[data.status] }}
+          </span>
+          <span class="rounded-full border border-line bg-well px-2 py-0.5 font-mono text-[10.5px] text-ink-soft">
+            {{ sourceLabel[data.source] || data.source }}
+          </span>
         </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <Button variant="outline" size="sm" class="text-red-500 border-red-500/30">回滚</Button>
-        <Button variant="outline" size="sm">退回重新诊断</Button>
-        <Button size="sm">采纳方案</Button>
-      </div>
-    </div>
 
-    <!-- Timeline -->
-    <Timeline :steps="issue.timeline" />
+        <h1 class="max-w-3xl text-[24px] font-semibold leading-tight tracking-tightest">
+          {{ data.title }}
+        </h1>
 
-    <!-- Patches comparison -->
-    <div>
-      <h2 class="text-sm font-semibold mb-3">修复方案对比</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-px bg-border rounded-lg overflow-hidden">
-        <div
-          v-for="patch in issue.patches"
-          :key="patch.id"
-          :class="cn('bg-card p-4 flex flex-col', patch.selected && 'ring-2 ring-primary ring-inset')"
-        >
-          <div :class="cn(
-            'text-[11px] font-bold uppercase tracking-wider mb-2',
-            patch.type === 'hotfix' && 'text-red-500',
-            patch.type === 'proper' && 'text-blue-500',
-            patch.type === 'refactor' && 'text-green-500',
-            patch.type === 'upstream' && 'text-blue-500',
-            patch.type === 'patch' && 'text-yellow-500',
-            patch.type === 'docs' && 'text-green-500'
-          )">
-            {{ typeLabels[patch.type] ?? patch.type }}
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-ink-faint">
+          <span class="flex items-center gap-1.5"><AppIcon name="repos" :size="12" />{{ data.repo }}</span>
+          <span class="flex items-center gap-1.5"><AppIcon name="clock" :size="12" />{{ data.triggeredAt }}</span>
+          <span class="flex items-center gap-1.5"><AppIcon name="layers" :size="12" />{{ data.patches.length }} 个方案</span>
+        </div>
+      </header>
+
+      <div class="grid grid-cols-12 items-start gap-4">
+        <section class="col-span-12 rounded-panel border border-line bg-panel lg:col-span-7">
+          <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <h2 class="text-[13px] font-semibold">候选方案</h2>
+            <span class="mono-label">PATCHES</span>
           </div>
-          <p class="text-xs text-muted-foreground mb-3 flex-1">{{ patch.description }}</p>
-          <div class="grid grid-cols-2 gap-2 text-[11px]">
-            <div>
-              <div class="text-muted-foreground">风险</div>
-              <div :class="cn('font-semibold', riskColors[patch.risk])">
-                {{ patch.risk === 'low' ? '低' : patch.risk === 'medium' ? '中' : '高' }}
+
+          <div class="space-y-2.5 p-4">
+            <button
+              v-for="p in data.patches"
+              :key="p.id"
+              class="w-full rounded-xl border p-4 text-left transition-colors"
+              :class="selectedPatch === p.id
+                ? 'border-ink/30 bg-well/60'
+                : 'border-line hover:border-ink/20 hover:bg-well/30'"
+              @click="selectedPatch = p.id"
+            >
+              <div class="flex items-center gap-2">
+                <span
+                  class="grid h-4 w-4 place-items-center rounded-full border transition-colors"
+                  :class="selectedPatch === p.id ? 'border-ink bg-ink text-paper' : 'border-line text-transparent'"
+                >
+                  <AppIcon name="check" :size="9" :stroke="3" />
+                </span>
+                <span class="text-[13px] font-medium">{{ typeLabel[p.type] || p.type }}</span>
+                <span class="rounded-full border px-1.5 py-0.5 text-[10px] font-medium" :class="riskCls[p.risk]">
+                  {{ riskLabel[p.risk] }}
+                </span>
+                <span class="ml-auto font-mono text-[10.5px] text-ink-faint">{{ p.lines }} 行</span>
+              </div>
+
+              <p class="mt-2 pl-6 text-[12px] leading-relaxed text-ink-soft">{{ p.description }}</p>
+
+              <div class="mt-2.5 flex gap-4 pl-6 font-mono text-[10.5px] text-ink-faint">
+                <span>通过率 {{ p.passRate }}%</span>
+                <span>延迟 {{ p.latency }}</span>
+              </div>
+            </button>
+
+            <EmptyState
+              v-if="!data.patches.length"
+              icon="box"
+              title="还没有生成方案"
+              hint="诊断完成后,这里会出现多条可选路径及其风险。"
+            />
+          </div>
+        </section>
+
+        <div class="col-span-12 space-y-4 lg:col-span-5">
+          <section class="rounded-panel border border-line bg-panel">
+            <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+              <h2 class="text-[13px] font-semibold">金丝雀</h2>
+              <span class="mono-label">CANARY</span>
+            </div>
+
+            <div v-if="data.canary" class="p-5">
+              <div class="flex items-baseline justify-between">
+                <span class="mono-label">当前流量</span>
+                <span class="num font-mono text-[13px] font-semibold">{{ data.canary.current }}</span>
+              </div>
+
+              <div class="mt-4 flex items-center">
+                <template v-for="(step, i) in data.canary.steps" :key="step">
+                  <div class="flex flex-col items-center gap-1.5">
+                    <span
+                      class="grid h-6 w-6 place-items-center rounded-full text-[10px] font-semibold"
+                      :class="
+                        i < stepIndex(data.canary.steps, data.canary.current)
+                          ? 'bg-ink text-paper'
+                          : i === stepIndex(data.canary.steps, data.canary.current)
+                            ? 'bg-brand text-white'
+                            : 'border border-line text-ink-faint'
+                      "
+                    >
+                      <AppIcon
+                        v-if="i < stepIndex(data.canary.steps, data.canary.current)"
+                        name="check"
+                        :size="11"
+                      />
+                      <template v-else>{{ i + 1 }}</template>
+                    </span>
+                    <span
+                      class="font-mono text-[9px] tracking-wider"
+                      :class="i <= stepIndex(data.canary.steps, data.canary.current) ? 'text-ink-soft' : 'text-ink-faint'"
+                    >{{ step }}</span>
+                  </div>
+                  <div
+                    v-if="i < data.canary.steps.length - 1"
+                    class="mb-4 h-px flex-1"
+                    :class="i < stepIndex(data.canary.steps, data.canary.current) ? 'bg-ink/40' : 'bg-line'"
+                  />
+                </template>
+              </div>
+
+              <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line">
+                <div class="bg-panel px-3 py-2.5">
+                  <div class="mono-label">通过率</div>
+                  <div class="num mt-1 text-[15px] font-semibold">{{ data.canary.metrics.passRate }}%</div>
+                </div>
+                <div class="bg-panel px-3 py-2.5">
+                  <div class="mono-label">错误率</div>
+                  <div class="num mt-1 text-[15px] font-semibold">{{ data.canary.metrics.errorRate }}%</div>
+                </div>
+                <div class="bg-panel px-3 py-2.5">
+                  <div class="mono-label">P99</div>
+                  <div class="num mt-1 text-[15px] font-semibold">{{ data.canary.metrics.p99Latency }}</div>
+                </div>
+                <div class="bg-panel px-3 py-2.5">
+                  <div class="mono-label">内存峰值</div>
+                  <div class="num mt-1 text-[15px] font-semibold">{{ data.canary.metrics.memoryPeak }}</div>
+                </div>
               </div>
             </div>
-            <div>
-              <div class="text-muted-foreground">改动</div>
-              <div class="font-semibold">{{ patch.lines }} 行</div>
+
+            <EmptyState
+              v-else
+              icon="activity"
+              title="还没进入灰度"
+              hint="选定方案后会按 1% → 10% → 50% → 100% 逐步放量。"
+            />
+          </section>
+
+          <section class="rounded-panel border border-line bg-panel">
+            <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
+              <h2 class="text-[13px] font-semibold">时间线</h2>
+              <span class="mono-label">TIMELINE</span>
             </div>
-            <div>
-              <div class="text-muted-foreground">通过率</div>
-              <div class="font-semibold text-green-500">{{ patch.passRate }}%</div>
-            </div>
-            <div>
-              <div class="text-muted-foreground">延迟影响</div>
-              <div class="font-semibold">{{ patch.latency }}</div>
-            </div>
-          </div>
+
+            <ol class="p-5">
+              <li v-for="(step, i) in data.timeline" :key="step.id" class="relative flex items-center gap-3 pb-4 last:pb-0">
+                <span
+                  v-if="i < data.timeline.length - 1"
+                  class="absolute left-[7px] top-4 h-full w-px"
+                  :class="step.status === 'done' ? 'bg-ink/25' : 'bg-line'"
+                />
+                <span
+                  class="relative z-10 grid h-[15px] w-[15px] shrink-0 place-items-center rounded-full border-2"
+                  :class="step.status === 'done'
+                    ? 'border-ink bg-ink'
+                    : step.status === 'active'
+                      ? 'border-brand bg-panel'
+                      : 'border-line bg-panel'"
+                >
+                  <span v-if="step.status === 'active'" class="h-1.5 w-1.5 rounded-full bg-brand" />
+                </span>
+                <span
+                  class="text-[12.5px]"
+                  :class="step.status === 'pending'
+                    ? 'text-ink-faint'
+                    : step.status === 'active'
+                      ? 'font-medium text-ink'
+                      : 'text-ink-soft'"
+                >
+                  {{ step.label }}
+                </span>
+                <span v-if="step.status === 'active'" class="ml-auto font-mono text-[10px] text-brand">进行中</span>
+              </li>
+            </ol>
+          </section>
         </div>
       </div>
-    </div>
-
-    <!-- Canary Progress -->
-    <div v-if="issue.canary" class="bg-card border border-border rounded-lg p-4">
-      <h2 class="text-sm font-semibold mb-3">金丝雀验证进度</h2>
-      <CanaryProgress
-        :steps="issue.canary.steps"
-        :completed-steps="issue.canary.completedSteps"
-        :current-step="issue.canary.current"
-        :metrics="issue.canary.metrics"
-      />
-    </div>
+    </template>
   </div>
 </template>

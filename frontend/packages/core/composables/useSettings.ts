@@ -3,9 +3,8 @@ import { SettingsApi } from '../api/client'
 import { mockTeamSettings } from '../mock'
 import type { TeamSettings } from '../types/repos'
 
-const USE_MOCK = import.meta.env.NUXT_PUBLIC_USE_MOCK === 'true'
-
 export function useSettings() {
+  const useMock = useRuntimeConfig().public.useMock === true
   const data = ref<TeamSettings | null>(null)
   const loading = ref(true)
   const error = ref<unknown>(null)
@@ -14,7 +13,7 @@ export function useSettings() {
     loading.value = true
     error.value = null
     try {
-      data.value = USE_MOCK ? mockTeamSettings : await SettingsApi.get()
+      data.value = useMock ? mockTeamSettings : await SettingsApi.get()
     } catch (e) {
       error.value = e
     } finally {

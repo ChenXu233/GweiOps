@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 插件沙箱页面:资产由 engine 提供,iframe opaque origin 隔离。
-// 已知边界:沙箱内直接 fetch engine API 属跨域,postMessage 桥随认证阶段提供。
+// 沙箱内直接 fetch engine API 属跨域,所以走下面这条只读 postMessage 桥。
 const route = useRoute()
 const name = computed(() => String(route.params.name || ''))
 
@@ -29,12 +29,11 @@ onMounted(async () => {
 
 const page = computed(() => manifest.value?.pages?.[0] || null)
 const assetUrl = computed(() =>
-  manifest.value && page.value ? `/api/plugins/${manifest.value.name}/ui/${page.value.entry}` : ''
+  manifest.value && page.value ? '/api/plugins/' + manifest.value.name + '/ui/' + page.value.entry : '',
 )
 
 // ---------------------------------------------------------------------------
-// 只读 postMessage 桥:沙箱页面(opaque origin)无法直接 fetch engine API,
-// 通过 parent 代理只读 GET。白名单外的路径一律拒绝。
+// 只读 postMessage 桥:白名单外的路径一律拒绝。
 // ---------------------------------------------------------------------------
 const BRIDGE_REPLY = 'gwei:bridge:response'
 const ALLOWED_PREFIXES = ['/api/plugins', '/api/metrics', '/api/health']
@@ -47,9 +46,7 @@ function bridgeAllowed(path: string): boolean {
 
 async function onBridgeMessage(ev: MessageEvent) {
   if (ev.source !== iframeRef.value?.contentWindow) return
-  const msg = ev.data as
-    | { type: 'gwei:bridge:fetch'; id: number; path: string }
-    | undefined
+  const msg = ev.data as { type: 'gwei:bridge:fetch'; id: number; path: string } | undefined
   if (!msg || msg.type !== 'gwei:bridge:fetch') return
 
   let payload: unknown
@@ -65,7 +62,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   }
   iframeRef.value?.contentWindow?.postMessage(
     { type: BRIDGE_REPLY, ...payload },
-    window.location.origin
+    window.location.origin,
   )
 }
 
@@ -75,20 +72,35 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
 
 <template>
   <div class="space-y-4">
-    <div v-if="notFound" class="text-sm text-muted-foreground py-16 text-center">
-      插件页面不存在。
+    <NuxtLink
+      to="/marketplace"
+      class="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink"
+    >
+      <AppIcon name="arrow-right" :size="13" class="rotate-180" />
+      回到插件
+    </NuxtLink>
+
+    <div v-if="notFound" class="card">
+      <EmptyState icon="plugins" title="这个插件没有页面" hint="它可能只提供了能力,没有声明 UI。" />
     </div>
 
     <template v-else-if="manifest && page">
-      <div class="flex items-baseline justify-between">
-        <h1 class="text-2xl font-bold tracking-tight">{{ page.title }}</h1>
-        <span class="text-xs text-muted-foreground">插件 {{ manifest.name }} · 沙箱运行</span>
-      </div>
-      <div class="border border-border rounded-lg overflow-hidden bg-card">
+      <header class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div class="mono-label">{{ manifest.name }}</div>
+          <h1 class="mt-1.5 text-[24px] font-semibold leading-none tracking-tightest">{{ page.title }}</h1>
+        </div>
+        <span class="flex items-center gap-1.5 rounded-full border border-line bg-well px-2.5 py-1 font-mono text-[10.5px] text-ink-soft">
+          <AppIcon name="shield-check" :size="12" />
+          沙箱运行
+        </span>
+      </header>
+
+      <div class="overflow-hidden rounded-panel border border-line bg-panel">
         <iframe
           ref="iframeRef"
           :src="assetUrl"
-          class="w-full h-[calc(100vh-190px)] block"
+          class="block h-[calc(100vh-220px)] w-full"
           sandbox="allow-scripts"
           referrerpolicy="no-referrer"
           :title="page.title"
@@ -96,6 +108,9 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
       </div>
     </template>
 
-    <div v-else class="text-sm text-muted-foreground py-16 text-center">加载中…</div>
+    <div v-else class="space-y-3">
+      <div class="h-6 w-40 animate-pulse rounded bg-well" />
+      <div class="h-[420px] animate-pulse rounded-panel bg-well/60" />
+    </div>
   </div>
 </template>
