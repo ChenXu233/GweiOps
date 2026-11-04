@@ -1,0 +1,72 @@
+# 运行时参考
+
+> 状态:现行 | 日期:2026-11-02
+> 读者:后端、运维
+> 口径:基于当前代码;阈值与 TTL 为代码常量,改动时同步本文。
+
+## 服务与端口
+
+| 服务 | 端口 | 说明 |
+| --- | --- | --- |
+| engine | 8000 | FastAPI;健康检查 `/api/health` |
+| web | 3000 | Nuxt 3;开发时经 Nitro 同源代理 `/api/**` → engine |
+| postgres | 5432 | pgvector/pgvector:pg16;业务表 + DBOS schema |
+| redis | 6379 | 只承载可丢失的临时状态 |
+
+## 工作流
+
+| 工作流 | 触发 | 链路 |
+| --- | --- | --- |
+| `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → 发布 `sensor.processed` → 回评 |
+| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → Fixer 补丁建议 → `patch.generated` transform → `comment.posting` veto → 回评(不自动建 PR) |
+
+- 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
+- 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
+- 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
+
+## 租户
+
+- webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
+- `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
+- 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
+
+## Redis
+
+- 只承载可丢失状态;Redis 故障时降级放行,不阻塞主链路。
+- webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。
+- LLM 分析缓存:内容哈希键(前缀 `gwei:`),TTL 24 小时;失败文案不写缓存。
+- 幂等兜底始终是 DBOS workflow ID,不是 Redis。
+
+## LLM 与计量
+
+- `engine/llm/client.py` 经 LiteLLM 调用;重试 3 次,指数退避。
+- 指标:`gwei_llm_calls_total{model}`、`gwei_llm_tokens_total{model}`、`gwei_llm_call_duration_seconds{model}`。
+- AgentSession 的 state 记录 `llm_tokens`,作为计费聚合源。
+
+## 部署模式
+
+- 前端档位:`NUXT_PUBLIC_DEPLOYMENT_MODE`,取值 `selfhost`(默认)或 `saas`。
+- 页面用 `definePageMeta({ modes: [...] })` 声明可见档位;`middleware/mode.global.ts` 对不匹配的路由重定向 `/dashboard`;布局按 `modes` 过滤导航。
+- 后端 `Settings.deployment_mode` 默认 `saas`,与前端档位目前是两个独立字段,没有强制校验对齐。部署时分别设置。
+
+## API
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health` | 健康检查 |
+| GET | `/api/dashboard` | 面板聚合数据 |
+| GET | `/api/dashboard/pending` | 待处理项 |
+| GET | `/api/dashboard/overnight` | 夜间任务 |
+| GET | `/api/dashboard/canary` | 金丝雀状态 |
+| GET | `/api/issues`、`/api/issues/{id}` | Issue 列表 / 详情 |
+| GET | `/api/repos` | 仓库列表 |
+| GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
+| GET | `/api/metrics` | 指标快照 |
+| GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
+| POST | `/webhook/github` | GitHub Webhook(issue 事件) |
+| POST | `/webhook/github/comment` | GitHub 评论事件 |
+
+## 插件
+
+清单、注册表、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。

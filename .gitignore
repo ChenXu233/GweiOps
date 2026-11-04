@@ -67,3 +67,6 @@ dist/
 
 # workflow
 .spec-workflow
+
+# ZCode scratch
+.zcode/
