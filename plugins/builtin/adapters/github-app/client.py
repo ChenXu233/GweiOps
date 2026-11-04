@@ -8,8 +8,6 @@ from typing import Any, Optional
 from githubkit import GitHub, AppInstallationAuthStrategy
 from githubkit.exception import RequestFailed
 
-from engine.shared.netenv import prepare_proxy_env
-
 from .config import GitHubAppConfig
 
 
@@ -22,9 +20,6 @@ class GitHubAppClient:
         Args:
             config: GitHub App 配置。如果未提供，将使用默认配置。
         """
-        # githubkit 底层用 httpx;先把 NO_PROXY 里的 [::1] 这类条目规范化,
-        # 否则 httpx 会抛 InvalidURL: Invalid port ':1]'。
-        prepare_proxy_env()
         self._config = config or GitHubAppConfig()
         self._github: Optional[GitHub] = None
 
