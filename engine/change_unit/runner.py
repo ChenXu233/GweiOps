@@ -1,12 +1,15 @@
 # engine/change_unit/runner.py
-"""单元的推进:预读窗口 → 执行 → 后读窗口 → 验证 → 保持或回滚。
+"""单元的推进:预读窗口 → 判定路径 → 执行 → 后读窗口 → 验证 → 保持或回滚。
 
-平台只做这四步判定;执行、撤销、取数、验证全部委托给 provider(插件)。
+平台只做判定;执行、撤销、取数、验证全部委托给 provider(插件)。
 provider 声明自己服务的 binding,与单元不一致时拒绝执行——跨环境执行是事故,不是配置错。
+
+阻断不是终点:人放行(approve)、人不做(veto)各写一行账,与自动执行一样可审计。
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .ledger import JsonlLedger
@@ -18,10 +21,12 @@ from .model import (
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_ROLLED_BACK,
+    VERDICT_VETOED,
 )
+from .policy import EXECUTE, DEFAULT_HUMAN_RESPONSE_S, Policy
 
-# 夜间人的响应时延。窗口小于它,"可回滚"对一个睡着的人不成立。
-HUMAN_RESPONSE_S = 8 * 3600
+# 旧的模块级常量,保留给已有调用方;真正的口径在 Policy.human_response_s。
+HUMAN_RESPONSE_S = DEFAULT_HUMAN_RESPONSE_S
 
 
 class EffectProvider(Protocol):
@@ -92,24 +97,38 @@ def _resolve_target(unit: ChangeUnit, target: Any) -> EffectProvider:
     return target
 
 
-async def apply(
-    unit: ChangeUnit, target: Any, ledger: JsonlLedger | None = None
+def _merge(unit: ChangeUnit, facts: dict[str, Any]) -> None:
+    """执行结果、验证结果、放行记录都留在同一份 facts 里,别互相覆盖。"""
+    unit.facts = {**unit.facts, **facts}
+
+
+async def _run(
+    unit: ChangeUnit,
+    provider: EffectProvider,
+    ledger: JsonlLedger | None,
+    *,
+    policy: Policy,
+    now: datetime,
+    authorized_by: str,
 ) -> ChangeUnit:
-    """推进一个单元。target 是已解析的 provider,或一个能 resolve 的注册表。"""
-    replayed = _replay(unit, ledger)
-    if replayed is not None:
-        return replayed
-    provider = _resolve_target(unit, target)
-    _assert_binding(unit, provider)
     effect = unit.effect
 
     pre = await provider.window(effect, None)
     unit.window = pre
-    if not pre.covers(HUMAN_RESPONSE_S):
-        unit.verdict = VERDICT_BLOCKED
-        unit.reason = f"执行前窗口不足: {pre.source or 'unknown'}"
-        _record(ledger, unit)
-        return unit
+
+    if authorized_by:
+        # 人此刻在场的,窗口不需要盖过"睡一觉"的时间。
+        _merge(unit, {"authorized_by": authorized_by})
+        response_s = 0
+    else:
+        decision = policy.decide(unit, pre, now)
+        if decision.action != EXECUTE:
+            unit.verdict = VERDICT_BLOCKED
+            unit.reason = decision.reason
+            _record(ledger, unit)
+            return unit
+        _merge(unit, {"gate": decision.reason})
+        response_s = decision.response_s
 
     result = await provider.execute(effect.task, effect.args)
     handle = result.get("handle")
@@ -117,22 +136,29 @@ async def apply(
         # 已经动了外部世界,但兑现不了撤销:显式记为不可逆,不允许掩盖。
         unit.verdict = VERDICT_IRREVERSIBLE
         unit.reason = "执行后没有句柄,无法兑现撤销"
-        unit.facts = {k: v for k, v in result.items() if k != "handle"}
+        _merge(unit, {k: v for k, v in result.items() if k != "handle"})
         _record(ledger, unit)
         return unit
     unit.handle = handle
+    _merge(unit, {k: v for k, v in result.items() if k != "handle"})
 
     post = await provider.window(effect, handle)
     unit.window = post
-    if not post.covers(HUMAN_RESPONSE_S):
-        await provider.undo(effect.undo_task, effect.args, handle)
-        unit.verdict = VERDICT_ROLLED_BACK
-        unit.reason = f"执行后窗口不足: {post.source or 'unknown'}"
+    # 人在场:只问"撤得了吗";人不在:要问"到他能反应过来时还撤得了吗"。
+    still_reversible = post.known if authorized_by else post.covers(response_s)
+    if not still_reversible:
+        if post.known:
+            await provider.undo(effect.undo_task, effect.args, handle)
+            unit.verdict = VERDICT_ROLLED_BACK
+            unit.reason = f"执行后窗口不足: {post.source or 'unknown'}"
+        else:
+            unit.verdict = VERDICT_IRREVERSIBLE
+            unit.reason = "已执行,但执行后读不到窗口,撤销兑现不了"
         _record(ledger, unit)
         return unit
 
     ok, facts = await provider.verify(effect, handle)
-    unit.facts = facts
+    _merge(unit, facts)
     if not ok:
         await provider.undo(effect.undo_task, effect.args, handle)
         unit.verdict = VERDICT_ROLLED_BACK
@@ -141,7 +167,84 @@ async def apply(
         return unit
 
     unit.verdict = VERDICT_KEPT
-    unit.reason = "验证通过,进入待审(可撤)"
+    unit.reason = "人工放行后验证通过,保持运行" if authorized_by else "验证通过,进入待审(可撤)"
+    _record(ledger, unit)
+    return unit
+
+
+async def apply(
+    unit: ChangeUnit,
+    target: Any,
+    ledger: JsonlLedger | None = None,
+    *,
+    policy: Policy | None = None,
+    authorized_by: str = "",
+    at: datetime | None = None,
+    skip_replay: bool = False,
+) -> ChangeUnit:
+    """推进一个单元。target 是已解析的 provider,或一个能 resolve 的注册表。
+
+    authorized_by 非空表示人已经当场放手:跳过路径判定,执行后仍照常读窗口、照常验证。
+    at 只在测试里用,给策略一个确定的"现在"。
+    skip_replay 只给放行用:被阻断的单元已经有同键记录,照幂等规则会被直接判成"已完成"。
+    """
+    if not skip_replay:
+        replayed = _replay(unit, ledger)
+        if replayed is not None:
+            return replayed
+    provider = _resolve_target(unit, target)
+    _assert_binding(unit, provider)
+    return await _run(
+        unit,
+        provider,
+        ledger,
+        policy=policy or Policy(),
+        now=at or datetime.now(timezone.utc),
+        authorized_by=authorized_by,
+    )
+
+
+async def approve(
+    unit: ChangeUnit,
+    target: Any,
+    ledger: JsonlLedger | None = None,
+    *,
+    by: str = "",
+    reason: str = "人工放行",
+) -> ChangeUnit:
+    """人对一个阻断的单元放手。
+
+    放行不等于放宽判定口径:执行后照样读窗口、照样验证,失败照样回滚。
+    它只说明"此刻有人在场",因此响应时延按秒算而不是按小时算。
+    """
+    if unit.verdict != VERDICT_BLOCKED:
+        raise ValueError(f"只有阻断的单元需要放行,当前是 {unit.verdict!r}")
+    _merge(unit, {"blocked_reason": unit.reason, "approval_reason": reason})
+    # 放行是人在同一个幂等键上的一次新决定,不能被"上一次已经阻断"的账本短接。
+    return await apply(
+        unit,
+        target,
+        ledger,
+        authorized_by=by or "人工",
+        at=datetime.now(timezone.utc),
+        skip_replay=True,
+    )
+
+
+def veto(
+    unit: ChangeUnit,
+    ledger: JsonlLedger | None = None,
+    *,
+    by: str = "",
+    reason: str = "人工否决",
+) -> ChangeUnit:
+    """人不做这次变更。否决本身也是一次决定,同样写一行账。"""
+    if unit.verdict in (VERDICT_KEPT, VERDICT_ROLLED_BACK):
+        raise ValueError(f"单元已经执行过({unit.verdict!r}),只能撤销,不能否决")
+    unit.verdict = VERDICT_VETOED
+    unit.reason = reason
+    if by:
+        _merge(unit, {"vetoed_by": by})
     _record(ledger, unit)
     return unit
 

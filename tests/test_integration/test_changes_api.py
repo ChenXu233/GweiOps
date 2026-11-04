@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from engine.api.routes import changes as changes_mod
-from engine.change_unit import ChangeUnit, Effect, JsonlLedger
+from engine.change_unit import ChangeUnit, Effect, JsonlLedger, Window
 from engine.plugin_manager.manifest import EffectDecl
 from engine.shared.config import config
 
@@ -147,3 +147,86 @@ def test_filters(client, ledger):
     ledger.append(_unit("blocked", handle=None, unit_id="b"))
     assert client.get("/api/changes?verdict=blocked").json()["total"] == 1
     assert client.get("/api/changes?binding=nope").json()["total"] == 0
+
+# ---------------------------------------------------------------------------
+# 阻断的出口:放行 / 否决
+# ---------------------------------------------------------------------------
+
+
+class RunProvider:
+    """放行路径需要真的执行:读窗口 → 执行 → 读窗口 → 验证。"""
+
+    binding = "github"
+    tenant = ""
+
+    def __init__(self, *, window=None):
+        self.executed = 0
+        self.undone = 0
+        self._window = window or Window(unbounded=True, source="fake")
+
+    async def window(self, effect, handle):
+        return self._window
+
+    async def execute(self, task, args):
+        self.executed += 1
+        return {"handle": "95"}
+
+    async def undo(self, task, args, handle):
+        self.undone += 1
+        return {}
+
+    async def verify(self, effect, handle):
+        return True, {"comment_exists": True}
+
+
+def test_approve_runs_a_blocked_unit(client, ledger, monkeypatch):
+    ledger.append(_unit("blocked", handle=None))
+    provider = RunProvider()
+    monkeypatch.setattr(
+        changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
+    )
+
+    resp = client.post("/api/changes/u1/approve?by=值班人&reason=现在就做")
+    assert resp.status_code == 200, resp.text
+    assert provider.executed == 1
+
+    body = resp.json()
+    assert body["latest"]["verdict"] == "kept"
+    assert body["latest"]["facts"]["authorized_by"] == "值班人"
+    assert len(body["history"]) == 2
+
+
+def test_approve_rejects_an_already_executed_unit(client, ledger):
+    ledger.append(_unit("kept"))
+    assert client.post("/api/changes/u1/approve").status_code == 409
+
+
+def test_approve_without_provider_is_503(client, ledger, monkeypatch):
+    ledger.append(_unit("blocked", handle=None))
+
+    def boom(*a, **k):
+        raise LookupError("no provider")
+
+    monkeypatch.setattr(changes_mod.registry, "effect_decl", boom)
+    assert client.post("/api/changes/u1/approve").status_code == 503
+
+
+def test_veto_writes_a_decision_row(client, ledger):
+    ledger.append(_unit("blocked", handle=None))
+    resp = client.post("/api/changes/u1/veto?by=值班人&reason=等周一")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["latest"]["verdict"] == "vetoed"
+    assert body["latest"]["reason"] == "等周一"
+    assert body["latest"]["facts"]["vetoed_by"] == "值班人"
+    assert len(body["history"]) == 2
+
+
+def test_veto_rejects_an_executed_unit(client, ledger):
+    ledger.append(_unit("kept"))
+    assert client.post("/api/changes/u1/veto").status_code == 409
+
+
+def test_veto_unknown_change_404(client):
+    assert client.post("/api/changes/nope/veto").status_code == 404
+
