@@ -6,7 +6,11 @@
 - `PLUGINS_EXTRA_DIRS`(冒号分隔)为外部插件根,每个根下的 `<pkg>/plugin.yaml`
   以包路径导入(根会加入 sys.path)——这是闭源插件的挂载点;
 - 单个插件的清单解析/导入/实例化失败只跳过自身(日志 + metrics),不影响其他插件;
-- 同名插件重复注册视为配置错误,抛出。
+- 同一清单可以注册多个实例(每租户/每目标一个),实例键默认取清单名。
+
+能力解析:
+- 不带 tenant/binding 时按全局优先级选(单租户与控制面形态);
+- 带 tenant/binding 时按 (租户, 目标) 精确匹配,选不到直接抛,不跨目标回退。
 """
 
 import importlib
@@ -29,7 +33,7 @@ DEFAULT_BUILTIN_DIR = Path.cwd() / "plugins" / "builtin"
 
 @dataclass
 class _CapabilityProvider:
-    name: str
+    key: str
     priority: int
 
 
@@ -37,6 +41,7 @@ class PluginRegistry:
     def __init__(self) -> None:
         self._manifests: dict[str, Manifest] = {}
         self._instances: dict[str, PluginBase] = {}
+        self._instance_names: dict[str, str] = {}  # 实例键 -> 清单名
         self._dirs: dict[str, Path] = {}
         self._event_index: dict[str, list[str]] = {}
         self._capability_index: dict[str, list[_CapabilityProvider]] = {}
@@ -88,7 +93,7 @@ class PluginRegistry:
                     )
                     logger.error("Failed to load plugin at %s: %s", manifest_path, e)
         logger.info(
-            "Plugin registry loaded %d plugin(s): %s",
+            "Plugin registry loaded %d plugin instance(s): %s",
             len(self._instances),
             ", ".join(sorted(self._instances)) or "<none>",
         )
@@ -109,24 +114,41 @@ class PluginRegistry:
 
     def plugin_dir(self, name: str) -> Path | None:
         """插件目录(含 plugin.yaml 的目录);未注册返回 None。"""
-        return self._dirs.get(name)
+        if name in self._dirs:
+            return self._dirs[name]
+        keys = [k for k, n in self._instance_names.items() if n == name]
+        return self._dirs.get(keys[0]) if len(keys) == 1 else None
 
     def register(
-        self, manifest: Manifest, instance: PluginBase, plugin_dir: Path | None = None
+        self,
+        manifest: Manifest,
+        instance: PluginBase,
+        plugin_dir: Path | None = None,
+        key: str | None = None,
     ) -> None:
-        if manifest.name in self._manifests:
-            raise ValueError(f"Duplicate plugin name: {manifest.name}")
+        """注册一个实例。
 
-        self._manifests[manifest.name] = manifest
-        self._instances[manifest.name] = instance
+        key 默认取清单名;同一清单要挂多个实例时(每租户/每目标一个)显式给 key。
+        同名清单内容必须一致,否则视为配置错误。
+        """
+        instance_key = key or manifest.name
+        existing = self._manifests.get(manifest.name)
+        if existing is not None and existing != manifest:
+            raise ValueError(f"Duplicate plugin name with different manifest: {manifest.name}")
+        if instance_key in self._instances:
+            raise ValueError(f"Duplicate plugin instance key: {instance_key}")
+
+        self._manifests.setdefault(manifest.name, manifest)
+        self._instances[instance_key] = instance
+        self._instance_names[instance_key] = manifest.name
         if plugin_dir is not None:
-            self._dirs[manifest.name] = plugin_dir
+            self._dirs[instance_key] = plugin_dir
 
         for event in manifest.event_subscriptions:
-            self._event_index.setdefault(event, []).append(manifest.name)
+            self._event_index.setdefault(event, []).append(instance_key)
         for capability in manifest.capabilities:
             provider = _CapabilityProvider(
-                name=manifest.name,
+                key=instance_key,
                 priority=manifest.capabilities_priority.get(capability, 0),
             )
             self._capability_index.setdefault(capability, []).append(provider)
@@ -134,12 +156,13 @@ class PluginRegistry:
                 key=lambda p: p.priority, reverse=True
             )
         for sub in manifest.hooks_subscribed:
-            self._hook_index.setdefault(sub.point, []).append((sub.priority, manifest.name))
+            self._hook_index.setdefault(sub.point, []).append((sub.priority, instance_key))
             self._hook_index[sub.point].sort(key=lambda item: item[0], reverse=True)
 
     def _reset(self) -> None:
         self._manifests.clear()
         self._instances.clear()
+        self._instance_names.clear()
         self._dirs.clear()
         self._event_index.clear()
         self._capability_index.clear()
@@ -150,8 +173,12 @@ class PluginRegistry:
     # 查询
     # ------------------------------------------------------------------
 
-    def get(self, name: str) -> PluginBase | None:
-        return self._instances.get(name)
+    def get(self, key: str) -> PluginBase | None:
+        """按实例键查询;键不存在时,若清单名唯一对应一个实例也返回它。"""
+        if key in self._instances:
+            return self._instances[key]
+        keys = [k for k, n in self._instance_names.items() if n == key]
+        return self._instances[keys[0]] if len(keys) == 1 else None
 
     def manifest(self, name: str) -> Manifest | None:
         return self._manifests.get(name)
@@ -161,17 +188,18 @@ class PluginRegistry:
 
     def instances_for_event(self, event: str) -> list[PluginBase]:
         return [
-            self._instances[name] for name in self._event_index.get(event, [])
-            if name in self._instances
+            self._instances[key] for key in self._event_index.get(event, [])
+            if key in self._instances
         ]
 
     def hook_subscribers(self, point: str) -> list[tuple[Manifest, PluginBase, Any]]:
         """按优先级降序返回 (manifest, 实例, 订阅声明)。"""
         subs: list[tuple[int, str]] = self._hook_index.get(point, [])
         out: list[tuple[Manifest, PluginBase, Any]] = []
-        for _, name in subs:
-            manifest = self._manifests.get(name)
-            instance = self._instances.get(name)
+        for _, key in subs:
+            manifest_name = self._instance_names.get(key, "")
+            manifest = self._manifests.get(manifest_name)
+            instance = self._instances.get(key)
             if manifest is None or instance is None:
                 continue
             declaration = next(
@@ -182,7 +210,51 @@ class PluginRegistry:
 
     def best_capability_provider(self, capability: str) -> PluginBase | None:
         providers = self._capability_index.get(capability, [])
-        return self._instances.get(providers[0].name) if providers else None
+        return self._instances.get(providers[0].key) if providers else None
+
+    def capability_bindings(self, capability: str) -> list[tuple[str, str, str, int]]:
+        """(实例键, tenant, binding, priority) —— 用于诊断"为什么没选到它"。"""
+        out: list[tuple[str, str, str, int]] = []
+        for provider in self._capability_index.get(capability, []):
+            instance = self._instances.get(provider.key)
+            out.append(
+                (
+                    provider.key,
+                    getattr(instance, "tenant", ""),
+                    getattr(instance, "binding", ""),
+                    provider.priority,
+                )
+            )
+        return out
+
+    def resolve(self, capability: str, *, tenant: str = "", binding: str = "") -> PluginBase:
+        """按 (租户, 目标) 精确选择提供者。
+
+        不做模糊匹配、不跨目标回退:同一能力在 A 目标的提供者绝不服务 B 目标。
+        控制面能力(不针对具体环境的)用 tenant="" binding="" 解析。
+        """
+        providers = self._capability_index.get(capability, [])
+        if not providers:
+            raise LookupError(f"No provider for capability: {capability}")
+        for provider in providers:  # 索引已按 priority 降序
+            instance = self._instances.get(provider.key)
+            if instance is None:
+                continue
+            if (
+                getattr(instance, "tenant", "") == tenant
+                and getattr(instance, "binding", "") == binding
+            ):
+                return instance
+        raise LookupError(
+            f"No provider for capability={capability} tenant={tenant!r} binding={binding!r}; "
+            f"available={self.capability_bindings(capability)}"
+        )
+
+    def _key_of(self, instance: PluginBase) -> str | None:
+        for key, candidate in self._instances.items():
+            if candidate is instance:
+                return key
+        return None
 
     # ------------------------------------------------------------------
     # 生命周期与执行
@@ -190,46 +262,61 @@ class PluginRegistry:
 
     async def launch(self) -> None:
         """逐插件 on_startup,单插件失败被隔离(日志 + metrics),不中断其他插件。"""
-        for name, instance in self._instances.items():
+        for key, instance in self._instances.items():
             try:
                 await instance.on_startup()
-                logger.info("Plugin %s started", name)
+                logger.info("Plugin %s started", key)
             except Exception as e:
-                metrics.increment(
-                    "plugin_startup_errors_total", {"plugin": name}
-                )
-                logger.error("Plugin %s failed to start: %s", name, e)
+                metrics.increment("plugin_startup_errors_total", {"plugin": key})
+                logger.error("Plugin %s failed to start: %s", key, e)
         self._launched = True
 
     async def shutdown(self) -> None:
-        for name, instance in self._instances.items():
+        for key, instance in self._instances.items():
             try:
                 await instance.on_shutdown()
             except Exception as e:
-                logger.error("Plugin %s failed to shut down: %s", name, e)
+                logger.error("Plugin %s failed to shut down: %s", key, e)
         self._launched = False
 
     async def health_check_all(self) -> dict[str, bool]:
         results: dict[str, bool] = {}
-        for name, instance in self._instances.items():
+        for key, instance in self._instances.items():
             try:
-                results[name] = bool(await instance.health_check())
+                results[key] = bool(await instance.health_check())
             except Exception:
-                results[name] = False
+                results[key] = False
         return results
 
-    async def run_capability(self, capability: str, params: dict) -> dict:
-        """由优先级最高的提供者执行能力;无提供者抛 LookupError。
+    async def run_capability(
+        self,
+        capability: str,
+        params: dict,
+        *,
+        tenant: str | None = None,
+        binding: str | None = None,
+    ) -> dict:
+        """执行一次能力调用。
 
-        任务名来自 manifest 的 tasks 映射,缺省为能力名的下划线形式。
+        不给 tenant/binding 时按全局优先级选(单租户与控制面形态);给了就按
+        (租户, 目标) 精确解析,选不到直接抛,不回退到别的目标。
+
+        任务名来自**被选中提供者**的清单,不是任意一个声明了同名能力的清单。
         """
-        provider = self.best_capability_provider(capability)
-        if provider is None:
-            raise LookupError(f"No provider for capability: {capability}")
-        manifest = next(
-            m for m in self._manifests.values() if capability in m.capabilities
+        if tenant is None and binding is None:
+            provider = self.best_capability_provider(capability)
+            if provider is None:
+                raise LookupError(f"No provider for capability: {capability}")
+        else:
+            provider = self.resolve(capability, tenant=tenant or "", binding=binding or "")
+
+        key = self._key_of(provider)
+        manifest = self._manifests.get(self._instance_names.get(key or "", ""))
+        task = (
+            manifest.tasks.get(capability, capability.replace(".", "_"))
+            if manifest
+            else capability.replace(".", "_")
         )
-        task = manifest.tasks.get(capability, capability.replace(".", "_"))
         return await provider.execute_task(task, params)
 
 
