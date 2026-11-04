@@ -86,7 +86,7 @@ class IntentBuilder(PluginBase):
     def _assemble(
         signal: dict[str, Any], analysis: dict[str, Any], patches: list[dict]
     ) -> dict[str, Any]:
-        from engine.workflows.pipeline import _format_suggestion_reply
+        from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 
         evidence = [{"kind": "issue", "ref": f"{signal.get('repo', '')}#{signal.get('issue_number', '')}"}]
         if analysis.get("labels"):
