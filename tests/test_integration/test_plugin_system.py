@@ -139,8 +139,8 @@ class TestManifest:
         m = Manifest.from_yaml(Path("plugins/builtin/agents/fixer/plugin.yaml"))
         assert m.class_name == "FixerAgent"
         assert m.tasks["patch.generate"] == "generate_patches"
-        assert "sensor.processed" not in m.event_subscriptions
-        assert "diagnosis.complete" in m.event_subscriptions
+        # 订阅的事件必须真有人发布;当前核心不发布任何事件
+        assert m.event_subscriptions == []
 
     def test_missing_field_rejected(self, tmp_path):
         from engine.plugin_manager.manifest import Manifest, ManifestError
