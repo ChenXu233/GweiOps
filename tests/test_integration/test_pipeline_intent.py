@@ -8,6 +8,16 @@ import pytest
 
 import engine.workflows.pipeline as pipeline
 from engine.change_unit import Effect, Window
+from engine.plugin_manager.manifest import EffectDecl
+
+DECL = EffectDecl(
+    capability="comment.create",
+    execute_task="create_comment",
+    undo_task="delete_comment",
+    undo_kind="symmetric",
+    window_read="comment_present",
+    verify=({"query": "comment_exists", "expect": "true"},),
+)
 
 
 PAYLOAD = {
@@ -80,7 +90,7 @@ def test_apply_effects_runs_unit_and_records(tmp_path):
     }
     allow = AsyncMock(return_value={"allowed": True, "payload": {"body": "hi"}})
 
-    with patch.object(pipeline.registry, "resolve", return_value=provider), \
+    with patch.object(pipeline.registry, "effect_decl", return_value=(provider, DECL)), \
          patch.object(pipeline.hooks, "apply", allow), \
          patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
         out = asyncio.run(pipeline._apply_effects_impl(intent, PAYLOAD, "wf-1:effects"))
@@ -99,7 +109,7 @@ def test_apply_effects_skips_vetoed_comment(tmp_path):
     }
     deny = AsyncMock(return_value={"allowed": False, "payload": {}})
 
-    with patch.object(pipeline.registry, "resolve", return_value=provider), \
+    with patch.object(pipeline.registry, "effect_decl", return_value=(provider, DECL)), \
          patch.object(pipeline.hooks, "apply", deny), \
          patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
         out = asyncio.run(pipeline._apply_effects_impl(intent, PAYLOAD, "wf-2:effects"))

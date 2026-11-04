@@ -56,6 +56,7 @@ ui:
 | `hooks.subscribe` | 扩展点订阅;mode/priority/failure_mode/handler 见 Hook 一节 |
 | `ui.widgets` | 声明式卡片;slot 为插槽名,kind 为 metric 或 list,span 为 1–4 |
 | `ui.pages` | iframe 页面;entry 缺省 index.html,禁止绝对路径、`..` 与反斜杠 |
+| `effects` | 效果声明:execute / undo / window / verify,核心加载期校验 |
 
 ## 注册表
 
@@ -117,6 +118,29 @@ missing = config.validate_scope("adapter-github-app")    # ["private_key"]
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`。
+
+## 效果声明
+
+`effects` 块声明「这个插件能改什么、怎么撤、怎么验」,由核心在加载期解析并校验,坏的直接拒绝注册。
+
+```yaml
+effects:
+  comment.create:
+    label: 在 Issue / PR 上发一条评论
+    execute: { task: create_comment, args: [repo, issue_number, body] }
+    undo: { task: delete_comment, kind: symmetric }
+    window: { read: comment_present }
+    verify:
+      - { query: comment_exists, expect: "true" }
+```
+
+- `undo.kind`:`retained`(下游保留旧状态)或 `symmetric`(撤销作用在同一对象上)。
+- `window.read` 是读取来源,不是时长;真窗口在运行期读出来,声明只说读什么。
+- 每条 verify 必须是 `{query, expect}`。
+- 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
+- 同名效果由多个插件声明时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
+
+插件只实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
 
 ## 运行时接线
 

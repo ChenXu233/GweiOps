@@ -237,6 +237,17 @@ class FakeDocker:
         return ""
 
 
+def _compose_effect(project_dir, service="web", replicas=2):
+    """效果由声明构造;声明权在核心,插件只执行。"""
+    return Effect(
+        task="scale",
+        args={"project_dir": str(project_dir), "service": service, "replicas": replicas},
+        undo_task="undo_scale",
+        undo_kind="symmetric",
+        capability="compose.scale",
+    )
+
+
 def _compose_project(tmp_path):
     (tmp_path / "docker-compose.yml").write_text(
         "services:\n  web:\n    image: alpine:3.20\n", encoding="utf-8"
@@ -250,9 +261,7 @@ def test_compose_scale_kept_and_undo_restores(tmp_path):
     plugin = compose_mod.DockerComposeAction(runner=docker)
     asyncio.run(plugin.on_startup())
 
-    effect = plugin.effect(
-        "compose.scale", project_dir=str(project), service="web", replicas=3
-    )
+    effect = _compose_effect(project, replicas=3)
     unit = asyncio.run(
         apply(ChangeUnit(intent={"issue": 1}, effect=effect, binding="local"), plugin)
     )
@@ -271,9 +280,7 @@ def test_remote_binding_targets_other_daemon(tmp_path):
     plugin = compose_mod.DockerComposeAction(runner=docker, binding="ssh://ops@node-1")
     asyncio.run(plugin.on_startup())
 
-    effect = plugin.effect(
-        "compose.scale", project_dir=str(project), service="web", replicas=4
-    )
+    effect = _compose_effect(project, replicas=4)
     unit = asyncio.run(
         apply(ChangeUnit(intent={}, effect=effect, binding="ssh://ops@node-1"), plugin)
     )
@@ -288,9 +295,7 @@ def test_unit_cannot_run_on_another_host(tmp_path):
     project = _compose_project(tmp_path)
     plugin = compose_mod.DockerComposeAction(runner=FakeDocker(), binding="host-a")
     asyncio.run(plugin.on_startup())
-    effect = plugin.effect(
-        "compose.scale", project_dir=str(project), service="web", replicas=2
-    )
+    effect = _compose_effect(project, replicas=2)
     with pytest.raises(ValueError, match="binding 不匹配"):
         asyncio.run(apply(ChangeUnit(intent={}, effect=effect, binding="host-b"), plugin))
 
@@ -298,9 +303,7 @@ def test_unit_cannot_run_on_another_host(tmp_path):
 def test_compose_window_unknown_without_compose_file(tmp_path):
     plugin = compose_mod.DockerComposeAction(runner=FakeDocker())
     asyncio.run(plugin.on_startup())
-    effect = plugin.effect(
-        "compose.scale", project_dir=str(tmp_path), service="web", replicas=2
-    )
+    effect = _compose_effect(tmp_path, replicas=2)
     window = asyncio.run(plugin.window(effect, None))
     assert window.known is False
     unit = asyncio.run(apply(ChangeUnit(intent={}, effect=effect, binding="local"), plugin))
@@ -330,9 +333,7 @@ def test_real_compose_scale_roundtrip(tmp_path):
     )
     plugin = compose_mod.DockerComposeAction()
     asyncio.run(plugin.on_startup())
-    effect = plugin.effect(
-        "compose.scale", project_dir=str(tmp_path), service="web", replicas=2
-    )
+    effect = _compose_effect(tmp_path, replicas=2)
     unit = asyncio.run(
         apply(ChangeUnit(intent={"issue": 1}, effect=effect, binding="local"), plugin)
     )

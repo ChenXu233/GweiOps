@@ -21,6 +21,39 @@ class ManifestError(ValueError):
     """清单缺失必填字段或含非法值。"""
 
 
+EFFECT_UNDO_KINDS = ("retained", "symmetric")
+
+
+@dataclass(frozen=True)
+class EffectDecl:
+    """一个效果声明:谁能改什么、怎么撤、怎么验。
+
+    声明权在清单,执行权在插件。核心在加载期解析并校验,坏的直接拒绝注册——
+    不让它拖到真去执行时才炸。
+    """
+
+    capability: str
+    execute_task: str
+    undo_task: str
+    undo_kind: str = "retained"
+    window_read: str = ""
+    verify: tuple[dict[str, Any], ...] = ()
+    label: str = ""
+
+    def to_effect(self, args: dict[str, Any]):
+        """按声明构造一次待执行的效果(引用,不含实现)。"""
+        from engine.change_unit.model import Effect
+
+        return Effect(
+            task=self.execute_task,
+            args=dict(args),
+            undo_task=self.undo_task,
+            undo_kind=self.undo_kind,
+            label=self.label,
+            capability=self.capability,
+        )
+
+
 @dataclass
 class HookSubscription:
     """对某扩展点的一次订阅。"""
@@ -84,6 +117,7 @@ class Manifest:
     tasks: dict[str, str] = field(default_factory=dict)  # capability -> execute_task 任务名
     ui_widgets: list[UiWidget] = field(default_factory=list)
     ui_pages: list[UiPage] = field(default_factory=list)
+    effects: dict[str, EffectDecl] = field(default_factory=dict)
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -173,6 +207,8 @@ class Manifest:
                 raise ManifestError(f"{path}: 非法 ui.page entry {entry!r}")
             pages.append(UiPage(title=p["title"], entry=entry))
 
+        effects = _parse_effects(path, raw.get("effects") or {})
+
         return cls(
             name=raw["name"],
             version=str(raw["version"]),
@@ -189,4 +225,48 @@ class Manifest:
             tasks={str(k): str(v) for k, v in (raw.get("tasks") or {}).items()},
             ui_widgets=widgets,
             ui_pages=pages,
+            effects=effects,
         )
+
+
+def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
+    """解析 effects 块。形状不对即拒绝注册——坏声明不该活到执行期。"""
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{path}: effects 必须是映射")
+
+    out: dict[str, EffectDecl] = {}
+    for capability, spec in raw.items():
+        if not isinstance(spec, dict):
+            raise ManifestError(f"{path}: effect {capability} 必须是映射")
+
+        execute = spec.get("execute") or {}
+        undo = spec.get("undo") or {}
+        window = spec.get("window") or {}
+        verify = spec.get("verify") or []
+
+        if not execute.get("task"):
+            raise ManifestError(f"{path}: effect {capability} 缺少 execute.task")
+        if not undo.get("task"):
+            raise ManifestError(f"{path}: effect {capability} 缺少 undo.task")
+        if undo.get("kind", "retained") not in EFFECT_UNDO_KINDS:
+            raise ManifestError(f"{path}: effect {capability} 的 undo.kind 非法")
+        if not window.get("read"):
+            raise ManifestError(f"{path}: effect {capability} 缺少 window.read")
+        if not isinstance(verify, list) or not verify:
+            raise ManifestError(f"{path}: effect {capability} 至少要有一条 verify")
+        for rule in verify:
+            if not isinstance(rule, dict) or not rule.get("query") or "expect" not in rule:
+                raise ManifestError(
+                    f"{path}: effect {capability} 的 verify 必须是 {{query, expect}}"
+                )
+
+        out[capability] = EffectDecl(
+            capability=capability,
+            execute_task=execute["task"],
+            undo_task=undo["task"],
+            undo_kind=undo.get("kind", "retained"),
+            window_read=window["read"],
+            verify=tuple(verify),
+            label=spec.get("label", ""),
+        )
+    return out
