@@ -1,0 +1,18 @@
+name: docker-compose
+version: 0.1.0
+type: action
+description: 用 docker compose 执行可撤销的服务变更,是变更单元契约的第一个下游样例
+class_name: DockerComposeAction
+capabilities: [compose.scale]
+tasks:
+  compose.scale: scale
+
+# 变更单元声明:核心目前只忽略这一段,由插件自己读取并对外提供。
+effects:
+  compose.scale:
+    label: 调整 compose 服务副本数
+    execute: { task: scale, args: [project_dir, service, replicas] }
+    undo: { task: undo_scale, kind: symmetric }
+    window: { read: project_present }
+    verify:
+      - { query: running_replicas, expect: ">= {replicas}", for: 10s }
