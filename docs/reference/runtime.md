@@ -23,12 +23,14 @@
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
-- 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼;账本默认落 `var/change-ledger.jsonl`。
+- 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 
 ## 变更账本
 
-- 存储:`CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`),每行一个事件,只追加、不改写。
-- 一个单元执行写一行、撤销再写一行,`id` 相同;当前状态取最后一行。
+- 后端:`CHANGE_LEDGER_BACKEND`。`db`(默认)写业务库 `change_events` 表,启动时 checkfirst 建表;`file` 写 `CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`)的单文件 JSONL,仅用于演示与离线调试——并发追加与租户隔离都靠不住。
+- 一行一个事件,只追加、不改写。顺序看自增主键,不看时间戳(机器时钟会回拨)。
+- 一个单元判定、执行、放行、撤销各写一行,`unit_id` 相同;当前状态取 id 最大的那行。
+- 查询按 `tenant` 收窄(`GET /api/changes?tenant=`)。它是查询范围,不是鉴权:认证接进来之前不构成越权保护。
 - 阻断的单元有两个出口,各写一行账:放行(`approve`)与否决(`veto`)。放行只表示"此刻有人在场",执行后照样读窗口、照样验证,真正不可逆的如实记成 `irreversible`。
 - 撤销前置条件:最新行为已执行且有句柄;已撤销返回 409,未执行返回 400,提供者不可用返回 503。
 - 放行前置条件:最新行为 `blocked`,否则 409。否决前置条件:最新行未执行,已执行的只能撤销。
@@ -70,6 +72,7 @@
 | GET | `/api/dashboard/canary` | 金丝雀状态 |
 | GET | `/api/issues`、`/api/issues/{id}` | Issue 列表 / 详情 |
 | GET | `/api/repos` | 仓库列表 |
+| GET | `/api/runs` | 执行记录(一次 AgentSession 一次执行,含起止与耗时) |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
 | GET | `/api/metrics` | 指标快照 |

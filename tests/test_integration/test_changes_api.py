@@ -66,6 +66,7 @@ def _unit(verdict="kept", handle="42", unit_id="u1"):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setattr(config.settings, "change_ledger_backend", "file")
     monkeypatch.setattr(config.settings, "change_ledger_path", str(tmp_path / "ledger.jsonl"))
     app = FastAPI()
     app.include_router(changes_mod.router)
@@ -83,16 +84,16 @@ def test_empty_ledger(client):
 
 
 def test_latest_folds_events(client, ledger):
-    ledger.append(_unit("kept"))
-    ledger.append(_unit("rolled_back"))
+    asyncio.run(ledger.append(_unit("kept")))
+    asyncio.run(ledger.append(_unit("rolled_back")))
     body = client.get("/api/changes").json()
     assert body["total"] == 1
     assert body["items"][0]["verdict"] == "rolled_back"
 
 
 def test_history_returns_all_events(client, ledger):
-    ledger.append(_unit("kept"))
-    ledger.append(_unit("rolled_back"))
+    asyncio.run(ledger.append(_unit("kept")))
+    asyncio.run(ledger.append(_unit("rolled_back")))
     body = client.get("/api/changes/u1").json()
     assert len(body["history"]) == 2
     assert body["latest"]["verdict"] == "rolled_back"
@@ -104,7 +105,7 @@ def test_unknown_change_404(client):
 
 
 def test_rollback_applies_and_appends_audit_row(client, ledger, monkeypatch):
-    ledger.append(_unit("kept"))
+    asyncio.run(ledger.append(_unit("kept")))
     provider = FakeProvider()
     monkeypatch.setattr(
         changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
@@ -120,7 +121,7 @@ def test_rollback_applies_and_appends_audit_row(client, ledger, monkeypatch):
 
 
 def test_rollback_twice_conflicts(client, ledger, monkeypatch):
-    ledger.append(_unit("rolled_back"))
+    asyncio.run(ledger.append(_unit("rolled_back")))
     monkeypatch.setattr(
         changes_mod.registry, "effect_decl", lambda *a, **k: (FakeProvider(), DECL)
     )
@@ -128,12 +129,12 @@ def test_rollback_twice_conflicts(client, ledger, monkeypatch):
 
 
 def test_rollback_unapplied_is_bad_request(client, ledger):
-    ledger.append(_unit("blocked", handle=None))
+    asyncio.run(ledger.append(_unit("blocked", handle=None)))
     assert client.post("/api/changes/u1/rollback").status_code == 400
 
 
 def test_rollback_without_provider_is_503(client, ledger, monkeypatch):
-    ledger.append(_unit("kept"))
+    asyncio.run(ledger.append(_unit("kept")))
 
     def boom(*a, **k):
         raise LookupError("no provider")
@@ -143,8 +144,8 @@ def test_rollback_without_provider_is_503(client, ledger, monkeypatch):
 
 
 def test_filters(client, ledger):
-    ledger.append(_unit("kept", unit_id="a"))
-    ledger.append(_unit("blocked", handle=None, unit_id="b"))
+    asyncio.run(ledger.append(_unit("kept", unit_id="a")))
+    asyncio.run(ledger.append(_unit("blocked", handle=None, unit_id="b")))
     assert client.get("/api/changes?verdict=blocked").json()["total"] == 1
     assert client.get("/api/changes?binding=nope").json()["total"] == 0
 
@@ -180,7 +181,7 @@ class RunProvider:
 
 
 def test_approve_runs_a_blocked_unit(client, ledger, monkeypatch):
-    ledger.append(_unit("blocked", handle=None))
+    asyncio.run(ledger.append(_unit("blocked", handle=None)))
     provider = RunProvider()
     monkeypatch.setattr(
         changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
@@ -197,12 +198,12 @@ def test_approve_runs_a_blocked_unit(client, ledger, monkeypatch):
 
 
 def test_approve_rejects_an_already_executed_unit(client, ledger):
-    ledger.append(_unit("kept"))
+    asyncio.run(ledger.append(_unit("kept")))
     assert client.post("/api/changes/u1/approve").status_code == 409
 
 
 def test_approve_without_provider_is_503(client, ledger, monkeypatch):
-    ledger.append(_unit("blocked", handle=None))
+    asyncio.run(ledger.append(_unit("blocked", handle=None)))
 
     def boom(*a, **k):
         raise LookupError("no provider")
@@ -212,7 +213,7 @@ def test_approve_without_provider_is_503(client, ledger, monkeypatch):
 
 
 def test_veto_writes_a_decision_row(client, ledger):
-    ledger.append(_unit("blocked", handle=None))
+    asyncio.run(ledger.append(_unit("blocked", handle=None)))
     resp = client.post("/api/changes/u1/veto?by=值班人&reason=等周一")
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -223,10 +224,9 @@ def test_veto_writes_a_decision_row(client, ledger):
 
 
 def test_veto_rejects_an_executed_unit(client, ledger):
-    ledger.append(_unit("kept"))
+    asyncio.run(ledger.append(_unit("kept")))
     assert client.post("/api/changes/u1/veto").status_code == 409
 
 
 def test_veto_unknown_change_404(client):
     assert client.post("/api/changes/nope/veto").status_code == 404
-

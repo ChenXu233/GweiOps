@@ -23,7 +23,7 @@ from engine.db import async_session_factory
 from engine.db.models import AgentSession, Issue, Project, Tenant
 from engine.plugin_manager import hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
-from engine.change_unit import ChangeUnit, JsonlLedger, apply as apply_change_unit
+from engine.change_unit import ChangeUnit, apply as apply_change_unit, create_ledger
 from engine.shared.config import config
 from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 from engine.shared.runtime import get_adapter, get_sensor
@@ -247,7 +247,7 @@ async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> di
     parsed = parse_intent(intent)
     tenant = payload.get("tenant_slug", "")
     binding = config.settings.default_binding
-    ledger = JsonlLedger(config.settings.change_ledger_path)
+    ledger = create_ledger()
 
     applied: list[dict] = []
     for index, effect in enumerate(parsed.effects):

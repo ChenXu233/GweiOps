@@ -78,7 +78,7 @@ def test_comment_unit_kept_then_rolled_back(tmp_path):
     assert again.verdict == VERDICT_ROLLED_BACK
     assert plugin.client.deleted == [100]
     assert plugin.client.comments == {}
-    assert len(ledger.read()) == 2
+    assert len(asyncio.run(ledger.read())) == 2
 
 
 def test_binding_must_match_github():

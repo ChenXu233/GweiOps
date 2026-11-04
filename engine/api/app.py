@@ -35,6 +35,13 @@ async def lifespan(app: FastAPI):
     registry.discover()
     await registry.launch()
 
+    # Startup: 账本表(仓库没有迁移工具,checkfirst 建一次)
+    if config.settings.change_ledger_backend != "file":
+        from engine.db.change_ledger import ensure_schema
+
+        await ensure_schema()
+        logger.info("Change ledger ready (backend=db)")
+
     # Startup: 启动 DBOS 并注册工作流队列(按租户分区,公平性执行点)
     logger.info("Launching DBOS...")
     DBOS.launch()

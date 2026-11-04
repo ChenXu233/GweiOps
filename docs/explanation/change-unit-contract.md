@@ -137,7 +137,8 @@ effects:
 
 - 第一个真实单元已跑通:在 GitHub 上发一条评论 → 回读验证 → 删除撤销 → 再验证为空。能力 `comment.create`,提供者是 [GitHub App 适配器](../../plugins/builtin/adapters/github-app/plugin.yaml)。
 - 第二个样例:[docker-compose 动作插件](../../plugins/builtin/actions/docker-compose/plugin.yaml)。能力 `compose.scale`,对称撤销,窗口 `unbounded`;真 docker 往返未验证。
-- 推进器:[engine/change_unit](../../engine/change_unit/runner.py) 做预读窗口 → 执行 → 后读 → 验证 → 保持或回滚;账本首版是 JSONL 文件,尚未进业务库。
+- 推进器:[engine/change_unit](../../engine/change_unit/runner.py) 做预读窗口 → 判定路径 → 执行 → 后读 → 验证 → 保持或回滚。
+- 账本有两个后端,同一套异步接口:`db`(默认,业务库 `change_events` 表,按租户可查、并发追加不丢行)与 `file`(单文件 JSONL,只配演示与离线调试)。选哪个由 `CHANGE_LEDGER_BACKEND` 决定。
 - `binding` 已进入单元与账本,并由推进器强校验。解析层已实现:`registry.resolve(capability, tenant=, binding=)` 按 (租户, 目标) 精确匹配,选不到直接抛,不回退。
 - 幂等已落地:带 `idempotency_key` 的单元重放时只读账本、复用既有结论,不二次外呼;带键却没有账本直接拒绝。
 - 推进器可直接吃注册表:`apply(unit, registry)` 按 (租户, 目标) 解析提供者,解析不到直接抛;已解析的 provider 仍可注入(测试与降级路径),但 binding / tenant 不一致会被拒。

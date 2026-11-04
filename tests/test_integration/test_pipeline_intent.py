@@ -92,6 +92,7 @@ def test_apply_effects_runs_unit_and_records(tmp_path):
 
     with patch.object(pipeline.registry, "effect_decl", return_value=(provider, DECL)), \
          patch.object(pipeline.hooks, "apply", allow), \
+         patch.object(pipeline.config.settings, "change_ledger_backend", "file"), \
          patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
         out = asyncio.run(pipeline._apply_effects_impl(intent, PAYLOAD, "wf-1:effects"))
 
@@ -111,6 +112,7 @@ def test_apply_effects_skips_vetoed_comment(tmp_path):
 
     with patch.object(pipeline.registry, "effect_decl", return_value=(provider, DECL)), \
          patch.object(pipeline.hooks, "apply", deny), \
+         patch.object(pipeline.config.settings, "change_ledger_backend", "file"), \
          patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
         out = asyncio.run(pipeline._apply_effects_impl(intent, PAYLOAD, "wf-2:effects"))
 
@@ -122,6 +124,7 @@ def test_apply_effects_without_effects_is_noop(tmp_path):
     provider = FakeProvider()
     intent = {"summary": "不用动", "effects": []}
     with patch.object(pipeline.registry, "resolve", return_value=provider), \
+         patch.object(pipeline.config.settings, "change_ledger_backend", "file"), \
          patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
         out = asyncio.run(pipeline._apply_effects_impl(intent, PAYLOAD, "wf-3:effects"))
     assert out["applied"] == []
