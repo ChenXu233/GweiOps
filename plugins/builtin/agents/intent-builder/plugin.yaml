@@ -1,0 +1,9 @@
+name: intent-builder
+version: 0.1.0
+type: agent
+description: 把信号与已有分析组装成 intent(harness 切缝的参考实现)
+class_name: IntentBuilder
+capabilities:
+  - intent.propose
+tasks:
+  intent.propose: propose
