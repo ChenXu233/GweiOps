@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: '态势感知', icon: '📊' },
   { href: '/repos', label: '仓库', icon: '📦' },
   { href: '/issues', label: 'Issues', icon: '🎫' },
+  { href: '/changes', label: '变更账本', icon: '📘' },
   { href: '/marketplace', label: '插件', icon: '🧩' },
   { href: '/settings', label: '设置', icon: '⚙️' },
 ]
