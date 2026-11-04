@@ -17,7 +17,8 @@
 | 字段 | 含义 | 由谁产生 |
 | --- | --- | --- |
 | `intent` | 触发来源的引用 + 证据(为什么现在要动) | 来源插件 + 判定规则 |
-| `binding` | 这次变更作用在哪个下游目标(主机 / 集群 / 租户实例) | 调用方;按目标选提供者的解析层待实现 |
+| `binding` | 这次变更作用在哪个下游目标(主机 / 集群 / 租户实例) | 调用方 |
+| `idempotency_key` | 这次效果的身份;重放时据此复用既有结论,不二次外呼 | 调用方(工作流步骤) |
 | `effect.execute` | 一次下游调用:任务名 + 参数 | 效果插件 |
 | `effect.undo` | 一次下游调用:任务名 + 从句柄取参数 | 效果插件 |
 | `effect.window` | 还能撤回多久;秒数或 `unbounded` | 平台执行前后各读一次 |
@@ -99,6 +100,7 @@ effects:
 4. 核心代码不得出现任何运维动作的直接调用(k8s / 云厂商 / CI SDK)。
 5. 不可逆单元必须在账本中显式标注为不可逆,不允许以"待验证"掩盖。
 6. 单元必须带 `binding`,且提供者的 `binding` 必须与之一致。
+7. 带 `idempotency_key` 的单元必须配账本;账本里已有同键记录时只复用结论,不得再次执行。
 
 前四条与第六条都可以机检,第五条是审计口径。
 
@@ -108,6 +110,7 @@ effects:
 - 第一个样例:[docker-compose 动作插件](../../plugins/builtin/actions/docker-compose/plugin.yaml)。能力 `compose.scale`,对称撤销,窗口 `unbounded`。
 - 推进器:[engine/change_unit](../../engine/change_unit/runner.py) 做预读窗口 → 执行 → 后读 → 验证 → 保持或回滚;账本首版是 JSONL 文件,尚未进业务库。
 - `binding` 已进入单元与账本,并由推进器强校验。解析层已实现:`registry.resolve(capability, tenant=, binding=)` 按 (租户, 目标) 精确匹配,选不到直接抛,不回退。
+- 幂等已落地:带 `idempotency_key` 的单元重放时只读账本、复用既有结论,不二次外呼;带键却没有账本直接拒绝。
 - 推进器可直接吃注册表:`apply(unit, registry)` 按 (租户, 目标) 解析提供者,解析不到直接抛;已解析的 provider 仍可注入(测试与降级路径),但 binding / tenant 不一致会被拒。
 - 同一清单可挂多个实例(每租户 / 每目标一个),实例键默认取清单名;SaaS 下按 `<插件>@<租户>/<目标>` 命名。
 - 测试:[test_change_unit.py](../../tests/test_integration/test_change_unit.py),真 docker 的用例在守护进程不可用时跳过。

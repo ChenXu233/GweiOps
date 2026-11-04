@@ -56,6 +56,26 @@ def _assert_binding(unit: ChangeUnit, provider: EffectProvider) -> None:
         )
 
 
+def _replay(unit: ChangeUnit, ledger: JsonlLedger | None) -> ChangeUnit | None:
+    """带幂等键的单元重放时,沿用账本里的既有结论,不二次外呼。
+
+    DBOS 只保证 at-least-once:进程在"做完"和"记账"之间崩溃,恢复后这一步会重跑。
+    幂等必须由账本兜住,不能靠内存。
+    """
+    if not unit.idempotency_key:
+        return None
+    if ledger is None:
+        raise ValueError("单元带幂等键但没有账本:无法判断是否已经执行过")
+    row = ledger.find(unit.idempotency_key)
+    if row is None:
+        return None
+    unit.handle = row.get("handle")
+    unit.verdict = row.get("verdict") or unit.verdict
+    unit.facts = row.get("facts") or {}
+    unit.reason = f"重放:沿用既有结论({row.get('reason') or ''})"
+    return unit
+
+
 def _resolve_target(unit: ChangeUnit, target: Any) -> EffectProvider:
     """target 可以是注册表,也可以是一个已解析的 provider。
 
@@ -75,6 +95,9 @@ async def apply(
     unit: ChangeUnit, target: Any, ledger: JsonlLedger | None = None
 ) -> ChangeUnit:
     """推进一个单元。target 是已解析的 provider,或一个能 resolve 的注册表。"""
+    replayed = _replay(unit, ledger)
+    if replayed is not None:
+        return replayed
     provider = _resolve_target(unit, target)
     _assert_binding(unit, provider)
     effect = unit.effect

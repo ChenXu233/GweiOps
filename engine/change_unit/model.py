@@ -69,6 +69,7 @@ class ChangeUnit:
     effect: Effect
     tenant: str = ""
     binding: str = ""
+    idempotency_key: str = ""  # 这次效果的身份;重放时据此复用既有结论
     handle: str | None = None
     window: Window | None = None
     verdict: str = VERDICT_PENDING
