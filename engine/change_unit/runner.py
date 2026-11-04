@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from .ledger import JsonlLedger
+from .ledger import Ledger
 from .model import (
     ChangeUnit,
     Effect,
@@ -41,9 +41,9 @@ class EffectProvider(Protocol):
     async def verify(self, effect: Effect, handle: str) -> tuple[bool, dict[str, Any]]: ...
 
 
-def _record(ledger: JsonlLedger | None, unit: ChangeUnit) -> None:
+async def _record(ledger: Ledger | None, unit: ChangeUnit) -> None:
     if ledger is not None:
-        ledger.append(unit)
+        await ledger.append(unit)
 
 
 def _assert_binding(unit: ChangeUnit, provider: EffectProvider) -> None:
@@ -62,7 +62,7 @@ def _assert_binding(unit: ChangeUnit, provider: EffectProvider) -> None:
         )
 
 
-def _replay(unit: ChangeUnit, ledger: JsonlLedger | None) -> ChangeUnit | None:
+async def _replay(unit: ChangeUnit, ledger: Ledger | None) -> ChangeUnit | None:
     """带幂等键的单元重放时,沿用账本里的既有结论,不二次外呼。
 
     DBOS 只保证 at-least-once:进程在"做完"和"记账"之间崩溃,恢复后这一步会重跑。
@@ -72,7 +72,7 @@ def _replay(unit: ChangeUnit, ledger: JsonlLedger | None) -> ChangeUnit | None:
         return None
     if ledger is None:
         raise ValueError("单元带幂等键但没有账本:无法判断是否已经执行过")
-    row = ledger.find(unit.idempotency_key)
+    row = await ledger.find(unit.idempotency_key)
     if row is None:
         return None
     unit.handle = row.get("handle")
@@ -105,7 +105,7 @@ def _merge(unit: ChangeUnit, facts: dict[str, Any]) -> None:
 async def _run(
     unit: ChangeUnit,
     provider: EffectProvider,
-    ledger: JsonlLedger | None,
+    ledger: Ledger | None,
     *,
     policy: Policy,
     now: datetime,
@@ -125,7 +125,7 @@ async def _run(
         if decision.action != EXECUTE:
             unit.verdict = VERDICT_BLOCKED
             unit.reason = decision.reason
-            _record(ledger, unit)
+            await _record(ledger, unit)
             return unit
         _merge(unit, {"gate": decision.reason})
         response_s = decision.response_s
@@ -137,7 +137,7 @@ async def _run(
         unit.verdict = VERDICT_IRREVERSIBLE
         unit.reason = "执行后没有句柄,无法兑现撤销"
         _merge(unit, {k: v for k, v in result.items() if k != "handle"})
-        _record(ledger, unit)
+        await _record(ledger, unit)
         return unit
     unit.handle = handle
     _merge(unit, {k: v for k, v in result.items() if k != "handle"})
@@ -154,7 +154,7 @@ async def _run(
         else:
             unit.verdict = VERDICT_IRREVERSIBLE
             unit.reason = "已执行,但执行后读不到窗口,撤销兑现不了"
-        _record(ledger, unit)
+        await _record(ledger, unit)
         return unit
 
     ok, facts = await provider.verify(effect, handle)
@@ -163,19 +163,19 @@ async def _run(
         await provider.undo(effect.undo_task, effect.args, handle)
         unit.verdict = VERDICT_ROLLED_BACK
         unit.reason = "验证未通过,已回滚"
-        _record(ledger, unit)
+        await _record(ledger, unit)
         return unit
 
     unit.verdict = VERDICT_KEPT
     unit.reason = "人工放行后验证通过,保持运行" if authorized_by else "验证通过,进入待审(可撤)"
-    _record(ledger, unit)
+    await _record(ledger, unit)
     return unit
 
 
 async def apply(
     unit: ChangeUnit,
     target: Any,
-    ledger: JsonlLedger | None = None,
+    ledger: Ledger | None = None,
     *,
     policy: Policy | None = None,
     authorized_by: str = "",
@@ -189,7 +189,7 @@ async def apply(
     skip_replay 只给放行用:被阻断的单元已经有同键记录,照幂等规则会被直接判成"已完成"。
     """
     if not skip_replay:
-        replayed = _replay(unit, ledger)
+        replayed = await _replay(unit, ledger)
         if replayed is not None:
             return replayed
     provider = _resolve_target(unit, target)
@@ -207,7 +207,7 @@ async def apply(
 async def approve(
     unit: ChangeUnit,
     target: Any,
-    ledger: JsonlLedger | None = None,
+    ledger: Ledger | None = None,
     *,
     by: str = "",
     reason: str = "人工放行",
@@ -231,9 +231,9 @@ async def approve(
     )
 
 
-def veto(
+async def veto(
     unit: ChangeUnit,
-    ledger: JsonlLedger | None = None,
+    ledger: Ledger | None = None,
     *,
     by: str = "",
     reason: str = "人工否决",
@@ -245,14 +245,14 @@ def veto(
     unit.reason = reason
     if by:
         _merge(unit, {"vetoed_by": by})
-    _record(ledger, unit)
+    await _record(ledger, unit)
     return unit
 
 
 async def rollback(
     unit: ChangeUnit,
     target: Any,
-    ledger: JsonlLedger | None = None,
+    ledger: Ledger | None = None,
     reason: str = "人工回滚",
 ) -> ChangeUnit:
     """人对账本按下撤销。没有句柄的单元不允许伪造回滚。"""
@@ -263,5 +263,5 @@ async def rollback(
     await provider.undo(unit.effect.undo_task, unit.effect.args, unit.handle)
     unit.verdict = VERDICT_ROLLED_BACK
     unit.reason = reason
-    _record(ledger, unit)
+    await _record(ledger, unit)
     return unit

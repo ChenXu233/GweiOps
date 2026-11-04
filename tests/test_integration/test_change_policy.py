@@ -201,7 +201,7 @@ def test_approve_runs_even_when_window_is_unknown(tmp_path):
     assert unit.facts["authorized_by"] == "值班人"
     assert unit.facts["blocked_reason"].startswith("窗口读不到")
 
-    rows = ledger.read()
+    rows = asyncio.run(ledger.read())
     assert [row["verdict"] for row in rows] == [VERDICT_BLOCKED, VERDICT_KEPT]
     assert rows[1]["facts"]["authorized_by"] == "值班人"
 
@@ -238,7 +238,7 @@ def test_approve_is_not_swallowed_by_idempotency(tmp_path):
     unit = asyncio.run(approve(unit, provider, ledger, by="值班人"))
     assert unit.verdict == VERDICT_KEPT
     assert provider.executed == 1
-    assert [row["verdict"] for row in ledger.read()] == [VERDICT_BLOCKED, VERDICT_KEPT]
+    assert [row["verdict"] for row in asyncio.run(ledger.read())] == [VERDICT_BLOCKED, VERDICT_KEPT]
 
 
 def test_approve_requires_a_blocked_unit():
@@ -249,12 +249,12 @@ def test_approve_requires_a_blocked_unit():
 def test_veto_appends_a_decision_row(tmp_path):
     ledger = JsonlLedger(tmp_path / "units.jsonl")
     unit = _unit(verdict=VERDICT_BLOCKED)
-    unit = veto(unit, ledger, by="值班人", reason="等周一")
+    unit = asyncio.run(veto(unit, ledger, by="值班人", reason="等周一"))
     assert unit.verdict == VERDICT_VETOED
     assert unit.facts["vetoed_by"] == "值班人"
-    assert [row["verdict"] for row in ledger.read()] == [VERDICT_VETOED]
+    assert [row["verdict"] for row in asyncio.run(ledger.read())] == [VERDICT_VETOED]
 
 
 def test_veto_refuses_an_executed_unit():
     with pytest.raises(ValueError):
-        veto(_unit(verdict=VERDICT_KEPT))
+        asyncio.run(veto(_unit(verdict=VERDICT_KEPT)))

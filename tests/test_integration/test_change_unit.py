@@ -77,7 +77,7 @@ def test_kept_when_verified_and_ledger_records_binding(tmp_path):
     unit = asyncio.run(apply(_unit(), FakeProvider(), ledger))
     assert unit.verdict == VERDICT_KEPT
     assert unit.handle == "handle-1"
-    rows = ledger.read()
+    rows = asyncio.run(ledger.read())
     assert len(rows) == 1
     assert rows[0]["verdict"] == VERDICT_KEPT
     assert rows[0]["binding"] == "local"
@@ -144,7 +144,7 @@ def test_replay_uses_prior_result_without_second_effect(tmp_path):
     assert second.handle == first.handle
     assert second.verdict == VERDICT_KEPT
     assert second.reason.startswith("重放")
-    assert len(ledger.read()) == 1
+    assert len(asyncio.run(ledger.read())) == 1
 
 
 def test_idempotency_key_without_ledger_refused():
@@ -162,7 +162,7 @@ def test_different_keys_execute_twice(tmp_path):
     asyncio.run(apply(a, provider, ledger))
     asyncio.run(apply(b, provider, ledger))
     assert provider.executed == 2
-    assert len(ledger.read()) == 2
+    assert len(asyncio.run(ledger.read())) == 2
 
 
 def _registry_for(provider: FakeProvider, capability: str = "fake.scale"):

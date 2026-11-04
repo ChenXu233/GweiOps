@@ -54,7 +54,7 @@ GweiOps 是 AI 驱动的运维智能体平台:GitHub 事件进入引擎,经 DBOS
 | engine | FastAPI + DBOS 工作流 + SQLAlchemy async | `engine/` |
 | 租户 | tenant_id 贯穿载荷与落库,队列按 tenant 分区 | `engine/workflows/`、`engine/db/` |
 | 插件 | manifest v2、注册表(多实例、按目标解析)、事件总线、Hook、能力通道 | [插件系统](docs/reference/plugin-system.md) |
-| 变更单元 | 契约、推进器、JSONL 账本、docker compose 下游样例 | [变更单元契约](docs/explanation/change-unit-contract.md) |
+| 变更单元 | 契约、推进器与策略、账本(业务库 / 文件两种后端)、docker compose 下游样例 | [变更单元契约](docs/explanation/change-unit-contract.md) |
 | frontend | 单个 Nuxt 应用,按 deployment_mode 门控 | `frontend/` |
 | 对外接口 | 控制台只读 API、webhook | [运行时参考](docs/reference/runtime.md) |
 
