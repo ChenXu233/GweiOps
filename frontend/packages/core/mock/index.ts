@@ -6,15 +6,16 @@ import type { ChangeRow } from '../types/changes'
 
 export const mockDashboard: DashboardData = {
   status: 'healthy',
-  consecutiveDays: 14,
-  lastIncident: '2026-06-07',
+  // 与 healthHistory 里的那一次事故对齐:10 天前(2026-10-25)
+  consecutiveDays: 10,
+  lastIncident: '2026-10-25',
   pendingReview: 3,
   overnightFixed: 7,
   memoryEntries: 1284,
   mttr: 8.2,
   successRate: 98.5,
   activeAgents: 5,
-  healthHistory: [true, true, true, true, true, true, false, true, true, true],
+  healthHistory: [true, true, true, false, true, true, true, true, true, true, true, true, true, true],
 }
 
 export const mockPendingIssues: PendingIssue[] = [
