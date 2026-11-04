@@ -1,122 +1,118 @@
 <script setup lang="ts">
 // 营销落地页仅 SaaS 档可见;selfhost 档由全局 middleware 重定向到 /dashboard
 definePageMeta({ layout: false, modes: ['saas'] })
+
+const pillars = [
+  {
+    icon: 'moon',
+    tag: 'NIGHT SHIFT',
+    title: '不等你醒来',
+    body: '信号进来就在外部世界里执行,验证通过再报告。早上你看到的是结果,不是待办。',
+  },
+  {
+    icon: 'shield-check',
+    tag: 'REVERSIBLE',
+    title: '一个人也敢打',
+    body: '每个改变都带撤销路径和观察窗口。没人必须先审批,先做、可回滚远比慢更安全。',
+  },
+  {
+    icon: 'plugins',
+    tag: 'BINDINGS',
+    title: '只绑定不自建',
+    body: '监控、金丝雀、通知都是插件。引擎只负责编排与记账,不重复造已有的轮子。',
+  },
+]
 </script>
 
 <template>
-  <div class="min-h-screen bg-background">
-    <!-- Nav -->
-    <nav class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <span class="text-xl font-bold tracking-tight">既未 · Gwei</span>
-      <div class="flex items-center gap-4">
-        <NuxtLink to="/login" class="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          登录
-        </NuxtLink>
-        <NuxtLink
-          to="/login"
-          class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3 text-xs"
-        >
-          免费开始
-        </NuxtLink>
-      </div>
-    </nav>
-
-    <!-- Hero -->
-    <section class="text-center py-20 px-6">
-      <h1 class="text-5xl font-bold tracking-tight mb-4">
-        你的团队记忆，永不离职。
-      </h1>
-      <p class="text-lg text-muted-foreground max-w-lg mx-auto mb-8">
-        GweiOps 是 DevOps 工具链的 AI 大脑。夜间自动值班，早晨从容审案。
-      </p>
-      <div class="flex items-center justify-center gap-3">
-        <NuxtLink
-          to="/login"
-          class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-11 rounded-md px-8 text-base"
-        >
-          免费开始
-        </NuxtLink>
-        <NuxtLink
-          to="/dashboard"
-          class="inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-11 rounded-md px-8 text-base"
-        >
-          查看演示
-        </NuxtLink>
-      </div>
-    </section>
-
-    <!-- Trust bar -->
-    <section class="text-center py-6 text-sm text-muted-foreground">
-      已为 <strong class="text-foreground">200+</strong> 团队自动修复
-      <strong class="text-foreground">12,000+</strong> 个问题 · 平均 MTTR
-      <strong class="text-foreground">8.2 分钟</strong>
-    </section>
-
-    <!-- Product screenshot -->
-    <section class="max-w-4xl mx-auto px-6 pb-12">
-      <div class="border border-border rounded-xl overflow-hidden">
-        <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <div class="h-2.5 w-2.5 rounded-full bg-border" />
-          <div class="h-2.5 w-2.5 rounded-full bg-border" />
-          <div class="h-2.5 w-2.5 rounded-full bg-border" />
-          <div class="flex-1 text-center text-[11px] text-muted-foreground font-mono">
-            app.gweiops.com/dashboard
-          </div>
+  <div class="min-h-screen bg-paper text-ink">
+    <header class="glass-bar sticky top-0 z-40 border-b border-line/60">
+      <div class="mx-auto flex h-14 w-full max-w-[1080px] items-center justify-between px-5">
+        <div class="flex items-center gap-2.5">
+          <span class="relative grid h-7 w-7 place-items-center rounded-[9px] bg-ink text-paper">
+            <span class="font-mono text-[11px] font-semibold leading-none">未</span>
+            <span class="absolute right-[3px] top-[3px] h-[5px] w-[5px] rounded-full bg-lime" />
+          </span>
+          <span class="text-[15px] font-semibold tracking-tightest">既未</span>
+          <span class="mono-label">GWEI OPS</span>
         </div>
-        <div class="bg-background p-4">
-          <div class="grid grid-cols-4 gap-px bg-border rounded-lg overflow-hidden">
-            <div class="col-span-2 bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">整体态势</div>
-              <div class="flex items-center gap-2 text-xs">
-                <span class="h-1.5 w-1.5 rounded-full bg-green-500" />
-                系统正常运行 · 连续 14 天无故障
-              </div>
-            </div>
-            <div class="bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">待审</div>
-              <div class="text-xl font-bold text-yellow-500">3</div>
-            </div>
-            <div class="bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">昨夜修复</div>
-              <div class="text-xl font-bold text-green-500">7</div>
-            </div>
-            <div class="col-span-3 bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">待审案件</div>
-              <div class="text-[11px] text-muted-foreground space-y-1">
-                <div class="py-1 border-b border-border">#42 内存泄漏 — <span class="text-green-500">3 方案就绪</span></div>
-                <div class="py-1 border-b border-border">CVE-2026-1234 — <span class="text-green-500">应急补丁完成</span></div>
-                <div class="py-1">#89 文档缺失 — <span class="text-green-500">1 方案就绪</span></div>
-              </div>
-            </div>
-            <div class="bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">MTTR</div>
-              <div class="text-xl font-bold">8.2<span class="text-xs text-muted-foreground">min</span></div>
-            </div>
-            <div class="col-span-4 bg-card p-4">
-              <div class="text-[9px] uppercase tracking-wider text-muted-foreground mb-2">昨夜回顾</div>
-              <div class="text-[11px] text-muted-foreground flex gap-6">
-                <span>03:17 内存泄漏 → ✅</span>
-                <span>04:30 CVE 补丁 → ✅</span>
-                <span>05:12 流量扩容 → ✅</span>
-              </div>
-            </div>
+        <div class="flex items-center gap-2">
+          <NuxtLink to="/login" class="btn-ghost h-8 px-3 text-[12.5px]">登录</NuxtLink>
+          <NuxtLink to="/login" class="btn-solid h-8 px-3.5 text-[12.5px]">免费开始</NuxtLink>
+        </div>
+      </div>
+    </header>
+
+    <section class="relative overflow-hidden">
+      <div class="grid-bg pointer-events-none absolute inset-0" />
+      <div class="relative mx-auto max-w-[1080px] px-5 pb-16 pt-20">
+        <div class="inline-flex items-center gap-2 rounded-full border border-line bg-panel/70 px-3 py-1.5 backdrop-blur">
+          <AppIcon name="zap" :size="12" class="text-brand" />
+          <span class="font-mono text-[10.5px] tracking-wider text-ink-soft">人只在不可逆的地方拦一下</span>
+        </div>
+
+        <h1 class="mt-6 max-w-[760px] text-balance text-[44px] font-semibold leading-[1.08] tracking-tightest sm:text-[56px]">
+          夜里发生的事,<br class="hidden sm:block">
+          早上只做判断。
+        </h1>
+
+        <p class="mt-5 max-w-[520px] text-[14px] leading-relaxed text-ink-soft">
+          信号 → 诊断修复 → 部署报告 → 学习或回滚。GweiOps 在外部世界里把改变做完并验证,
+          人只处理真正不可回滚的那一类。
+        </p>
+
+        <div class="mt-7 flex flex-wrap items-center gap-2.5">
+          <NuxtLink to="/login" class="btn-solid h-10 px-5 text-[13px]">
+            免费开始
+            <AppIcon name="arrow-right" :size="14" />
+          </NuxtLink>
+          <NuxtLink to="/dashboard" class="btn-outline h-10 px-5 text-[13px]">看演示控制台</NuxtLink>
+        </div>
+
+        <div class="mt-14 grid gap-px overflow-hidden rounded-panel bg-line sm:grid-cols-3">
+          <div class="bg-lime p-6 text-lime-ink">
+            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">MTTR</div>
+            <div class="num mt-3 text-[40px] font-semibold leading-none tracking-tightest">8.2<span class="ml-1 text-[14px] font-normal opacity-60">分钟</span></div>
+            <p class="mt-2 text-[12px] opacity-70">从信号到部署完成的中位耗时</p>
+          </div>
+          <div class="bg-panel p-6">
+            <div class="mono-label">夜间修复</div>
+            <div class="num mt-3 text-[40px] font-semibold leading-none tracking-tightest">12,000<span class="ml-1 text-[14px] font-normal text-ink-faint">+</span></div>
+            <p class="mt-2 text-[12px] text-ink-soft">在没人看着的时候完成并验证</p>
+          </div>
+          <div class="bg-solid p-6 text-solid-ink">
+            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-solid-ink/45">回滚</div>
+            <div class="num mt-3 text-[40px] font-semibold leading-none tracking-tightest">0.6<span class="ml-1 text-[14px] font-normal opacity-50">%</span></div>
+            <p class="mt-2 text-[12px] opacity-55">只有千分之六需要回退</p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Logos -->
-    <section class="flex items-center justify-center gap-8 py-12 opacity-30">
-      <span class="text-xl font-semibold tracking-wide">ByteDance</span>
-      <span class="text-xl font-semibold tracking-wide">Alibaba</span>
-      <span class="text-xl font-semibold tracking-wide">Tencent</span>
-      <span class="text-xl font-semibold tracking-wide">Meituan</span>
-      <span class="text-xl font-semibold tracking-wide">Xiaomi</span>
+    <section class="mx-auto max-w-[1080px] px-5 pb-24">
+      <div class="grid gap-4 sm:grid-cols-3">
+        <article
+          v-for="p in pillars"
+          :key="p.tag"
+          class="rounded-panel border border-line bg-panel p-6 transition-colors hover:border-ink/20"
+        >
+          <div class="flex items-center justify-between">
+            <span class="grid h-9 w-9 place-items-center rounded-xl bg-well text-ink-soft">
+              <AppIcon :name="p.icon" :size="16" />
+            </span>
+            <span class="mono-label">{{ p.tag }}</span>
+          </div>
+          <h2 class="mt-5 text-[15px] font-semibold tracking-tight">{{ p.title }}</h2>
+          <p class="mt-2 text-[12.5px] leading-relaxed text-ink-soft">{{ p.body }}</p>
+        </article>
+      </div>
     </section>
 
-    <!-- Footer -->
-    <footer class="text-center py-8 text-xs text-muted-foreground border-t border-border">
-      GweiOps — 摆渡未济，恒守既济。
+    <footer class="border-t border-line/60">
+      <div class="mx-auto flex max-w-[1080px] flex-wrap items-center justify-between gap-2 px-5 py-8">
+        <span class="mono-label">既未 · GWEI OPS</span>
+        <span class="text-[12px] text-ink-faint">摆渡未济,恒守既济。</span>
+      </div>
     </footer>
   </div>
 </template>

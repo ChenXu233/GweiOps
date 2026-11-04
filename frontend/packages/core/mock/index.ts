@@ -2,6 +2,7 @@ import type { DashboardData, PendingIssue, OvernightEvent, CanaryStatus } from '
 import type { Issue } from '../types/issues'
 import type { Repo, Plugin, TeamSettings } from '../types/repos'
 import type { PluginWidget } from '../types/plugin'
+import type { ChangeRow } from '../types/changes'
 
 export const mockDashboard: DashboardData = {
   status: 'healthy',
@@ -114,18 +115,18 @@ export const mockIssues: Issue[] = [
 ]
 
 export const mockRepos: Repo[] = [
-  { id: '1', name: 'acme/api-gateway', icon: '📦', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
-  { id: '2', name: 'acme/auth-service', icon: '📦', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
-  { id: '3', name: 'acme/frontend', icon: '📦', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
+  { id: '1', name: 'acme/api-gateway', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
+  { id: '2', name: 'acme/auth-service', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
+  { id: '3', name: 'acme/frontend', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
 ]
 
 export const mockPlugins: Plugin[] = [
-  { id: 'upstream-tracker', name: '上游追踪', icon: '🔍', description: '自动监控依赖仓库 Releases，检测 CVE 修复版本，生成切换 PR。', author: 'official', price: null, installed: true },
-  { id: 'canary', name: '金丝雀发布', icon: '🐤', description: '标准金丝雀流程 1%→10%→50%→100%，自动回滚触发。', author: 'official', price: null, installed: true },
-  { id: 'k8s-scaler', name: 'K8s 扩容', icon: '📈', description: '检测流量过载，自动调用 K8s API 水平扩容 Pod 副本数。', author: 'official', price: null, installed: false },
-  { id: 'security-compliance', name: '安全合规', icon: '🛡️', description: '审计日志、双人审批、禁止未经审计的补丁。金融行业专用。', author: 'official', price: 29, installed: false },
-  { id: 'feishu-notify', name: '飞书通知', icon: '🔔', description: '修复报告、审核提醒、异常告警推送至飞书群。', author: 'community', price: null, installed: true },
-  { id: 'ai-inference', name: 'AI 推理运维', icon: '🤖', description: 'GPU 扩缩容、模型版本回滚、推理延迟监控。', author: 'official', price: 49, installed: false },
+  { id: 'upstream-tracker', name: '上游追踪', description: '自动监控依赖仓库 Releases，检测 CVE 修复版本，生成切换 PR。', author: 'official', price: null, installed: true },
+  { id: 'canary', name: '金丝雀发布', description: '标准金丝雀流程 1%→10%→50%→100%，自动回滚触发。', author: 'official', price: null, installed: true },
+  { id: 'k8s-scaler', name: 'K8s 扩容', description: '检测流量过载，自动调用 K8s API 水平扩容 Pod 副本数。', author: 'official', price: null, installed: false },
+  { id: 'security-compliance', name: '安全合规', description: '审计日志、双人审批、禁止未经审计的补丁。金融行业专用。', author: 'official', price: 29, installed: false },
+  { id: 'feishu-notify', name: '飞书通知', description: '修复报告、审核提醒、异常告警推送至飞书群。', author: 'community', price: null, installed: true },
+  { id: 'ai-inference', name: 'AI 推理运维', description: 'GPU 扩缩容、模型版本回滚、推理延迟监控。', author: 'official', price: 49, installed: false },
 ]
 
 export const mockTeamSettings: TeamSettings = {
@@ -149,3 +150,79 @@ export const mockPluginWidgets: PluginWidget[] = [
     metrics: [{ label: '采样间隔', value: '60s', sub: '周期触发(静态演示)', variant: 'green' }],
   },
 ]
+
+export const mockChanges: ChangeRow[] = [
+  {
+    id: 'cu_01j9z3k4m7qf2n8v',
+    created_at: '2026-11-04T03:17:00+08:00',
+    verdict: 'kept',
+    reason: '金丝雀 1%→10%→50%→100% 全量通过,自动保留',
+    binding: 'github',
+    tenant: 'default',
+    handle: 'ghc_8812',
+    idempotency_key: 'wf-8812:effects:effect:0',
+    intent: { summary: '在 api-gateway#42 上发布内存泄漏修复的验证评论' },
+    effect: { capability: 'comment.create', task: 'github.comment_bridge' },
+  },
+  {
+    id: 'cu_01j9z3p8r2vk5m1c',
+    created_at: '2026-11-04T03:44:12+08:00',
+    verdict: 'kept',
+    reason: '错误率回落到 0.2%,副本数保留在 10',
+    binding: 'compose',
+    tenant: 'default',
+    handle: 'cmp_api_1',
+    idempotency_key: 'wf-8820:effects:effect:0',
+    intent: { summary: '把 api 服务从 3 副本扩到 10 副本以吸收流量峰值' },
+    effect: { capability: 'compose.scale', task: 'docker-compose.scale' },
+  },
+  {
+    id: 'cu_01j9z3t6x8bn4p7q',
+    created_at: '2026-11-04T04:02:30+08:00',
+    verdict: 'blocked',
+    reason: '观察窗口 90 秒,短于人的反应时间,等人工放行',
+    binding: 'github',
+    tenant: 'default',
+    handle: null,
+    idempotency_key: 'wf-8831:effects:effect:0',
+    intent: { summary: '强制推送 main 分支以回退一次错误合并' },
+    effect: { capability: 'repo.force_push', task: 'github.repo_ops' },
+  },
+  {
+    id: 'cu_01j9z3w1q5dm8s3t',
+    created_at: '2026-11-04T04:31:05+08:00',
+    verdict: 'rolled_back',
+    reason: 'P99 从 42ms 升到 118ms,撤销扩容',
+    binding: 'compose',
+    tenant: 'default',
+    handle: 'cmp_api_1',
+    idempotency_key: 'wf-8840:effects:effect:0',
+    intent: { summary: '把 worker 服务从 4 副本扩到 16 副本' },
+    effect: { capability: 'compose.scale', task: 'docker-compose.scale' },
+  },
+  {
+    id: 'cu_01j9z40h7k3vq9nb',
+    created_at: '2026-11-04T05:12:48+08:00',
+    verdict: 'irreversible',
+    reason: '没有撤销任务也没有观察窗口,只能阻断',
+    binding: 'postgres',
+    tenant: 'default',
+    handle: null,
+    idempotency_key: 'wf-8855:effects:effect:0',
+    intent: { summary: '清理 audit_log 表中 90 天前的历史记录' },
+  effect: { capability: 'db.purge', task: 'postgres.maintenance' },
+  },
+  {
+    id: 'cu_01j9z44m2p6r8w4x',
+    created_at: '2026-11-04T06:08:19+08:00',
+    verdict: 'vetoed',
+    reason: '策略要求生产环境变更必须带观察窗口',
+    binding: 'github',
+    tenant: 'default',
+    handle: null,
+    idempotency_key: 'wf-8860:effects:effect:0',
+    intent: { summary: '关闭仓库的必需状态检查以加速合并' },
+    effect: { capability: 'repo.protection', task: 'github.repo_ops' },
+  },
+]
+

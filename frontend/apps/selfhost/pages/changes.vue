@@ -1,112 +1,305 @@
 <script setup lang="ts">
-import EmptyState from '@gwei/core/components/EmptyState.vue'
+import { ChangesApi } from '@gwei/core/api/client'
 import { useChanges } from '@gwei/core/composables/useChanges'
+import type { ChangeRow, ChangeVerdict } from '@gwei/core/types/changes'
 
-const verdictLabels: Record<string, string> = {
-  kept: '已执行 · 可撤',
-  rolled_back: '已回滚',
-  blocked: '阻断等人',
-  vetoed: '被否决',
-  irreversible: '不可逆',
-  pending: '进行中',
+const { items, total, loading, error, rollingBack, refresh, rollback } = useChanges()
+
+const filter = ref<'all' | ChangeVerdict>('all')
+const selected = ref<ChangeRow | null>(null)
+const detail = ref<{ latest: ChangeRow; history: ChangeRow[] } | null>(null)
+const detailLoading = ref(false)
+const confirming = ref(false)
+
+const verdictMeta: Record<ChangeVerdict, { label: string; cls: string }> = {
+  kept: { label: '已执行 · 可撤', cls: 'border-transparent bg-lime text-lime-ink' },
+  blocked: { label: '阻断等人', cls: 'border-amber/30 bg-amber/10 text-amber' },
+  rolled_back: { label: '已回滚', cls: 'border-line bg-well text-ink-soft' },
+  irreversible: { label: '不可逆', cls: 'border-coral/30 bg-coral/10 text-coral' },
+  vetoed: { label: '被否决', cls: 'border-line bg-well text-ink-faint' },
+  pending: { label: '进行中', cls: 'border-brand/25 bg-brand/10 text-brand' },
 }
 
-const verdictColors: Record<string, string> = {
-  kept: 'bg-green-500/15 text-green-500',
-  rolled_back: 'bg-muted text-muted-foreground',
-  blocked: 'bg-yellow-500/15 text-yellow-500',
-  vetoed: 'bg-yellow-500/15 text-yellow-500',
-  irreversible: 'bg-red-500/15 text-red-500',
-  pending: 'bg-blue-500/15 text-blue-500',
-}
+const order: ChangeVerdict[] = ['kept', 'blocked', 'rolled_back', 'irreversible', 'vetoed', 'pending']
 
-const { items, loading, error, rollingBack, refresh, rollback } = useChanges()
+const counts = computed(() => {
+  const c: Record<string, number> = {}
+  for (const row of items.value) c[row.verdict] = (c[row.verdict] ?? 0) + 1
+  return c
+})
 
-function canRollback(row: { handle: string | null, verdict: string }) {
-  return Boolean(row.handle) && row.verdict === 'kept'
-}
+const visible = computed(() =>
+  filter.value === 'all' ? items.value : items.value.filter(r => r.verdict === filter.value),
+)
+
+const current = computed<ChangeRow | null>(() => detail.value?.latest ?? selected.value)
 
 function when(iso: string) {
-  return iso ? iso.slice(0, 19).replace('T', ' ') : ''
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 19).replace('T', ' ')
+  const p = (n: number) => String(n).padStart(2, '0')
+  return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
 }
 
-async function onRollback(row: { id: string, intent?: { summary?: string } }) {
-  if (!window.confirm('撤销这次变更？撤销本身也会记进账本。'))
-    return
-  await rollback(row.id)
+function canRollback(row: ChangeRow | null) {
+  return Boolean(row && row.handle && row.verdict === 'kept')
 }
+
+async function open(row: ChangeRow) {
+  selected.value = row
+  detail.value = null
+  detailLoading.value = true
+  confirming.value = false
+  try {
+    detail.value = await ChangesApi.get(row.id)
+  } catch {
+    detail.value = { latest: row, history: [] }
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function close() {
+  selected.value = null
+  detail.value = null
+  confirming.value = false
+}
+
+async function onRollback() {
+  if (!selected.value) return
+  if (!confirming.value) {
+    confirming.value = true
+    return
+  }
+  await rollback(selected.value.id)
+  confirming.value = false
+  close()
+}
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') close()
+}
+
+onMounted(() => window.addEventListener('keydown', onKey))
+onUnmounted(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex items-end justify-between">
+  <div class="space-y-4">
+    <header class="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">变更账本</h1>
-        <p class="text-sm text-muted-foreground mt-1">
-          夜里发生了什么。每一行都是一次可追溯的外部改变，可撤销。
+        <div class="mono-label">LEDGER</div>
+        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">变更账本</h1>
+        <p class="mt-2 text-[12.5px] text-ink-soft">
+          每一次改变都是一条可回滚的事件,不是一个被覆盖的字段。
         </p>
       </div>
+      <div class="flex items-center gap-3">
+        <span class="mono-label">{{ total }} 条记录</span>
+        <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh()">
+          <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
+          刷新
+        </button>
+      </div>
+    </header>
+
+    <div class="no-scrollbar flex items-center gap-1 overflow-x-auto pb-1">
+      <button class="tab" :class="filter === 'all' ? 'tab-active' : ''" @click="filter = 'all'">
+        全部
+        <span class="num font-mono text-[10px] opacity-60">{{ items.length }}</span>
+      </button>
       <button
-        class="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted/40"
-        :disabled="loading"
-        @click="refresh()"
+        v-for="v in order"
+        :key="v"
+        class="tab"
+        :class="filter === v ? 'tab-active' : ''"
+        @click="filter = v"
       >
-        刷新
+        {{ verdictMeta[v].label }}
+        <span class="num font-mono text-[10px] opacity-60">{{ counts[v] ?? 0 }}</span>
       </button>
     </div>
 
-    <div v-if="error" class="text-sm text-red-500 border border-red-500/30 rounded-md px-3 py-2">
+    <div v-if="error" class="card border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
       {{ error }}
     </div>
 
-    <div v-if="loading" class="space-y-3">
-      <div v-for="i in 3" :key="i" class="h-14 bg-card border border-border rounded-lg animate-pulse" />
+    <div class="overflow-hidden rounded-panel border border-line bg-panel">
+      <div v-if="loading && !items.length" class="space-y-px">
+        <div v-for="i in 5" :key="i" class="h-[62px] animate-pulse bg-well/60" />
+      </div>
+
+      <div v-else-if="!visible.length">
+        <EmptyState
+          icon="scroll-text"
+          title="账本还是空的"
+          hint="引擎把第一条变更记进来之后,这里就是它的一生。"
+        />
+      </div>
+
+      <div v-else class="overflow-x-auto">
+        <table class="w-full min-w-[720px] border-collapse text-left">
+          <thead>
+            <tr class="border-b border-line bg-well/40">
+              <th class="px-4 py-2.5 font-normal"><span class="mono-label">结论</span></th>
+              <th class="px-4 py-2.5 font-normal"><span class="mono-label">意图</span></th>
+              <th class="px-4 py-2.5 font-normal"><span class="mono-label">能力</span></th>
+              <th class="px-4 py-2.5 font-normal"><span class="mono-label">绑定</span></th>
+              <th class="px-4 py-2.5 font-normal"><span class="mono-label">时间</span></th>
+              <th class="px-4 py-2.5 text-right font-normal"><span class="mono-label">操作</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in visible"
+              :key="row.id"
+              class="group cursor-pointer border-b border-line/60 transition-colors last:border-0 hover:bg-well/40"
+              @click="open(row)"
+            >
+              <td class="px-4 py-3">
+                <span
+                  class="inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                  :class="verdictMeta[row.verdict].cls"
+                >
+                  {{ verdictMeta[row.verdict].label }}
+                </span>
+              </td>
+              <td class="max-w-[280px] px-4 py-3">
+                <div class="truncate text-[13px] font-medium">
+                  {{ row.intent?.summary || '(无摘要)' }}
+                </div>
+                <div class="mt-0.5 truncate font-mono text-[10.5px] text-ink-faint">{{ row.id }}</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="font-mono text-[11.5px] text-ink-soft">{{ row.effect?.capability || '—' }}</span>
+              </td>
+              <td class="px-4 py-3">
+                <span class="font-mono text-[11.5px] text-ink-soft">{{ row.binding || '—' }}</span>
+              </td>
+              <td class="px-4 py-3">
+                <span class="num font-mono text-[11.5px] text-ink-faint">{{ when(row.created_at) }}</span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <span
+                  v-if="canRollback(row)"
+                  class="rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition-colors group-hover:border-coral/40 group-hover:text-coral"
+                >
+                  撤销
+                </span>
+                <AppIcon
+                  v-else
+                  name="chevron-right"
+                  :size="14"
+                  class="ml-auto text-ink-faint opacity-0 transition-opacity group-hover:opacity-100"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <EmptyState
-      v-else-if="items.length === 0"
-      icon="📘"
-      title="账本还是空的"
-      description="还没有任何效果被执行过。第一次自动回评之后，这里会出现第一行。"
-    />
+    <!-- 详情抽屉:磨砂玻璃 -->
+    <Teleport to="body">
+      <div v-if="selected" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 animate-fade bg-ink/25 backdrop-blur-sm" @click="close" />
 
-    <div v-else class="border border-border rounded-lg overflow-hidden">
-      <div class="grid grid-cols-[150px_1.4fr_90px_120px_1.6fr_90px] gap-3 px-4 py-2 bg-muted/50 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <div>时间</div>
-        <div>意图</div>
-        <div>目标</div>
-        <div>结论</div>
-        <div>说明</div>
-        <div class="text-right">操作</div>
+        <aside
+          class="glass absolute right-0 top-0 flex h-full w-full max-w-[540px] animate-slide flex-col border-l border-line/70"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="flex items-start justify-between gap-3 border-b border-line/60 px-5 py-4">
+            <div class="min-w-0">
+              <span
+                class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                :class="current ? verdictMeta[current.verdict].cls : ''"
+              >
+                {{ current ? verdictMeta[current.verdict].label : '' }}
+              </span>
+              <h2 class="mt-2.5 line-clamp-2 text-[15px] font-semibold leading-snug">
+                {{ current?.intent?.summary || '(无摘要)' }}
+              </h2>
+            </div>
+            <button class="btn-icon shrink-0" aria-label="关闭" @click="close">
+              <AppIcon name="x" :size="15" />
+            </button>
+          </div>
+
+          <div class="flex-1 space-y-5 overflow-auto px-5 py-5">
+            <div v-if="detailLoading" class="space-y-2">
+              <div v-for="i in 6" :key="i" class="h-9 animate-pulse rounded-lg bg-well/70" />
+            </div>
+
+            <template v-else-if="current">
+              <dl class="overflow-hidden rounded-xl border border-line/70">
+                <div
+                  v-for="row in [
+                    { k: '能力', v: current.effect?.capability || '—' },
+                    { k: '提供者任务', v: current.effect?.task || '—' },
+                    { k: '绑定', v: current.binding || '—' },
+                    { k: '租户', v: current.tenant || '—' },
+                    { k: '句柄', v: current.handle || '—' },
+                    { k: '幂等键', v: current.idempotency_key || '—' },
+                    { k: '单元 id', v: current.id },
+                    { k: '记录时间', v: current.created_at },
+                  ]"
+                  :key="row.k"
+                  class="flex items-start gap-3 border-b border-line/60 px-4 py-2.5 last:border-0"
+                >
+                  <dt class="w-24 shrink-0 pt-0.5 text-[11.5px] text-ink-faint">{{ row.k }}</dt>
+                  <dd class="min-w-0 flex-1 break-all font-mono text-[12px] leading-relaxed text-ink-soft">
+                    {{ row.v }}
+                  </dd>
+                </div>
+              </dl>
+
+              <div v-if="current.reason" class="rounded-xl border border-line/70 bg-well/50 p-4">
+                <div class="mono-label">原因</div>
+                <p class="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">{{ current.reason }}</p>
+              </div>
+
+              <div v-if="detail?.history?.length">
+                <div class="mono-label mb-2.5">这条变更的历史</div>
+                <ol class="relative space-y-3 pl-4">
+                  <span class="absolute left-[3px] top-1.5 h-[calc(100%-12px)] w-px bg-line" />
+                  <li v-for="(h, i) in detail.history" :key="i" class="relative">
+                    <span class="absolute -left-4 top-1.5 h-1.5 w-1.5 rounded-full bg-ink-faint" />
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="text-[12px] font-medium">{{ verdictMeta[h.verdict].label }}</span>
+                      <span class="num font-mono text-[10.5px] text-ink-faint">{{ when(h.created_at) }}</span>
+                    </div>
+                    <p v-if="h.reason" class="mt-0.5 text-[11.5px] text-ink-soft">{{ h.reason }}</p>
+                  </li>
+                </ol>
+              </div>
+            </template>
+          </div>
+
+          <div class="border-t border-line/60 px-5 py-4">
+            <template v-if="canRollback(current)">
+              <button
+                class="btn w-full"
+                :class="confirming
+                  ? 'bg-coral text-white hover:bg-coral/90'
+                  : 'border border-line bg-panel text-ink hover:border-coral/40 hover:text-coral'"
+                :disabled="rollingBack === selected?.id"
+                @click="onRollback"
+              >
+                <AppIcon :name="confirming ? 'x-circle' : 'rotate-ccw'" :size="14" />
+                {{ rollingBack === selected?.id ? '正在回滚…' : confirming ? '再点一次确认撤销' : '撤销这次变更' }}
+              </button>
+              <p class="mt-2 text-center text-[11px] text-ink-faint">
+                撤销本身也会作为一条事件记进账本。
+              </p>
+            </template>
+            <p v-else class="text-center text-[11.5px] text-ink-faint">
+              这条变更当前没有可撤销的句柄。
+            </p>
+          </div>
+        </aside>
       </div>
-      <div
-        v-for="row in items"
-        :key="row.id"
-        class="grid grid-cols-[150px_1.4fr_90px_120px_1.6fr_90px] gap-3 px-4 py-3 border-t border-border items-center"
-      >
-        <div class="text-xs font-mono text-muted-foreground">{{ when(row.created_at) }}</div>
-        <div class="text-sm truncate" :title="row.intent?.summary">
-          {{ row.intent?.summary || row.effect?.capability || '—' }}
-        </div>
-        <div class="text-xs font-mono text-muted-foreground">{{ row.binding || '—' }}</div>
-        <div>
-          <span class="text-[11px] px-2 py-0.5 rounded-full" :class="verdictColors[row.verdict] || 'bg-muted'">
-            {{ verdictLabels[row.verdict] || row.verdict }}
-          </span>
-        </div>
-        <div class="text-xs text-muted-foreground truncate" :title="row.reason">{{ row.reason }}</div>
-        <div class="text-right">
-          <button
-            v-if="canRollback(row)"
-            class="text-xs px-2.5 py-1 border border-border rounded-md hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50"
-            :disabled="rollingBack === row.id"
-            @click="onRollback(row)"
-          >
-            {{ rollingBack === row.id ? '撤销中…' : '撤销' }}
-          </button>
-          <span v-else class="text-xs text-muted-foreground">—</span>
-        </div>
-      </div>
-    </div>
+    </Teleport>
   </div>
 </template>

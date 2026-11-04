@@ -1,60 +1,59 @@
 import type { Config } from 'tailwindcss'
 
 /**
- * shadcn 风格的语义色映射:类名只写 token(bg-card、border-border),
- * 具体色值来自 assets/css/main.css 里的 CSS 变量,主题可整体切换。
+ * 颜色令牌全部走 CSS 变量(见 assets/css/main.css),组件只写语义名。
+ * 形如 rgb(var(--x) / <alpha-value>) 才能用 bg-panel/70 这类透明度修饰符。
  */
 export default <Partial<Config>>{
   darkMode: ['class'],
   content: [
-    './components/**/*.{vue,js,ts}',
+    './app.vue',
     './layouts/**/*.vue',
     './pages/**/*.vue',
-    './composables/**/*.{vue,js,ts}',
-    './app.vue',
-    '../../packages/core/**/*.{vue,js,ts}',
+    './components/**/*.vue',
+    '../../packages/core/components/**/*.vue',
   ],
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+        paper: 'rgb(var(--paper) / <alpha-value>)',
+        panel: 'rgb(var(--panel) / <alpha-value>)',
+        well: 'rgb(var(--well) / <alpha-value>)',
+        solid: 'rgb(var(--solid) / <alpha-value>)',
+        'solid-ink': 'rgb(var(--solid-ink) / <alpha-value>)',
+        ink: {
+          DEFAULT: 'rgb(var(--ink) / <alpha-value>)',
+          soft: 'rgb(var(--ink-soft) / <alpha-value>)',
+          faint: 'rgb(var(--ink-faint) / <alpha-value>)',
         },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+        line: {
+          DEFAULT: 'rgb(var(--line) / <alpha-value>)',
+          soft: 'rgb(var(--line-soft) / <alpha-value>)',
         },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+        brand: 'rgb(var(--brand) / <alpha-value>)',
+        lime: {
+          DEFAULT: 'rgb(var(--lime) / <alpha-value>)',
+          ink: 'rgb(var(--lime-ink) / <alpha-value>)',
         },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
+        amber: 'rgb(var(--amber) / <alpha-value>)',
+        coral: 'rgb(var(--coral) / <alpha-value>)',
+        ok: 'rgb(var(--ok) / <alpha-value>)',
       },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'sans-serif'],
+        mono: ['JetBrains Mono', 'SFMono-Regular', 'SF Mono', 'ui-monospace', 'Menlo', 'Consolas', 'monospace'],
+      },
+      letterSpacing: { tightest: '-0.035em' },
+      borderRadius: { panel: '20px' },
+      keyframes: {
+        rise: { '0%': { opacity: '0', transform: 'translateY(6px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+        fade: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+        slide: { '0%': { opacity: '0', transform: 'translateX(24px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+      },
+      animation: {
+        rise: 'rise .32s cubic-bezier(.22,.68,0,1) both',
+        fade: 'fade .2s ease both',
+        slide: 'slide .28s cubic-bezier(.22,.68,0,1) both',
       },
     },
   },

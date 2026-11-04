@@ -1,16 +1,12 @@
 import { ref, onUnmounted } from 'vue'
 import { DashboardApi } from '../api/client'
-import {
-  mockDashboard,
-  mockPendingIssues,
-  mockOvernightEvents,
-  mockCanaryStatuses,
-} from '../mock'
+import { mockDashboard, mockPendingIssues, mockOvernightEvents, mockCanaryStatuses } from '../mock'
 import type { DashboardData, PendingIssue, OvernightEvent, CanaryStatus } from '../types/dashboard'
 
-const USE_MOCK = import.meta.env.NUXT_PUBLIC_USE_MOCK === 'true'
-
 export function useDashboard() {
+  // 演示开关在运行时读,不走编译期常量,改环境变量不用重新构建
+  const useMock = useRuntimeConfig().public.useMock === true
+
   const data = ref<DashboardData | null>(null)
   const pendingIssues = ref<PendingIssue[]>([])
   const overnightEvents = ref<OvernightEvent[]>([])
@@ -22,7 +18,7 @@ export function useDashboard() {
     loading.value = true
     error.value = null
     try {
-      if (USE_MOCK) {
+      if (useMock) {
         data.value = mockDashboard
         pendingIssues.value = mockPendingIssues
         overnightEvents.value = mockOvernightEvents

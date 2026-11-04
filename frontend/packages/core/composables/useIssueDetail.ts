@@ -3,9 +3,8 @@ import { IssuesApi } from '../api/client'
 import { mockIssues } from '../mock'
 import type { Issue } from '../types/issues'
 
-const USE_MOCK = import.meta.env.NUXT_PUBLIC_USE_MOCK === 'true'
-
 export function useIssueDetail(id: string) {
+  const useMock = useRuntimeConfig().public.useMock === true
   const data = ref<Issue | null>(null)
   const loading = ref(true)
   const error = ref<unknown>(null)
@@ -14,8 +13,8 @@ export function useIssueDetail(id: string) {
     loading.value = true
     error.value = null
     try {
-      data.value = USE_MOCK
-        ? mockIssues.find((i) => i.id === id) ?? null
+      data.value = useMock
+        ? mockIssues.find(i => i.id === id) ?? null
         : await IssuesApi.get(id)
     } catch (e) {
       error.value = e

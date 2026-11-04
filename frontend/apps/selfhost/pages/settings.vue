@@ -1,62 +1,91 @@
-<template>
-  <div class="space-y-6">
-    <h1 class="text-2xl font-bold tracking-tight">系统设置</h1>
-
-    <!-- Skeleton loader -->
-    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-px bg-border rounded-lg overflow-hidden">
-      <div v-for="i in 4" :key="i" class="h-24 bg-card animate-pulse" />
-    </div>
-
-    <!-- Content -->
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-px bg-border rounded-lg overflow-hidden">
-      <div
-        v-for="card in cards"
-        :key="card.label"
-        class="bg-card p-5"
-      >
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-          {{ card.label }}
-        </div>
-        <div class="text-sm font-medium">
-          {{ card.value }}
-        </div>
-        <div class="text-xs text-muted-foreground mt-1">
-          {{ card.sub }}
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { computed } from 'vue'
+import { useSettings } from '@gwei/core/composables/useSettings'
 
-const { data: settings, loading } = useSettings()
+const { data, loading, error } = useSettings()
 
-const cards = computed(() => {
-  if (!settings.value) return []
-  const s = settings.value
+const sections = computed(() => {
+  const d = data.value
+  if (!d) return []
   return [
     {
-      label: '团队',
-      value: s.teamName,
-      sub: `${s.memberCount} 名成员 · ${s.adminCount} 管理员`,
+      icon: 'users',
+      title: '团队',
+      rows: [
+        { k: '团队名称', v: d.teamName },
+        { k: '成员', v: d.memberCount + ' 人' },
+        { k: '管理员', v: d.adminCount + ' 人' },
+      ],
     },
     {
-      label: '订阅套餐',
-      value: s.plan,
-      sub: `${s.planPrice} · ${s.issueQuota}`,
+      icon: 'layers',
+      title: '订阅',
+      rows: [
+        { k: '档位', v: d.plan },
+        { k: '价格', v: d.planPrice },
+        { k: '议题配额', v: d.issueQuota },
+      ],
     },
     {
-      label: '通知渠道',
-      value: s.notificationChannels.join(' · '),
-      sub: '紧急事件同时推送所有渠道',
+      icon: 'bell',
+      title: '通知',
+      rows: [],
+      chips: d.notificationChannels,
     },
     {
-      label: 'SSO',
-      value: s.ssoProvider,
-      sub: '团队成员通过 GitHub 登录',
+      icon: 'shield-check',
+      title: '单点登录',
+      rows: [{ k: '提供方', v: d.ssoProvider }],
     },
   ]
 })
 </script>
+
+<template>
+  <div class="space-y-4">
+    <header>
+      <div class="mono-label">SETTINGS</div>
+      <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">设置</h1>
+      <p class="mt-2 text-[12.5px] text-ink-soft">当前租户的运行参数与接入方式。</p>
+    </header>
+
+    <div v-if="error" class="card border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
+      拉不到设置。确认引擎在跑,或开启 mock 模式。
+    </div>
+
+    <div v-if="loading && !data" class="grid gap-4 sm:grid-cols-2">
+      <div v-for="i in 4" :key="i" class="h-[170px] animate-pulse rounded-panel bg-well/60" />
+    </div>
+
+    <div v-else-if="data" class="grid gap-4 sm:grid-cols-2">
+      <section
+        v-for="section in sections"
+        :key="section.title"
+        class="overflow-hidden rounded-panel border border-line bg-panel"
+      >
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon :name="section.icon" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">{{ section.title }}</h2>
+        </div>
+
+        <div
+          v-for="row in section.rows"
+          :key="row.k"
+          class="flex items-center justify-between gap-4 border-b border-line/60 px-5 py-3 last:border-0"
+        >
+          <span class="text-[12.5px] text-ink-soft">{{ row.k }}</span>
+          <span class="text-[12.5px] font-medium">{{ row.v }}</span>
+        </div>
+
+        <div v-if="section.chips?.length" class="flex flex-wrap gap-1.5 px-5 py-4">
+          <span
+            v-for="c in section.chips"
+            :key="c"
+            class="rounded-full border border-line bg-well px-2.5 py-1 font-mono text-[10.5px] text-ink-soft"
+          >
+            {{ c }}
+          </span>
+        </div>
+      </section>
+    </div>
+  </div>
+</template>
