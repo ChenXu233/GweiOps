@@ -12,6 +12,9 @@ class GitHubAdapter(PluginBase):
         self.client: GitHubClient = None
         self.git_tool: GitTool = None
         self.config: Dict[str, Any] = {}
+        # 与 App 适配器同目标、低优先级:两者并存,默认用 App 认证那条。
+        self.binding = "github"
+        self.tenant = ""
 
     def info(self) -> PluginInfo:
         return PluginInfo(

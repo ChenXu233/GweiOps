@@ -19,8 +19,6 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-import yaml
-
 from engine.change_unit import Effect, Window
 from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 
@@ -52,7 +50,6 @@ class DockerComposeAction(PluginBase):
     ) -> None:
         self._dir = Path(__file__).parent
         self._run = runner or run_compose
-        self._effects: dict[str, Any] = {}
         self.binding = binding
         self.tenant = tenant
 
@@ -67,37 +64,19 @@ class DockerComposeAction(PluginBase):
             capabilities=["compose.scale"],
         )
 
-    def _load_manifest(self) -> dict[str, Any]:
-        raw = yaml.safe_load((self._dir / "plugin.yaml").read_text(encoding="utf-8"))
-        return dict(raw.get("effects") or {})
-
     async def on_startup(self) -> None:
-        self._effects = self._load_manifest()
+        pass
 
     async def on_shutdown(self) -> None:
-        self._effects = {}
+        pass
+
+    # 效果声明的解释权在核心(registry.effect_decl),插件只负责执行。
 
     async def health_check(self) -> bool:
         return True
 
     async def handle_event(self, event: str, data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ignored"}
-
-    # -- 效果声明(给 runner 用) ------------------------------------
-
-    def effects(self) -> dict[str, Any]:
-        return self._load_manifest()
-
-    def effect(self, name: str, **args: Any) -> Effect:
-        raw = self.effects()[name]
-        return Effect(
-            task=raw["execute"]["task"],
-            args=args,
-            undo_task=raw["undo"]["task"],
-            undo_kind=raw["undo"].get("kind", "retained"),
-            label=raw.get("label", ""),
-            capability=name,
-        )
 
     # -- 任务分发 ---------------------------------------------------
 

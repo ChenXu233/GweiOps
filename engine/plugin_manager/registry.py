@@ -45,6 +45,7 @@ class PluginRegistry:
         self._dirs: dict[str, Path] = {}
         self._event_index: dict[str, list[str]] = {}
         self._capability_index: dict[str, list[_CapabilityProvider]] = {}
+        self._effect_index: dict[str, list[_CapabilityProvider]] = {}
         self._hook_index: dict[str, list[tuple[int, str]]] = {}
         self._launched = False
 
@@ -155,6 +156,18 @@ class PluginRegistry:
             self._capability_index[capability].sort(
                 key=lambda p: p.priority, reverse=True
             )
+        for capability in manifest.effects:
+            if capability not in manifest.capabilities:
+                raise ValueError(
+                    f"{manifest.name}: effect {capability} 未列入 capabilities,解析不到提供者"
+                )
+            provider = _CapabilityProvider(
+                key=instance_key,
+                priority=manifest.capabilities_priority.get(capability, 0),
+            )
+            self._effect_index.setdefault(capability, []).append(provider)
+            self._effect_index[capability].sort(key=lambda p: (p.priority, p.key), reverse=True)
+
         for sub in manifest.hooks_subscribed:
             self._hook_index.setdefault(sub.point, []).append((sub.priority, instance_key))
             self._hook_index[sub.point].sort(key=lambda item: item[0], reverse=True)
@@ -166,6 +179,7 @@ class PluginRegistry:
         self._dirs.clear()
         self._event_index.clear()
         self._capability_index.clear()
+        self._effect_index.clear()
         self._hook_index.clear()
         self._launched = False
 
@@ -236,9 +250,21 @@ class PluginRegistry:
         providers = self._capability_index.get(capability, [])
         if not providers:
             raise LookupError(f"No provider for capability: {capability}")
-        # 两轮:先精确租户,再退化到 tenant="" 的共享提供者。目标(binding)始终精确。
-        shared = None
-        for provider in providers:  # 索引已按 priority 降序
+        return self._choose(
+            self._matching(providers, tenant, binding),
+            capability,
+            tenant,
+            binding,
+            available=self.capability_bindings(capability),
+        )
+
+    def _matching(
+        self, providers: list[_CapabilityProvider], tenant: str, binding: str
+    ) -> list[tuple[PluginBase, int]]:
+        """按 (租户, 目标) 过滤,保持优先级顺序;租户精确优先于共享。"""
+        exact: list[tuple[PluginBase, int]] = []
+        shared: list[tuple[PluginBase, int]] = []
+        for provider in providers:
             instance = self._instances.get(provider.key)
             if instance is None:
                 continue
@@ -246,15 +272,46 @@ class PluginRegistry:
                 continue
             instance_tenant = getattr(instance, "tenant", "")
             if instance_tenant == tenant:
-                return instance
-            if instance_tenant == "" and shared is None:
-                shared = instance
-        if shared is not None:
-            return shared
-        raise LookupError(
-            f"No provider for capability={capability} tenant={tenant!r} binding={binding!r}; "
-            f"available={self.capability_bindings(capability)}"
+                exact.append((instance, provider.priority))
+            elif instance_tenant == "":
+                shared.append((instance, provider.priority))
+        return exact or shared
+
+    @staticmethod
+    def _choose(
+        matches: list[tuple[PluginBase, int]],
+        capability: str,
+        tenant: str,
+        binding: str,
+        available: list | None = None,
+    ) -> PluginBase:
+        if not matches:
+            raise LookupError(
+                f"No provider for capability={capability} tenant={tenant!r} binding={binding!r}; "
+                f"available={available if available is not None else 'n/a'}"
+            )
+        if len(matches) > 1 and matches[0][1] == matches[1][1]:
+            names = ", ".join(sorted(type(i).__name__ for i, _ in matches if _ == matches[0][1]))
+            raise LookupError(
+                f"能力 {capability} 在 tenant={tenant!r} binding={binding!r} 上有并列提供者 "
+                f"({names});请在清单里设置 capabilities_priority 明确默认"
+            )
+        return matches[0][0]
+
+    def effect_decl(self, capability: str, *, tenant: str = "", binding: str = ""):
+        """返回 (提供者, 效果声明)。只看真的声明了这个效果的插件。"""
+        providers = self._effect_index.get(capability, [])
+        if not providers:
+            raise LookupError(f"No provider declares effect: {capability}")
+        provider = self._choose(
+            self._matching(providers, tenant, binding), capability, tenant, binding
         )
+        key = self._key_of(provider) or ""
+        manifest = self._manifests.get(self._instance_names.get(key, ""))
+        decl = manifest.effects.get(capability) if manifest else None
+        if decl is None:
+            raise LookupError(f"{key} 没有声明 effect {capability}")
+        return provider, decl
 
     def _key_of(self, instance: PluginBase) -> str | None:
         for key, candidate in self._instances.items():

@@ -6,6 +6,7 @@ import importlib
 
 from engine.change_unit import (
     ChangeUnit,
+    Effect,
     JsonlLedger,
     apply,
     rollback,
@@ -40,6 +41,16 @@ class FakeClient:
         self.comments.pop(int(comment_id), None)
 
 
+def _comment_effect(repo="ChenXu233/GweiOps", issue_number=1, body="hello"):
+    return Effect(
+        task="create_comment",
+        args={"repo": repo, "issue_number": issue_number, "body": body},
+        undo_task="delete_comment",
+        undo_kind="symmetric",
+        capability="comment.create",
+    )
+
+
 def _plugin():
     plugin = adapter_mod.GitHubAppAdapter()
     plugin.client = FakeClient()
@@ -48,9 +59,7 @@ def _plugin():
 
 def test_comment_unit_kept_then_rolled_back(tmp_path):
     plugin = _plugin()
-    effect = plugin.effect(
-        "comment.create", repo="ChenXu233/GweiOps", issue_number=1, body="hello"
-    )
+    effect = _comment_effect()
     unit = ChangeUnit(
         intent={"source": "test"},
         effect=effect,
@@ -74,9 +83,7 @@ def test_comment_unit_kept_then_rolled_back(tmp_path):
 
 def test_binding_must_match_github():
     plugin = _plugin()
-    effect = plugin.effect(
-        "comment.create", repo="ChenXu233/GweiOps", issue_number=1, body="x"
-    )
+    effect = _comment_effect(body="x")
     unit = ChangeUnit(intent={}, effect=effect, binding="somewhere-else")
     try:
         asyncio.run(apply(unit, plugin))
@@ -86,8 +93,12 @@ def test_binding_must_match_github():
         raise AssertionError("绑定不一致必须被拒")
 
 
-def test_declared_effect_matches_manifest():
-    plugin = _plugin()
-    declared = plugin.effects()["comment.create"]
-    assert declared["undo"]["kind"] == "symmetric"
-    assert declared["execute"]["task"] == "create_comment"
+def test_declared_effect_is_parsed_by_core():
+    from pathlib import Path
+
+    from engine.plugin_manager.manifest import Manifest
+
+    manifest = Manifest.from_yaml(Path(adapter_mod.__file__).parent / "plugin.yaml")
+    declared = manifest.effects["comment.create"]
+    assert declared.undo_kind == "symmetric"
+    assert declared.execute_task == "create_comment"

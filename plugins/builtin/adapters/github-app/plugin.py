@@ -1,11 +1,7 @@
 # plugins/builtin/adapters/github-app/plugin.py
 """GitHub App Adapter 插件 - 通过 GitHub App 进行交互。"""
 
-import json
-from pathlib import Path
 from typing import Any, Dict
-
-import yaml
 
 from engine.change_unit import Effect, Window
 from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
@@ -118,23 +114,6 @@ class GitHubAppAdapter(PluginBase):
         return {"status": "error", "message": f"Unknown task: {task}"}
 
     # -- 变更单元:效果提供者 --------------------------------------
-
-    def effects(self) -> Dict[str, Any]:
-        raw = yaml.safe_load(
-            (Path(__file__).parent / "plugin.yaml").read_text(encoding="utf-8")
-        )
-        return dict(raw.get("effects") or {})
-
-    def effect(self, name: str, **args: Any) -> Effect:
-        raw = self.effects()[name]
-        return Effect(
-            task=raw["execute"]["task"],
-            args=args,
-            undo_task=raw["undo"]["task"],
-            undo_kind=raw["undo"].get("kind", "retained"),
-            label=raw.get("label", ""),
-            capability=name,
-        )
 
     async def execute(self, task: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """执行效果:返回句柄(评论 ID),撤销靠它定位。"""

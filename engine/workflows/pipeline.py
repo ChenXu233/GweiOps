@@ -269,10 +269,10 @@ async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> di
                 continue
             args["body"] = gated["payload"]["body"]
 
-        provider = registry.resolve(capability, tenant=tenant, binding=binding)
+        provider, decl = registry.effect_decl(capability, tenant=tenant, binding=binding)
         unit = ChangeUnit(
             intent={"workflow": idem_base, "summary": parsed.summary},
-            effect=provider.effect(capability, **args),
+            effect=decl.to_effect(args),
             tenant=tenant,
             binding=binding,
             idempotency_key=f"{idem_base}:effect:{index}",

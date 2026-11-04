@@ -22,6 +22,17 @@ capabilities:
 tasks:
   comment.create: create_comment
 
+# 两个 GitHub 适配器并存,默认选这个:内部走 App 认证
+capabilities_priority:
+  issue.read: 10
+  issue.write: 10
+  comment.read: 10
+  comment.write: 10
+  label.write: 10
+  webhook.receive: 10
+  webhook.verify: 10
+  comment.create: 10
+
 effects:
   comment.create:
     label: 在 Issue / PR 上发一条评论
