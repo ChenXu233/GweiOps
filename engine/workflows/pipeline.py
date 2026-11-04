@@ -23,6 +23,7 @@ from engine.db import async_session_factory
 from engine.db.models import AgentSession, Issue, Project, Tenant
 from engine.plugin_manager import events, hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
+from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 from engine.shared.runtime import get_adapter, get_sensor
 
 logger = logging.getLogger(__name__)
@@ -191,29 +192,6 @@ async def _post_comment_impl(payload: dict, body: str) -> dict:
             e,
         )
         return {"posted": False, "error": str(e)}
-
-
-def _format_suggestion_reply(payload: dict, patches: list[dict]) -> str:
-    """把补丁建议格式化为 Issue 评论 Markdown（纯函数，保持确定性）。"""
-    lines = [
-        "## 🛠 GweiOps 修复建议",
-        "",
-        f"针对 **{payload['title']}** 生成了 {len(patches)} 个候选补丁（仅建议，未自动应用）：",
-        "",
-    ]
-    for i, patch in enumerate(patches, 1):
-        lines += [
-            f"### 方案 {i} · {patch.get('type', 'PATCH')}（风险：{patch.get('risk', '未知')}）",
-            "",
-            patch.get("description", ""),
-            "",
-            "```diff",
-            patch.get("diff", ""),
-            "```",
-            "",
-        ]
-    lines += ["---", "*由 GweiOps fixer 智能体生成；如需调整请回复 @gwei 并补充说明。*"]
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
