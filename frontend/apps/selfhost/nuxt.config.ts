@@ -2,7 +2,8 @@ export default defineNuxtConfig({
   extends: ['@gwei/core'],
   modules: ['@nuxtjs/tailwindcss'],
   compatibilityDate: '2026-07-23',
-  css: ['~/assets/css/main.css'],
+  // 用自己的 main.css(含语义色变量)替换模块默认注入的那份,避免重复
+  tailwindcss: { cssPath: '~/assets/css/main.css' },
   typescript: {
     strict: true
   },
