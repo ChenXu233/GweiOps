@@ -2,6 +2,18 @@
 from engine.shared.config import config
 
 
+def normalize_pem(raw: str) -> str:
+    """把 .env 里的私钥还原成 PEM。
+
+    .env 只能放单行值：换行写成字面量 \n，这里还原成真实换行；已经是多行的原样返回。
+    """
+    if not raw:
+        return ""
+    if "\n" in raw:
+        return raw
+    return raw.replace("\\n", "\n")
+
+
 class GitHubAppConfig:
     """GitHub App Adapter 配置（内部 Scope）。"""
 
@@ -26,7 +38,7 @@ class GitHubAppConfig:
 
     @property
     def private_key(self) -> str:
-        return self._config.get("private_key", "")
+        return normalize_pem(self._config.get("private_key", ""))
 
     @property
     def webhook_secret(self) -> str:

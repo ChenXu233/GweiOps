@@ -53,6 +53,8 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+*.pem
+*.key
 .env.prod
 .env.*.local
 # Node.js
