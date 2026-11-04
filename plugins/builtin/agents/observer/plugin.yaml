@@ -1,13 +1,7 @@
 name: observer-agent
 version: 1.0.0
 type: agent
-description: 观察智能体，监控系统状态
-triggers:
-- type: schedule
-  interval: 60s
-capabilities:
-- system.monitor
-- metrics.collect
+description: UI 扩展示例：声明式 widget + iframe 页面（不提供能力，不订阅事件）
 class_name: ObserverAgent
 ui:
   widgets:

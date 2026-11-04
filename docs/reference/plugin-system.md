@@ -79,6 +79,7 @@ ui:
 - 不持久化、不重试;需要可靠执行的事件链由 DBOS 工作流负责;
 - 单个订阅者 10 秒超时,超时或异常只影响自身;
 - 指标:`plugin_events_published_total{event}`、`plugin_event_handler_errors_total{plugin,kind}`。
+- 现状:核心与内置插件都不发布事件,也没有内置订阅者。总线作为插件扩展面保留;若长期没有真实使用者,应当删除而不是留着当装饰。
 
 ## Hook 管线
 
@@ -147,7 +148,7 @@ effects:
 ## 运行时接线
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
-- triage:persist 成功后 `hooks.apply("issue.triaged")`,再发布 `sensor.processed`;
+- triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不重复执行。
 

@@ -27,12 +27,6 @@ class GitHubAppAdapter(PluginBase):
             version="1.0.0",
             type=PluginType.ADAPTER,
             description="GitHub App 适配器，通过 GitHub App 进行认证和交互",
-            triggers=[
-                {
-                    "type": "event",
-                    "events": ["webhook.received"],
-                }
-            ],
             capabilities=[
                 "issue.read", "issue.write",
                 "comment.read", "comment.write",

@@ -47,14 +47,9 @@
 现有 plugin_manager 只有 PluginBase 接口 + 无人调用的 PluginDispatcher,插件加载是
 硬编码 import——**尚无生态锁定成本,契约改动接近零成本;这是唯一便宜的窗口**。
 （决策时状态;现已由 registry/事件总线/Hook 落地,见 [插件系统参考](../reference/plugin-system.md)。）
-此外,七个内置智能体的 `triggers` 已隐含完整事件编排链,只是没有引擎执行:
+决策时曾认为七个内置智能体的 `triggers` 隐含一条完整事件编排链。这条链后来没有实现:依赖它的空壳插件已删除,推理侧改由 `intent.propose` 的提供者承担(见 [变更单元契约](change-unit-contract.md))。
 
-```text
-issue.created → sensor ──sensor.processed→ diagnoser ──diagnosis.complete→ fixer
-──fix.generated→ deployer ──patch.approved→ reporter ... workflow.completed → learner
-```
-
-v2 的本质:把这条潜在编排骨架升级为类型化、可治理的运行时。
+v2 留下的真实骨架是:清单、注册表、能力通道、Hook、UI 插槽。
 
 ### 4.2 三种受支持的变更机制(替代"直接修改")
 

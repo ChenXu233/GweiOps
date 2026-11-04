@@ -2,11 +2,6 @@ name: sensor-agent
 version: 2.0.0
 type: agent
 description: 感知智能体，使用 LLM 分析 Issue 内容并提供智能回复
-triggers:
-- type: event
-  events:
-  - issue.created
-  - issue.edited
 capabilities:
 - issue.label
 - issue.completeness_check
