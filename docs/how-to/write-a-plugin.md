@@ -39,6 +39,7 @@ tasks:
 
 - `tasks` 把能力名映射到 `execute_task` 的任务名;不写时默认把能力名的点换成下划线。
 - 同名能力可由多个插件提供,用 `capabilities_priority` 决定谁优先。
+- 想做备选而不默认加载,写 `default_enabled: false`;部署时用 `PLUGINS_ENABLED` 显式打开。
 - Hook 与 UI 插槽字段见 [插件系统参考](../reference/plugin-system.md)。
 
 ## 3. 写实现

@@ -109,6 +109,7 @@ class Manifest:
     type: PluginType
     description: str
     class_name: str
+    default_enabled: bool = True  # 部署未显式选择时是否加载;false 表示备选项
     triggers: list[dict[str, Any]] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
     hooks_offered: list[str] = field(default_factory=list)
@@ -215,6 +216,7 @@ class Manifest:
             type=plugin_type,
             description=raw["description"],
             class_name=raw["class_name"],
+            default_enabled=bool(raw.get("default_enabled", True)),
             triggers=list(raw.get("triggers") or []),
             capabilities=list(raw.get("capabilities") or []),
             hooks_offered=list(hooks_raw.get("offered") or []),
