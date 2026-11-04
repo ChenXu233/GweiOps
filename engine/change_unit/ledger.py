@@ -18,6 +18,15 @@ class JsonlLedger:
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(unit.to_dict(), ensure_ascii=False) + "\n")
 
+    def find(self, idempotency_key: str) -> dict | None:
+        """按幂等键找最近一条记录;重放判定只看账本,不看内存。"""
+        if not idempotency_key:
+            return None
+        for row in reversed(self.read()):
+            if row.get("idempotency_key") == idempotency_key:
+                return row
+        return None
+
     def read(self) -> list[dict]:
         if not self.path.exists():
             return []

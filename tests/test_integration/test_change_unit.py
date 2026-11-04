@@ -127,6 +127,44 @@ def test_illegal_undo_kind_rejected():
         Effect(task="t", args={}, undo_task="u", undo_kind="magic")
 
 
+def test_replay_uses_prior_result_without_second_effect(tmp_path):
+    ledger = JsonlLedger(tmp_path / "units.jsonl")
+    provider = FakeProvider()
+    unit = _unit()
+    unit.idempotency_key = "triage-42/comment/attempt-1"
+
+    first = asyncio.run(apply(unit, provider, ledger))
+    assert first.verdict == VERDICT_KEPT
+
+    replay = _unit()
+    replay.idempotency_key = "triage-42/comment/attempt-1"
+    second = asyncio.run(apply(replay, provider, ledger))
+
+    assert provider.executed == 1, "重放不得二次外呼"
+    assert second.handle == first.handle
+    assert second.verdict == VERDICT_KEPT
+    assert second.reason.startswith("重放")
+    assert len(ledger.read()) == 1
+
+
+def test_idempotency_key_without_ledger_refused():
+    unit = _unit()
+    unit.idempotency_key = "k1"
+    with pytest.raises(ValueError, match="没有账本"):
+        asyncio.run(apply(unit, FakeProvider()))
+
+
+def test_different_keys_execute_twice(tmp_path):
+    ledger = JsonlLedger(tmp_path / "units.jsonl")
+    provider = FakeProvider()
+    a = _unit(); a.idempotency_key = "k-a"
+    b = _unit(); b.idempotency_key = "k-b"
+    asyncio.run(apply(a, provider, ledger))
+    asyncio.run(apply(b, provider, ledger))
+    assert provider.executed == 2
+    assert len(ledger.read()) == 2
+
+
 def _registry_for(provider: FakeProvider, capability: str = "fake.scale"):
     from engine.plugin_manager.base import PluginType
     from engine.plugin_manager.manifest import Manifest
