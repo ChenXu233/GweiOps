@@ -23,6 +23,30 @@ const metrics = computed(() => {
   ]
 })
 
+// 过去 N 天的健康轨迹:true = 当天无事故。
+// 折线比色块更容易看出"哪天掉下去了"——平的那段就是没出事的那段。
+const health = computed(() => {
+  const values = data.value?.healthHistory ?? []
+  if (values.length < 2) return null
+
+  const n = values.length
+  const pad = 2
+  const xFor = (i: number) => pad + (i / (n - 1)) * (100 - pad * 2)
+  const yFor = (ok: boolean) => (ok ? 14 : 84)
+
+  const pts = values.map((ok, i) => ({ x: xFor(i), y: yFor(ok), ok }))
+  const line = pts
+    .map((pt, i) => (i === 0 ? 'M' : 'L') + pt.x.toFixed(2) + ' ' + pt.y.toFixed(2))
+    .join(' ')
+  const first = pts.findIndex(pt => !pt.ok)
+
+  return {
+    line,
+    incident: first >= 0 ? pts[first] : null,
+    incidentCount: values.filter(v => !v).length,
+  }
+})
+
 function severityBar(severity: string) {
   if (severity === 'critical') return 'bg-coral'
   if (severity === 'medium') return 'bg-amber'
@@ -102,23 +126,38 @@ function stepIndex(steps: string[], current: string) {
               {{ statusText[data.status] }}
             </h2>
             <p class="mt-2.5 text-[13px] text-lime-ink/65">
-              连续 {{ data.consecutiveDays }} 天无事故 · 上次事故 {{ data.lastIncident }}
+              连续 {{ data.consecutiveDays }} 天无事故<template v-if="data.lastIncident"> · 上次事故 {{ data.lastIncident }}</template>
             </p>
           </div>
 
-          <div class="mt-7">
-            <div class="flex h-12 items-end gap-1.5">
-              <div
-                v-for="(ok, i) in data.healthHistory"
-                :key="i"
-                class="flex-1 rounded-sm transition-all"
-                :class="ok ? 'bg-lime-ink/70' : 'bg-lime-ink/20'"
-                :style="{ height: ok ? '100%' : '46%' }"
-                :title="ok ? '正常' : '异常'"
+          <div v-if="health" class="mt-7">
+            <div class="relative h-16">
+              <svg
+                class="absolute inset-0 h-full w-full"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path
+                  :d="health.line"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-opacity="0.7"
+                  vector-effect="non-scaling-stroke"
+                  stroke-linejoin="round"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span
+                v-if="health.incident"
+                class="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-lime-ink ring-[3px] ring-lime"
+                :style="{ left: health.incident.x + '%', top: health.incident.y + '%' }"
               />
             </div>
-            <div class="mt-2 flex justify-between font-mono text-[10px] tracking-wider text-lime-ink/45">
-              <span>{{ data.healthHistory.length }} 天前</span>
+            <div class="mt-2.5 flex items-baseline justify-between font-mono text-[10px] tracking-wider text-lime-ink/45">
+              <span>近 {{ data.healthHistory.length }} 天</span>
+              <span v-if="health.incidentCount" class="text-lime-ink/60">{{ health.incidentCount }} 天异常</span>
               <span>今天</span>
             </div>
           </div>
