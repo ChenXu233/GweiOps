@@ -138,6 +138,28 @@ def test_duplicate_instance_key_is_rejected():
         reg.register(_manifest("compose", "compose.scale", "scale"), FakePlugin("b"), key="k")
 
 
+def test_shared_provider_serves_any_tenant():
+    reg = PluginRegistry()
+    reg.register(
+        _manifest("shared", "issue.read", "read"),
+        FakePlugin("shared", tenant="", binding="target-x"),
+    )
+    assert reg.resolve("issue.read", tenant="tenant-z", binding="target-x").tag == "shared"
+
+
+def test_exact_tenant_wins_over_shared():
+    reg = PluginRegistry()
+    reg.register(
+        _manifest("shared", "issue.read", "read", priority=99),
+        FakePlugin("shared", tenant="", binding="b"),
+    )
+    reg.register(
+        _manifest("exact", "issue.read", "read", priority=1),
+        FakePlugin("exact", tenant="t", binding="b"),
+    )
+    assert reg.resolve("issue.read", tenant="t", binding="b").tag == "exact"
+
+
 def test_get_by_manifest_name_when_unique():
     reg = PluginRegistry()
     reg.register(_manifest("compose", "compose.scale", "scale"), FakePlugin("a"))

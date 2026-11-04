@@ -23,6 +23,8 @@ from engine.db import async_session_factory
 from engine.db.models import AgentSession, Issue, Project, Tenant
 from engine.plugin_manager import events, hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
+from engine.change_unit import ChangeUnit, JsonlLedger, apply as apply_change_unit
+from engine.shared.config import config
 from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 from engine.shared.runtime import get_adapter, get_sensor
 
@@ -194,6 +196,100 @@ async def _post_comment_impl(payload: dict, body: str) -> dict:
         return {"posted": False, "error": str(e)}
 
 
+async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict]) -> dict:
+    """经能力通道拿 intent;没有提供者时用现有结论兜底,工作流不因缺插件停摆。"""
+    try:
+        return await registry.run_capability(
+            "intent.propose",
+            {
+                "signal": {
+                    "source": payload.get("source", "issue"),
+                    "repo": payload["repo_full_name"],
+                    "issue_number": payload["issue_number"],
+                    "title": payload["title"],
+                    "body": payload["body"],
+                },
+                "analysis": analysis,
+                "patches": patches,
+            },
+        )
+    except LookupError:
+        logger.info("No provider for intent.propose; falling back to local intent")
+
+    body = _format_suggestion_reply(payload, patches) if patches else analysis.get("reply")
+    effects = []
+    if body:
+        effects.append(
+            {
+                "capability": "comment.create",
+                "args": {
+                    "repo": payload["repo_full_name"],
+                    "issue_number": payload["issue_number"],
+                    "body": body,
+                },
+            }
+        )
+    return {
+        "version": 1,
+        "summary": f"针对 {payload['title']} 的 {len(patches)} 个候选补丁" if patches else "回评",
+        "evidence": [
+            {"kind": "issue", "ref": f"{payload['repo_full_name']}#{payload['issue_number']}"}
+        ],
+        "effects": effects,
+        "rationale": "本地兜底:没有 intent 提供者时把既有结论转成效果。",
+    }
+
+
+async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> dict:
+    """把 intent 里的候选效果逐个落成变更单元:解析提供者 → 执行 → 验证 → 记账。"""
+    from engine.change_unit.intent import parse_intent
+
+    parsed = parse_intent(intent)
+    tenant = payload.get("tenant_slug", "")
+    binding = config.settings.default_binding
+    ledger = JsonlLedger(config.settings.change_ledger_path)
+
+    applied: list[dict] = []
+    for index, effect in enumerate(parsed.effects):
+        capability = effect["capability"]
+        args = dict(effect.get("args") or {})
+
+        if capability == "comment.create":
+            gated = await hooks.apply(
+                "comment.posting",
+                {
+                    "tenant_slug": tenant,
+                    "repo_full_name": payload["repo_full_name"],
+                    "issue_number": payload["issue_number"],
+                    "body": args.get("body", ""),
+                },
+            )
+            if not gated["allowed"]:
+                applied.append({"capability": capability, "verdict": "vetoed"})
+                continue
+            args["body"] = gated["payload"]["body"]
+
+        provider = registry.resolve(capability, tenant=tenant, binding=binding)
+        unit = ChangeUnit(
+            intent={"workflow": idem_base, "summary": parsed.summary},
+            effect=provider.effect(capability, **args),
+            tenant=tenant,
+            binding=binding,
+            idempotency_key=f"{idem_base}:effect:{index}",
+        )
+        outcome = await apply_change_unit(unit, provider, ledger)
+        applied.append(
+            {
+                "capability": capability,
+                "verdict": outcome.verdict,
+                "handle": outcome.handle,
+                "reason": outcome.reason,
+            }
+        )
+
+    return {"summary": parsed.summary, "applied": applied}
+
+
 # ---------------------------------------------------------------------------
 # DBOS 步骤与工作流
 # ---------------------------------------------------------------------------
@@ -232,6 +328,17 @@ async def apply_hooks_step(point: str, payload: dict) -> dict:
     return await hooks.apply(point, payload)
 
 
+@DBOS.step()
+async def propose_intent_step(payload: dict, analysis: dict, patches: list) -> dict:
+    return await _propose_intent_impl(payload, analysis, patches)
+
+
+@DBOS.step()
+async def apply_effects_step(intent: dict, payload: dict) -> dict:
+    """效果执行以 workflow_id 作为幂等基座:重放只复用账本结论。"""
+    return await _apply_effects_impl(intent, payload, f"{DBOS.workflow_id}:effects")
+
+
 @DBOS.workflow()
 async def issue_triage_workflow(payload: dict) -> dict:
     """Issue 感知工作流：分析 → 落库 → Hook 观察点 → 事件链 → 回评。"""
@@ -249,21 +356,14 @@ async def issue_triage_workflow(payload: dict) -> dict:
     # 保守事件链:diagnoser 经 manifest 订阅 sensor.processed 自动触发
     await publish_event_step("sensor.processed", hooked_payload)
 
-    posted: dict[str, Any] = {"posted": False}
-    reply = analysis.get("reply")
-    if reply:
-        gated = await apply_hooks_step("comment.posting", {
-            "tenant_slug": payload["tenant_slug"],
-            "repo_full_name": payload["repo_full_name"],
-            "issue_number": payload["issue_number"],
-            "body": reply,
-        })
-        if gated["allowed"]:
-            posted = await post_comment_step(payload, gated["payload"]["body"])
-        else:
-            posted = {"posted": False, "vetoed": True}
+    intent = await propose_intent_step(payload, analysis, [])
+    applied = await apply_effects_step(intent, payload)
 
-    return {"record": record, "posted": posted}
+    return {
+        "record": record,
+        "intent": intent.get("summary", ""),
+        "applied": applied,
+    }
 
 
 @DBOS.workflow()
@@ -281,18 +381,12 @@ async def fix_suggestion_workflow(payload: dict) -> dict:
     if hooked["allowed"]:
         patches = hooked["payload"]["patches"]
 
-    reply = _format_suggestion_reply(payload, patches)
-    gated = await apply_hooks_step("comment.posting", {
-        "tenant_slug": payload["tenant_slug"],
-        "repo_full_name": payload["repo_full_name"],
-        "issue_number": payload["issue_number"],
-        "body": reply,
-    })
+    intent = await propose_intent_step(payload, analysis, patches)
+    applied = await apply_effects_step(intent, payload)
 
-    posted: dict[str, Any] = {"posted": False}
-    if gated["allowed"]:
-        posted = await post_comment_step(payload, gated["payload"]["body"])
-    else:
-        posted = {"posted": False, "vetoed": True}
-
-    return {"record": record, "patch_count": len(patches), "posted": posted}
+    return {
+        "record": record,
+        "patch_count": len(patches),
+        "intent": intent.get("summary", ""),
+        "applied": applied,
+    }

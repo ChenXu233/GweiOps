@@ -236,15 +236,21 @@ class PluginRegistry:
         providers = self._capability_index.get(capability, [])
         if not providers:
             raise LookupError(f"No provider for capability: {capability}")
+        # 两轮:先精确租户,再退化到 tenant="" 的共享提供者。目标(binding)始终精确。
+        shared = None
         for provider in providers:  # 索引已按 priority 降序
             instance = self._instances.get(provider.key)
             if instance is None:
                 continue
-            if (
-                getattr(instance, "tenant", "") == tenant
-                and getattr(instance, "binding", "") == binding
-            ):
+            if getattr(instance, "binding", "") != binding:
+                continue
+            instance_tenant = getattr(instance, "tenant", "")
+            if instance_tenant == tenant:
                 return instance
+            if instance_tenant == "" and shared is None:
+                shared = instance
+        if shared is not None:
+            return shared
         raise LookupError(
             f"No provider for capability={capability} tenant={tenant!r} binding={binding!r}; "
             f"available={self.capability_bindings(capability)}"

@@ -49,8 +49,9 @@ def _assert_binding(unit: ChangeUnit, provider: EffectProvider) -> None:
         raise ValueError(
             f"binding 不匹配:单元={unit.binding!r} 提供者={provider_binding!r}"
         )
+    # 提供者 tenant="" 表示它不按租户隔离(例如一个 GitHub 适配器服务所有租户)。
     provider_tenant = getattr(provider, "tenant", "")
-    if provider_tenant != unit.tenant:
+    if provider_tenant not in ("", unit.tenant):
         raise ValueError(
             f"tenant 不匹配:单元={unit.tenant!r} 提供者={provider_tenant!r}"
         )

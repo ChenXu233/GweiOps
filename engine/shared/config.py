@@ -230,6 +230,10 @@ class Settings(BaseSettings):
     # ---- 租户 ----
     default_tenant_slug: str = "default"  # webhook 事件的缺省租户(多租户映射接入前)
 
+    # ---- 变更单元 ----
+    default_binding: str = "github"  # 效果执行的下游目标;多目标解析前只有一个
+    change_ledger_path: str = "var/change-ledger.jsonl"  # 账本落盘位置(业务库接入前)
+
     # .env 可能包含部署侧附加变量（如 prod 密码），容忍未知键避免启动崩溃
     model_config = {
         "env_file": ".env",
