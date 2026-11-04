@@ -147,7 +147,10 @@ async def apply(
 
 
 async def rollback(
-    unit: ChangeUnit, target: Any, ledger: JsonlLedger | None = None
+    unit: ChangeUnit,
+    target: Any,
+    ledger: JsonlLedger | None = None,
+    reason: str = "人工回滚",
 ) -> ChangeUnit:
     """人对账本按下撤销。没有句柄的单元不允许伪造回滚。"""
     provider = _resolve_target(unit, target)
@@ -156,6 +159,6 @@ async def rollback(
         raise ValueError("没有句柄的单元无法回滚")
     await provider.undo(unit.effect.undo_task, unit.effect.args, unit.handle)
     unit.verdict = VERDICT_ROLLED_BACK
-    unit.reason = "人工回滚"
+    unit.reason = reason
     _record(ledger, unit)
     return unit

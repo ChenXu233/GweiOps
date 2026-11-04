@@ -25,6 +25,13 @@
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼;账本默认落 `var/change-ledger.jsonl`。
 
+## 变更账本
+
+- 存储:`CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`),每行一个事件,只追加、不改写。
+- 一个单元执行写一行、撤销再写一行,`id` 相同;当前状态取最后一行。
+- 撤销前置条件:最新行为已执行且有句柄;已撤销返回 409,未执行返回 400,提供者不可用返回 503。
+- 幂等:同一 `idempotency_key` 重放只复用账本结论,不二次外呼。
+
 ## 租户
 
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
@@ -64,6 +71,9 @@
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
 | GET | `/api/metrics` | 指标快照 |
+| GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding 过滤) |
+| GET | `/api/changes/{id}` | 单个单元的全部事件(执行与撤销) |
+| POST | `/api/changes/{id}/rollback` | 撤销已执行的单元,并追加一行审计 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/webhook/github` | GitHub Webhook(issue 事件) |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |

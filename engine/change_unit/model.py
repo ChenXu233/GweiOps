@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
+
 
 # 撤销的两种来源。retained:依赖下游保留的旧状态(revision / snapshot);
 # symmetric:靠对称操作撤销(缩回、重启),不需要保留物。
@@ -67,6 +70,10 @@ class ChangeUnit:
 
     intent: dict[str, Any]
     effect: Effect
+    id: str = field(default_factory=lambda: uuid4().hex)
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
     tenant: str = ""
     binding: str = ""
     idempotency_key: str = ""  # 这次效果的身份;重放时据此复用既有结论
@@ -75,6 +82,32 @@ class ChangeUnit:
     verdict: str = VERDICT_PENDING
     reason: str = ""
     facts: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ChangeUnit":
+        """从账本行还原。窗口不入库(它是一次读取的结果,不是状态)。"""
+        eff = data.get("effect") or {}
+        return cls(
+            intent=data.get("intent") or {},
+            effect=Effect(
+                task=eff.get("task", ""),
+                args=dict(eff.get("args") or {}),
+                undo_task=eff.get("undo_task", ""),
+                undo_kind=eff.get("undo_kind", UNDO_RETAINED),
+                label=eff.get("label", ""),
+                capability=eff.get("capability", ""),
+            ),
+            id=data.get("id") or uuid4().hex,
+            created_at=data.get("created_at")
+            or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            tenant=data.get("tenant", ""),
+            binding=data.get("binding", ""),
+            idempotency_key=data.get("idempotency_key", ""),
+            handle=data.get("handle"),
+            verdict=data.get("verdict", VERDICT_PENDING),
+            reason=data.get("reason", ""),
+            facts=dict(data.get("facts") or {}),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
