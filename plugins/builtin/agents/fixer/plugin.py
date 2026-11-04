@@ -17,9 +17,6 @@ class FixerAgent(PluginBase):
             version="1.0.0",
             type=PluginType.AGENT,
             description="修复智能体，生成修复补丁",
-            triggers=[
-                {"type": "event", "events": ["diagnosis.complete", "issue.analyzed"]},
-            ],
             capabilities=["patch.generate", "code.review"],
         )
 

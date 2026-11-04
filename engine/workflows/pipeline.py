@@ -21,7 +21,7 @@ from dbos import DBOS
 
 from engine.db import async_session_factory
 from engine.db.models import AgentSession, Issue, Project, Tenant
-from engine.plugin_manager import events, hooks, registry
+from engine.plugin_manager import hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
 from engine.change_unit import ChangeUnit, JsonlLedger, apply as apply_change_unit
 from engine.shared.config import config
@@ -316,13 +316,6 @@ async def post_comment_step(payload: dict, body: str) -> dict:
 
 
 @DBOS.step()
-async def publish_event_step(event: str, payload: dict) -> bool:
-    """事件以 step 封装获得 checkpoint——恢复重放不会重复发布。"""
-    await events.publish(event, payload)
-    return True
-
-
-@DBOS.step()
 async def apply_hooks_step(point: str, payload: dict) -> dict:
     """Hook 管线以 step 封装获得 checkpoint,返回 {"allowed", "payload"}。"""
     return await hooks.apply(point, payload)
@@ -351,11 +344,6 @@ async def issue_triage_workflow(payload: dict) -> dict:
         "issue": {"title": payload["title"], "body": payload["body"]},
         "analysis": analysis,
     })
-    hooked_payload = hooked["payload"]
-
-    # 保守事件链:diagnoser 经 manifest 订阅 sensor.processed 自动触发
-    await publish_event_step("sensor.processed", hooked_payload)
-
     intent = await propose_intent_step(payload, analysis, [])
     applied = await apply_effects_step(intent, payload)
 

@@ -13,11 +13,7 @@ class ObserverAgent(PluginBase):
             name="observer-agent",
             version="1.0.0",
             type=PluginType.AGENT,
-            description="观察智能体，监控系统状态",
-            triggers=[
-                {"type": "schedule", "interval": "60s"},
-            ],
-            capabilities=["system.monitor", "metrics.collect"],
+            description="UI 扩展示例：声明式 widget + iframe 页面",
         )
 
     async def on_startup(self):

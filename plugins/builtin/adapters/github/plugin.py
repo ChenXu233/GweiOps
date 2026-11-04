@@ -22,12 +22,6 @@ class GitHubAdapter(PluginBase):
             version="1.0.0",
             type=PluginType.ADAPTER,
             description="GitHub 托管适配器",
-            triggers=[
-                {
-                    "type": "event",
-                    "events": ["webhook.received", "issue.created", "pr.merged"],
-                }
-            ],
             capabilities=[
                 "issue.read", "issue.write",
                 "pr.read", "pr.write", "pr.merge",
