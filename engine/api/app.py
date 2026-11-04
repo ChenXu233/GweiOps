@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from engine.api.routes.health import router as health_router
 from engine.api.routes.plugins import router as plugins_router
+from engine.api.routes.changes import router as changes_router
 from engine.api.routes.console import router as console_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
@@ -60,4 +61,5 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(plugins_router)
 app.include_router(console_router)
+app.include_router(changes_router)
 app.include_router(webhook_router)

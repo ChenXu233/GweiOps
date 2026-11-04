@@ -35,3 +35,19 @@ class JsonlLedger:
             for line in self.path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
+
+    def latest(self) -> list[dict]:
+        """按 unit id 折叠出当前状态,最新的在前。
+
+        账本是追加日志:同一个单元的执行与撤销各是一行,当前状态永远看最后一行。
+        """
+        folded: dict[str, dict] = {}
+        for row in self.read():
+            unit_id = row.get("id")
+            if unit_id:
+                folded[unit_id] = row
+        return list(reversed(list(folded.values())))
+
+    def history(self, unit_id: str) -> list[dict]:
+        """一个单元的全部事件,按写入顺序。"""
+        return [row for row in self.read() if row.get("id") == unit_id]
