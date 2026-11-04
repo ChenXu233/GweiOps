@@ -4,10 +4,14 @@
 
 **GweiOps —— 摆渡未济，恒守既济。**
 
-├── engine/          # 大脑核心（Python FastAPI）
-├── frontend/        # 前端（Nuxt 3 + Vue SSR）
-├── plugins/         # 插件（任何语言）
-└── proto/           # gRPC 定义
+GweiOps 由 Python 引擎、Nuxt 3 前端、插件系统与 gRPC 契约组成。
+
+```text
+engine/     Python FastAPI 核心（工作流、插件、API、数据）
+frontend/   Nuxt 3 单应用（selfhost / saas 两种部署档）
+plugins/    插件（adapters / agents / actions）
+proto/      gRPC 插件契约
+docs/       文档（索引见 docs/README.md）
 ```
 
 ## 运行环境要求
@@ -24,148 +28,39 @@
 
 ## 快速开始
 
-### 使用 Docker（开发）
+### Docker(开发)
 
 ```bash
-# 启动全部服务（自动加载 docker-compose.override.yml 开发配置）
 docker compose up
-
-# 访问 API
-open http://localhost:8000/docs
-
-# 访问前端
-open http://localhost:3000
+# API:   http://localhost:8000/docs
+# 前端:  http://localhost:3000
 ```
 
-### 使用 Docker（生产）
+### Docker(生产)
 
 ```bash
-# 创建生产环境变量
 cp .env.prod.example .env.prod
-# 编辑 .env.prod 填入 POSTGRES_PASSWORD 等必填项
-
-# 启动服务
+# 编辑 .env.prod,填入 POSTGRES_PASSWORD 等必填项
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ### 手动安装
 
 ```bash
-# 安装后端依赖
-cd engine
-pip install -e .
-
-# 运行测试
-pytest tests/
-
-# 启动开发服务器
+# 后端(仓库根目录)
+cd engine && pip install -e ".[dev]" && cd ..
+pytest tests/ -q
 uvicorn engine.api.app:app --reload
 
-# 安装前端依赖
+# 前端
 cd frontend
 pnpm install
-
-# 启动前端开发服务器
-cd apps/selfhost
-pnpm dev
+pnpm dev:selfhost
 ```
 
-## 核心组件
+## 文档
 
-### engine/ - 大脑核心
-
-| 组件 | 职责 |
-|------|------|
-| `workflows/` | 工作流管道（DBOS 持久化执行） |
-| `scheduler/` | 统一调度层 |
-| `state_machine/` | 状态机引擎（S0-S6） |
-| `memory/` | 记忆系统 |
-| `plugin_manager/` | 插件调度器 |
-| `llm/` | LLM 客户端 |
-| `db/` | 数据库 |
-| `api/` | HTTP API |
-| `shared/` | 共享工具（含 Redis 增益层） |
-
-#### 工作流层（DBOS + Redis）
-
-webhook 事件的处理由 [DBOS](https://docs.dbos.dev) 持久化执行（`engine/workflows/pipeline.py`）：
-步骤状态、重试与恢复记录存放在业务库同实例的 `dbos` schema 中，engine 重启后未完成的工作流自动从断点恢复。
-
-| 工作流 | 触发 | 链路 |
-|--------|------|------|
-| `issue_triage_workflow` | issues opened/edited | Sensor 感知分析 → 落库 → 回评 |
-| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → Fixer 补丁建议 → 回评（不自动建 PR） |
-
-Redis（`engine/shared/cache.py`）只承载可丢失的临时状态：webhook 投递去重（防 GitHub 重试）
-与 LLM 分析结果缓存（issue 内容未变不重调 LLM）；Redis 不可用时自动降级放行，
-幂等由 DBOS workflow ID 兜底。工作流的持久化状态一律在 Postgres，不进 Redis。
-
-### plugins/ - 插件系统
-
-| 类型 | 说明 |
-|------|------|
-| `adapters/` | 平台适配器（GitHub、GitLab、Jenkins...） |
-| `agents/` | 智能体（感知、诊断、修复、部署、观测、汇报、学习） |
-| `actions/` | 运维动作（K8s 扩容、流量调度...） |
-
-### proto/ - gRPC 定义
-
-语言无关的接口定义，支持任何语言实现插件。
-
-## 插件开发
-
-### 插件声明
-
-```yaml
-# plugin.yaml
-name: my-plugin
-version: 1.0.0
-type: adapter
-description: My custom adapter
-
-triggers:
-  - type: event
-    events:
-      - webhook.received
-
-capabilities:
-  - issue.read
-  - issue.write
-```
-
-### 插件基类
-
-```python
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
-
-class MyPlugin(PluginBase):
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="my-plugin",
-            version="1.0.0",
-            type=PluginType.ADAPTER,
-            description="My custom adapter",
-        )
-
-    async def on_startup(self):
-        pass
-
-    async def on_shutdown(self):
-        pass
-
-    async def health_check(self) -> bool:
-        return True
-
-    async def handle_event(self, event: str, data: dict) -> dict:
-        return {"status": "ok"}
-
-    async def execute_task(self, task: str, params: dict) -> dict:
-        return {"status": "ok"}
-```
-
-## 架构设计
-
-详见 [设计文档](docs/superpowers/specs/2026-06-20-gweiops-restructure-design.md)
+从 [docs/README.md](docs/README.md) 进入。第一次建议按「平台架构 → 运行时参考 → 写插件」的顺序读。
 
 ## 许可证
 

@@ -1,7 +1,7 @@
 # GweiOps 平台架构决策(SaaS · 前端 · 插件系统 v2)
 
 > 状态:已决策(2026-09-12) | 前置讨论:对话式架构评审,证据见 git 提交 `c7ea1a9..ccb5ae0`
-> 本文取代白皮书 10.4 中与本文冲突的表述;白皮书其余愿景不变。
+> 本文只记录已决事项;目标与硬约束见 [目标](goals.md)。
 
 ## 1. 开源边界:三层协议
 
@@ -46,9 +46,10 @@
 
 现有 plugin_manager 只有 PluginBase 接口 + 无人调用的 PluginDispatcher,插件加载是
 硬编码 import——**尚无生态锁定成本,契约改动接近零成本;这是唯一便宜的窗口**。
+（决策时状态;现已由 registry/事件总线/Hook 落地,见 [插件系统参考](../reference/plugin-system.md)。）
 此外,七个内置智能体的 `triggers` 已隐含完整事件编排链,只是没有引擎执行:
 
-```
+```text
 issue.created → sensor ──sensor.processed→ diagnoser ──diagnosis.complete→ fixer
 ──fix.generated→ deployer ──patch.approved→ reporter ... workflow.completed → learner
 ```
@@ -60,7 +61,7 @@ v2 的本质:把这条潜在编排骨架升级为类型化、可治理的运行�
 **直接 monkey-patch 其他插件或核心代码是明确禁止的**。系统原生与插件行为的变更只能经:
 
 1. **配置旋钮(Config Scopes)**——已有机制(RegisterScope/GetScopeConfig)。行为开关与参数,
-   运行时重载,无需代码变更。
+   启动时读取;改动后需重启,核心没有热重载。
 2. **Hook 管线**——在命名扩展点上按优先级执行订阅者,语义分三档:
    `observe`(只读)/ `transform`(修改载荷)/ `veto`(否决操作)。
    扩展点选自领域主干,首批 ~12 个:`webhook.received`、`issue.triaged`、`analysis.completed`、
@@ -109,7 +110,7 @@ scopes: [...]          # 配置旋钮(沿用现有 Scope 规范)
 
 ## 5. 落地顺序
 
-实施总纲见 [docs/plan/README.md](plan/README.md)(含文件级任务清单、验收标准与风险表):
+未完成项见 [docs/plan/roadmap.md](../plan/roadmap.md);已完成的阶段不再在文档里保留清单:
 
 1. 前端合并单应用 + `deployment_mode` 路由门控(小)——总纲 Phase C;
 2. 核心租户原语:租户表 + 上下文注入 + 查询隔离 + 队列分区(中)——总纲 Phase A(**先于插件 v2 实施**,使事件/落库载荷从第一天带租户);
@@ -120,6 +121,6 @@ scopes: [...]          # 配置旋钮(沿用现有 Scope 规范)
 
 ## 6. 与既有文档的关系
 
-- 白皮书 10.4:"共享核心、非功能裁剪"口径与 §1 一致,予以确认;
-- 白皮书 :532-540 的 SaaS/私有化定价形态由 §3 的计费插件与 §4.2 的配额执行点支撑;
-- `docs/plugin-scope-config-spec.md` 的 Scope 规范沿用为 §4.2 机制 1。
+- 目标与硬约束见 [目标](goals.md);本文不重复。
+- 插件配置的落地形态见 [插件系统参考](../reference/plugin-system.md) 的「配置(Scope)」一节。
+- 变更与回滚的合同见 [变更单元契约](change-unit-contract.md)。
