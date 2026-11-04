@@ -59,7 +59,7 @@ def parse_intent(payload: Any) -> Intent:
 
     effects = payload.get("effects", [])
     _require(isinstance(effects, list), "effects 必须是列表")
-    _require(len(effects) > 0, "intent 至少要提出一个候选效果")
+    # effects 允许为空:结论是"不用动"也是合法判断,不该逼提供者编一个动作出来。
     for item in effects:
         _require(isinstance(item, dict), "effects 的每一项必须是对象")
         capability = item.get("capability")

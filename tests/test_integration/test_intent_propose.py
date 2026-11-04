@@ -37,9 +37,10 @@ def test_parse_intent_rejects_missing_summary():
         parse_intent({"evidence": [], "effects": [{"capability": "c", "args": {}}]})
 
 
-def test_parse_intent_rejects_empty_effects():
-    with pytest.raises(IntentError, match="至少"):
-        parse_intent({"summary": "s", "effects": []})
+def test_parse_intent_allows_no_effect():
+    """结论是"不用动"也是合法判断,不该逼提供者编一个动作出来。"""
+    intent = parse_intent({"summary": "s", "effects": []})
+    assert intent.effects == ()
 
 
 def test_parse_intent_rejects_effect_without_capability():

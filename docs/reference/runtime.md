@@ -17,12 +17,13 @@
 
 | 工作流 | 触发 | 链路 |
 | --- | --- | --- |
-| `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → 发布 `sensor.processed` → 回评 |
-| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → Fixer 补丁建议 → `patch.generated` transform → `comment.posting` veto → 回评(不自动建 PR) |
+| `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → 发布 `sensor.processed` → `intent.propose` → 效果单元(回评,可撤销) |
+| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 补丁建议 → `patch.generated` transform → `intent.propose` → 效果单元(回评,不自动建 PR) |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
+- 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼;账本默认落 `var/change-ledger.jsonl`。
 
 ## 租户
 
