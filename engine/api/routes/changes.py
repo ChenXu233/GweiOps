@@ -26,7 +26,7 @@ def _ledger() -> JsonlLedger:
     return JsonlLedger(config.settings.change_ledger_path)
 
 
-@router.get("/changes")
+@router.get("/api/changes")
 async def list_changes(
     verdict: str | None = None,
     binding: str | None = None,
@@ -41,7 +41,7 @@ async def list_changes(
     return {"items": rows[: max(0, limit)], "total": len(rows)}
 
 
-@router.get("/changes/{unit_id}")
+@router.get("/api/changes/{unit_id}")
 async def get_change(unit_id: str) -> dict:
     rows = _ledger().history(unit_id)
     if not rows:
@@ -49,7 +49,7 @@ async def get_change(unit_id: str) -> dict:
     return {"latest": rows[-1], "history": rows}
 
 
-@router.post("/changes/{unit_id}/rollback")
+@router.post("/api/changes/{unit_id}/rollback")
 async def rollback_change(unit_id: str, reason: str = "人工回滚") -> dict:
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
     ledger = _ledger()

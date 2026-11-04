@@ -78,14 +78,14 @@ def ledger(client):
 
 
 def test_empty_ledger(client):
-    body = client.get("/changes").json()
+    body = client.get("/api/changes").json()
     assert body == {"items": [], "total": 0}
 
 
 def test_latest_folds_events(client, ledger):
     ledger.append(_unit("kept"))
     ledger.append(_unit("rolled_back"))
-    body = client.get("/changes").json()
+    body = client.get("/api/changes").json()
     assert body["total"] == 1
     assert body["items"][0]["verdict"] == "rolled_back"
 
@@ -93,14 +93,14 @@ def test_latest_folds_events(client, ledger):
 def test_history_returns_all_events(client, ledger):
     ledger.append(_unit("kept"))
     ledger.append(_unit("rolled_back"))
-    body = client.get("/changes/u1").json()
+    body = client.get("/api/changes/u1").json()
     assert len(body["history"]) == 2
     assert body["latest"]["verdict"] == "rolled_back"
 
 
 def test_unknown_change_404(client):
-    assert client.get("/changes/nope").status_code == 404
-    assert client.post("/changes/nope/rollback").status_code == 404
+    assert client.get("/api/changes/nope").status_code == 404
+    assert client.post("/api/changes/nope/rollback").status_code == 404
 
 
 def test_rollback_applies_and_appends_audit_row(client, ledger, monkeypatch):
@@ -110,7 +110,7 @@ def test_rollback_applies_and_appends_audit_row(client, ledger, monkeypatch):
         changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
     )
 
-    resp = client.post("/changes/u1/rollback?reason=早上审案")
+    resp = client.post("/api/changes/u1/rollback?reason=早上审案")
     assert resp.status_code == 200, resp.text
     assert provider.undone == ["42"]
     body = resp.json()
@@ -124,12 +124,12 @@ def test_rollback_twice_conflicts(client, ledger, monkeypatch):
     monkeypatch.setattr(
         changes_mod.registry, "effect_decl", lambda *a, **k: (FakeProvider(), DECL)
     )
-    assert client.post("/changes/u1/rollback").status_code == 409
+    assert client.post("/api/changes/u1/rollback").status_code == 409
 
 
 def test_rollback_unapplied_is_bad_request(client, ledger):
     ledger.append(_unit("blocked", handle=None))
-    assert client.post("/changes/u1/rollback").status_code == 400
+    assert client.post("/api/changes/u1/rollback").status_code == 400
 
 
 def test_rollback_without_provider_is_503(client, ledger, monkeypatch):
@@ -139,11 +139,11 @@ def test_rollback_without_provider_is_503(client, ledger, monkeypatch):
         raise LookupError("no provider")
 
     monkeypatch.setattr(changes_mod.registry, "effect_decl", boom)
-    assert client.post("/changes/u1/rollback").status_code == 503
+    assert client.post("/api/changes/u1/rollback").status_code == 503
 
 
 def test_filters(client, ledger):
     ledger.append(_unit("kept", unit_id="a"))
     ledger.append(_unit("blocked", handle=None, unit_id="b"))
-    assert client.get("/changes?verdict=blocked").json()["total"] == 1
-    assert client.get("/changes?binding=nope").json()["total"] == 0
+    assert client.get("/api/changes?verdict=blocked").json()["total"] == 1
+    assert client.get("/api/changes?binding=nope").json()["total"] == 0

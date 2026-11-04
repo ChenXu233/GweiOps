@@ -1,9 +1,15 @@
 export default defineNuxtConfig({
   extends: ['@gwei/core'],
+  modules: ['@nuxtjs/tailwindcss'],
   compatibilityDate: '2026-07-23',
   css: ['~/assets/css/main.css'],
   typescript: {
     strict: true
+  },
+  experimental: {
+    // 控制台没有 route rules,不需要给客户端下发 app manifest;
+    // 关掉可避开某些环境下 #app-manifest 虚拟模块解析失败。
+    appManifest: false
   },
   runtimeConfig: {
     // engineUrl 仅服务端(代理)使用;浏览器一律走同源 /api
