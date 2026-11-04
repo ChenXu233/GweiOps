@@ -29,7 +29,9 @@
 
 - 存储:`CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`),每行一个事件,只追加、不改写。
 - 一个单元执行写一行、撤销再写一行,`id` 相同;当前状态取最后一行。
+- 阻断的单元有两个出口,各写一行账:放行(`approve`)与否决(`veto`)。放行只表示"此刻有人在场",执行后照样读窗口、照样验证,真正不可逆的如实记成 `irreversible`。
 - 撤销前置条件:最新行为已执行且有句柄;已撤销返回 409,未执行返回 400,提供者不可用返回 503。
+- 放行前置条件:最新行为 `blocked`,否则 409。否决前置条件:最新行未执行,已执行的只能撤销。
 - 幂等:同一 `idempotency_key` 重放只复用账本结论,不二次外呼。
 
 ## 租户
@@ -74,6 +76,8 @@
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding 过滤) |
 | GET | `/api/changes/{id}` | 单个单元的全部事件(执行与撤销) |
 | POST | `/api/changes/{id}/rollback` | 撤销已执行的单元,并追加一行审计 |
+| POST | `/api/changes/{id}/approve` | 放行一个阻断的单元,执行后照样读窗口与验证 |
+| POST | `/api/changes/{id}/veto` | 不做这次变更,追加一行否决 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/webhook/github` | GitHub Webhook(issue 事件) |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |

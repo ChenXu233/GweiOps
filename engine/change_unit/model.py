@@ -19,6 +19,7 @@ VERDICT_PENDING = "pending"
 VERDICT_KEPT = "kept"  # 已验证,进入待审,仍可撤
 VERDICT_ROLLED_BACK = "rolled_back"
 VERDICT_BLOCKED = "blocked"  # 未执行,等人
+VERDICT_VETOED = "vetoed"  # 人明确说不做
 VERDICT_IRREVERSIBLE = "irreversible"  # 已执行但拿不到句柄
 
 
