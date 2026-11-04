@@ -17,6 +17,19 @@ capabilities:
   - label.write
   - webhook.receive
   - webhook.verify
+  - comment.create
+
+tasks:
+  comment.create: create_comment
+
+effects:
+  comment.create:
+    label: 在 Issue / PR 上发一条评论
+    execute: { task: create_comment, args: [repo, issue_number, body] }
+    undo: { task: delete_comment, kind: symmetric }
+    window: { read: comment_present }
+    verify:
+      - { query: comment_exists, expect: "true" }
 
 config:
   required:

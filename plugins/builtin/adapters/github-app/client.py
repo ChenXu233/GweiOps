@@ -6,6 +6,9 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from githubkit import GitHub, AppInstallationAuthStrategy
+from githubkit.exception import RequestFailed
+
+from engine.shared.netenv import prepare_proxy_env
 
 from .config import GitHubAppConfig
 
@@ -19,6 +22,9 @@ class GitHubAppClient:
         Args:
             config: GitHub App 配置。如果未提供，将使用默认配置。
         """
+        # githubkit 底层用 httpx;先把 NO_PROXY 里的 [::1] 这类条目规范化,
+        # 否则 httpx 会抛 InvalidURL: Invalid port ':1]'。
+        prepare_proxy_env()
         self._config = config or GitHubAppConfig()
         self._github: Optional[GitHub] = None
 
@@ -103,6 +109,26 @@ class GitHubAppClient:
             owner=owner, repo=repo_name, comment_id=comment_id, body=body
         )
         return response.parsed_data.model_dump()
+
+    async def get_comment(self, repo: str, comment_id: int) -> dict[str, Any] | None:
+        """按 ID 取单条评论;不存在时返回 None(撤销后用它验证)。"""
+        owner, repo_name = self._parse_repo(repo)
+        try:
+            response = await self.github.rest.issues.async_get_comment(
+                owner=owner, repo=repo_name, comment_id=comment_id
+            )
+        except RequestFailed as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+        return response.parsed_data.model_dump()
+
+    async def delete_comment(self, repo: str, comment_id: int) -> None:
+        """删除评论——评论效果的撤销动作。"""
+        owner, repo_name = self._parse_repo(repo)
+        await self.github.rest.issues.async_delete_comment(
+            owner=owner, repo=repo_name, comment_id=comment_id
+        )
 
     async def add_labels(
         self, repo: str, issue_number: int, labels: list[str]
