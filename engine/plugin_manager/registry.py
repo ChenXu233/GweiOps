@@ -31,6 +31,29 @@ logger = logging.getLogger(__name__)
 DEFAULT_BUILTIN_DIR = Path.cwd() / "plugins" / "builtin"
 
 
+def _env_names(var: str) -> set[str] | None:
+    """逗号或冒号分隔的插件名清单;变量不存在返回 None。"""
+    raw = os.environ.get(var)
+    if raw is None:
+        return None
+    return {item.strip() for item in raw.replace(":", ",").split(",") if item.strip()}
+
+
+def plugin_enabled(name: str, default_enabled: bool = True) -> bool:
+    """发现 != 启用。
+
+    PLUGINS_ENABLED 给了就只加载清单里的(白名单);
+    否则按 PLUGINS_DISABLED 排除,再退回清单里的 default_enabled。
+    """
+    enabled = _env_names("PLUGINS_ENABLED")
+    if enabled is not None:
+        return name in enabled
+    disabled = _env_names("PLUGINS_DISABLED") or set()
+    if name in disabled:
+        return False
+    return default_enabled
+
+
 @dataclass
 class _CapabilityProvider:
     key: str
@@ -107,6 +130,9 @@ class PluginRegistry:
 
     def _load_one(self, root: Path, prefix: str, manifest_path: Path) -> None:
         manifest = Manifest.from_yaml(manifest_path)
+        if not plugin_enabled(manifest.name, manifest.default_enabled):
+            logger.info("Plugin %s is not enabled in this deployment; skipped", manifest.name)
+            return
         rel = manifest_path.parent.relative_to(root)
         module_name = ".".join((([prefix] if prefix else []) + list(rel.parts) + ["plugin"]))
         module = importlib.import_module(module_name)

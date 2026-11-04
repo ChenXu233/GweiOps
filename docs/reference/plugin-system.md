@@ -57,10 +57,12 @@ ui:
 | `ui.widgets` | 声明式卡片;slot 为插槽名,kind 为 metric 或 list,span 为 1–4 |
 | `ui.pages` | iframe 页面;entry 缺省 index.html,禁止绝对路径、`..` 与反斜杠 |
 | `effects` | 效果声明:execute / undo / window / verify,核心加载期校验 |
+| `default_enabled` | 部署未显式选择时是否加载;false 表示备选项 |
 
 ## 注册表
 
 - **发现路径**:`plugins/builtin/{adapters,agents,actions}/<plugin>/plugin.yaml`(两级),以及环境变量 `PLUGINS_EXTRA_DIRS`(冒号分隔)下的 `<pkg>/plugin.yaml`(单级,根会加入 `sys.path`)。
+- **启用**:发现不等于加载。`PLUGINS_ENABLED`(逗号或冒号分隔)给定时按白名单加载;否则用 `PLUGINS_DISABLED` 排除;再退回清单里的 `default_enabled`(缺省 true)。未启用的插件不 import、不注册、不进索引。
 - **导入**:模块名为 `plugins.builtin.<category>.<dir>.plugin` 或 `<pkg>.plugin`;类名来自 `class_name`。
 - **隔离**:单个插件的清单解析、导入、实例化失败只跳过自身,计 `plugin_discovery_errors_total`;同名插件重复注册直接报错。
 - **多实例**:`register(manifest, instance, key=...)` 支持同一清单挂多个实例(每租户 / 每目标一个),实例键默认取清单名;同名清单内容不一致、实例键重复都直接报错。索引里存的是实例键,不是清单名。

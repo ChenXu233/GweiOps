@@ -24,3 +24,5 @@ config:
   optional:
   - GITHUB_API_URL
 class_name: GitHubAdapter
+# 备选实现:默认不加载,需要时把 default_enabled 改成 true 或设 PLUGINS_ENABLED=github-adapter
+default_enabled: false
