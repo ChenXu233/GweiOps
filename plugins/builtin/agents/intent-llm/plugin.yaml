@@ -1,0 +1,12 @@
+name: intent-llm
+version: 0.1.0
+type: agent
+description: 让模型起草 intent —— 只提动作不执行,拿不准就给空 effects
+class_name: LLMIntentPlanner
+capabilities:
+  - intent.propose
+# 默认让位给规则实现:模型要被明确调到前面,不是装上就接管
+capabilities_priority:
+  intent.propose: -1
+tasks:
+  intent.propose: propose

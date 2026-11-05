@@ -140,6 +140,7 @@ effects:
 - `undo.kind`:`retained`(下游保留旧状态)或 `symmetric`(撤销作用在同一对象上)。
 - `window.read` 是读取来源,不是时长;真窗口在运行期读出来,声明只说读什么。
 - 每条 verify 必须是 `{query, expect}`。
+- `execute.args` 是参数名清单,核心保留下来当 intent 提供者的菜单(见 [变更单元契约](../explanation/change-unit-contract.md)):点一个没声明过的能力,后台只会把它记成阻断。
 - 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
 - 同名效果由多个插件声明时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
 
@@ -149,6 +150,7 @@ effects:
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
 - triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
+- `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为这次查询付钱。模型拿不准就给空 effects —— 空效果是合法结论,编一个动作不是;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不重复执行。
 
@@ -157,3 +159,4 @@ effects:
 - `tests/test_integration/test_plugin_system.py`:清单解析、发现隔离、三索引、能力择优、事件 fan-out、Hook 三档。
 - `tests/test_integration/test_plugin_api.py`:插件 API、widgets、页面资产与路径穿越防护。
 - `tests/test_integration/test_capability_resolution.py`:按 (租户, 目标) 解析、不跨目标回退、同一清单多实例。
+- `tests/test_integration/test_intent_llm.py`:模型提供者的正常路径、各类降级(不编)、菜单剔除、履历进提示词与 evidence。

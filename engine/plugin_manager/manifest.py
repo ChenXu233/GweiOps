@@ -39,6 +39,7 @@ class EffectDecl:
     window_read: str = ""
     verify: tuple[dict[str, Any], ...] = ()
     label: str = ""
+    execute_args: tuple[str, ...] = ()  # 这次效果认识的参数名,给 intent 提供者当菜单
 
     def to_effect(self, args: dict[str, Any]):
         """按声明构造一次待执行的效果(引用,不含实现)。"""
@@ -261,6 +262,11 @@ def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
                 raise ManifestError(
                     f"{path}: effect {capability} 的 verify 必须是 {{query, expect}}"
                 )
+        args = execute.get("args") or []
+        if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+            raise ManifestError(
+                f"{path}: effect {capability} 的 execute.args 必须是字符串列表"
+            )
 
         out[capability] = EffectDecl(
             capability=capability,
@@ -270,5 +276,6 @@ def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
             window_read=window["read"],
             verify=tuple(verify),
             label=spec.get("label", ""),
+            execute_args=tuple(args),
         )
     return out
