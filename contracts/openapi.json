@@ -1,0 +1,1881 @@
+{
+  "components": {
+    "schemas": {
+      "CanaryMetricsDTO": {
+        "properties": {
+          "errorRate": {
+            "default": 0,
+            "title": "Errorrate",
+            "type": "number"
+          },
+          "memoryPeak": {
+            "default": "",
+            "title": "Memorypeak",
+            "type": "string"
+          },
+          "p99Latency": {
+            "default": "",
+            "title": "P99Latency",
+            "type": "string"
+          },
+          "passRate": {
+            "default": 0,
+            "title": "Passrate",
+            "type": "number"
+          }
+        },
+        "title": "CanaryMetricsDTO",
+        "type": "object"
+      },
+      "CanaryProgressDTO": {
+        "description": "金丝雀进度。引擎目前不产出,DTO 里显式留空,前端按\"没进入灰度\"渲染。",
+        "properties": {
+          "completedSteps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Completedsteps",
+            "type": "array"
+          },
+          "current": {
+            "default": "",
+            "title": "Current",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/CanaryMetricsDTO",
+            "default": {
+              "errorRate": 0.0,
+              "memoryPeak": "",
+              "p99Latency": "",
+              "passRate": 0.0
+            }
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "title": "CanaryProgressDTO",
+        "type": "object"
+      },
+      "CanaryStatusDTO": {
+        "properties": {
+          "currentStep": {
+            "title": "Currentstep",
+            "type": "string"
+          },
+          "issueId": {
+            "title": "Issueid",
+            "type": "string"
+          },
+          "issueTitle": {
+            "title": "Issuetitle",
+            "type": "string"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/CanaryMetricsDTO"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "issueId",
+          "issueTitle",
+          "currentStep",
+          "steps",
+          "metrics"
+        ],
+        "title": "CanaryStatusDTO",
+        "type": "object"
+      },
+      "ChangeDetailDTO": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeRowDTO"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/ChangeRowDTO"
+          }
+        },
+        "required": [
+          "latest",
+          "history"
+        ],
+        "title": "ChangeDetailDTO",
+        "type": "object"
+      },
+      "ChangeEffectDTO": {
+        "additionalProperties": true,
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Args",
+            "type": "object"
+          },
+          "capability": {
+            "default": "",
+            "title": "Capability",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "task": {
+            "default": "",
+            "title": "Task",
+            "type": "string"
+          },
+          "undo_kind": {
+            "default": "",
+            "title": "Undo Kind",
+            "type": "string"
+          },
+          "undo_task": {
+            "default": "",
+            "title": "Undo Task",
+            "type": "string"
+          }
+        },
+        "title": "ChangeEffectDTO",
+        "type": "object"
+      },
+      "ChangeIntentDTO": {
+        "additionalProperties": true,
+        "description": "意图。引擎只保证 summary 在,其余键由提供者自己加。",
+        "properties": {
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "title": "ChangeIntentDTO",
+        "type": "object"
+      },
+      "ChangeListDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeRowDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ChangeListDTO",
+        "type": "object"
+      },
+      "ChangeRowDTO": {
+        "additionalProperties": true,
+        "description": "账本一行。字段与 ChangeUnit.to_dict() 对齐,缺省值兜住旧行。",
+        "properties": {
+          "binding": {
+            "default": "",
+            "title": "Binding",
+            "type": "string"
+          },
+          "created_at": {
+            "default": "",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/ChangeEffectDTO",
+            "default": {
+              "args": {},
+              "capability": "",
+              "label": "",
+              "task": "",
+              "undo_kind": "",
+              "undo_task": ""
+            }
+          },
+          "facts": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Facts",
+            "type": "object"
+          },
+          "handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handle"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "default": "",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/ChangeIntentDTO",
+            "default": {
+              "summary": ""
+            }
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          },
+          "verdict": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "kept",
+              "rolled_back",
+              "blocked",
+              "vetoed",
+              "irreversible"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ChangeRowDTO",
+        "type": "object"
+      },
+      "DashboardDTO": {
+        "properties": {
+          "activeAgents": {
+            "title": "Activeagents",
+            "type": "integer"
+          },
+          "consecutiveDays": {
+            "title": "Consecutivedays",
+            "type": "integer"
+          },
+          "healthHistory": {
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Healthhistory",
+            "type": "array"
+          },
+          "lastIncident": {
+            "title": "Lastincident",
+            "type": "string"
+          },
+          "memoryEntries": {
+            "title": "Memoryentries",
+            "type": "integer"
+          },
+          "mttr": {
+            "title": "Mttr",
+            "type": "number"
+          },
+          "overnightFixed": {
+            "title": "Overnightfixed",
+            "type": "integer"
+          },
+          "pendingReview": {
+            "title": "Pendingreview",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "successRate": {
+            "title": "Successrate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "consecutiveDays",
+          "lastIncident",
+          "pendingReview",
+          "overnightFixed",
+          "memoryEntries",
+          "mttr",
+          "successRate",
+          "activeAgents",
+          "healthHistory"
+        ],
+        "title": "DashboardDTO",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthDTO": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthDTO",
+        "type": "object"
+      },
+      "IssueDTO": {
+        "properties": {
+          "canary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanaryProgressDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "patches": {
+            "items": {
+              "$ref": "#/components/schemas/PatchDTO"
+            },
+            "title": "Patches",
+            "type": "array"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "medium",
+              "low"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending_review",
+              "canary",
+              "approved",
+              "completed",
+              "rolled_back"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineStepDTO"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "triggeredAt": {
+            "title": "Triggeredat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "severity",
+          "status",
+          "repo",
+          "triggeredAt",
+          "patches",
+          "timeline"
+        ],
+        "title": "IssueDTO",
+        "type": "object"
+      },
+      "MetricDTO": {
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Labels",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "MetricDTO",
+        "type": "object"
+      },
+      "OvernightEventDTO": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "success",
+              "failed"
+            ],
+            "title": "Result",
+            "type": "string"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "time",
+          "title",
+          "description",
+          "result"
+        ],
+        "title": "OvernightEventDTO",
+        "type": "object"
+      },
+      "PatchDTO": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "latency": {
+            "title": "Latency",
+            "type": "string"
+          },
+          "lines": {
+            "title": "Lines",
+            "type": "integer"
+          },
+          "passRate": {
+            "title": "Passrate",
+            "type": "number"
+          },
+          "risk": {
+            "title": "Risk",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "risk",
+          "lines",
+          "passRate",
+          "latency",
+          "description"
+        ],
+        "title": "PatchDTO",
+        "type": "object"
+      },
+      "PendingIssueDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "patchCount": {
+            "title": "Patchcount",
+            "type": "integer"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "medium",
+              "low"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending_review",
+              "canary",
+              "approved",
+              "completed",
+              "rolled_back"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "severity",
+          "patchCount",
+          "status"
+        ],
+        "title": "PendingIssueDTO",
+        "type": "object"
+      },
+      "PluginDTO": {
+        "properties": {
+          "capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PluginPageDTO"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "widgets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PluginWidgetDTO"
+            },
+            "title": "Widgets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "type",
+          "description"
+        ],
+        "title": "PluginDTO",
+        "type": "object"
+      },
+      "PluginPageDTO": {
+        "properties": {
+          "entry": {
+            "default": "",
+            "title": "Entry",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "PluginPageDTO",
+        "type": "object"
+      },
+      "PluginWidgetDTO": {
+        "additionalProperties": true,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PluginWidgetItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PluginWidgetMetricDTO"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          },
+          "span": {
+            "title": "Span",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot",
+          "kind",
+          "span",
+          "title"
+        ],
+        "title": "PluginWidgetDTO",
+        "type": "object"
+      },
+      "PluginWidgetItemDTO": {
+        "additionalProperties": true,
+        "properties": {
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "PluginWidgetItemDTO",
+        "type": "object"
+      },
+      "PluginWidgetMetricDTO": {
+        "additionalProperties": true,
+        "description": "插件声明的指标条目。插件可以带额外键,一律放过。",
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "sub": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "default": "",
+            "title": "Value"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          }
+        },
+        "title": "PluginWidgetMetricDTO",
+        "type": "object"
+      },
+      "RepoDTO": {
+        "properties": {
+          "activeAgents": {
+            "title": "Activeagents",
+            "type": "integer"
+          },
+          "icon": {
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issueCount": {
+            "title": "Issuecount",
+            "type": "integer"
+          },
+          "lastSyncAt": {
+            "title": "Lastsyncat",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "icon",
+          "status",
+          "issueCount",
+          "activeAgents",
+          "lastSyncAt"
+        ],
+        "title": "RepoDTO",
+        "type": "object"
+      },
+      "RunListDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunRowDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "RunListDTO",
+        "type": "object"
+      },
+      "RunRowDTO": {
+        "properties": {
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endedat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issueId": {
+            "title": "Issueid",
+            "type": "string"
+          },
+          "issueNumber": {
+            "title": "Issuenumber",
+            "type": "integer"
+          },
+          "issueTitle": {
+            "title": "Issuetitle",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
+          },
+          "state": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "State",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "issueId",
+          "issueTitle",
+          "issueNumber",
+          "repo",
+          "status",
+          "source"
+        ],
+        "title": "RunRowDTO",
+        "type": "object"
+      },
+      "SettingsDTO": {
+        "properties": {
+          "adminCount": {
+            "title": "Admincount",
+            "type": "integer"
+          },
+          "issueQuota": {
+            "title": "Issuequota",
+            "type": "string"
+          },
+          "memberCount": {
+            "title": "Membercount",
+            "type": "integer"
+          },
+          "notificationChannels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notificationchannels",
+            "type": "array"
+          },
+          "plan": {
+            "title": "Plan",
+            "type": "string"
+          },
+          "planPrice": {
+            "title": "Planprice",
+            "type": "string"
+          },
+          "ssoProvider": {
+            "title": "Ssoprovider",
+            "type": "string"
+          },
+          "teamName": {
+            "title": "Teamname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teamName",
+          "memberCount",
+          "adminCount",
+          "plan",
+          "planPrice",
+          "issueQuota",
+          "notificationChannels",
+          "ssoProvider"
+        ],
+        "title": "SettingsDTO",
+        "type": "object"
+      },
+      "TimelineStepDTO": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "active",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status"
+        ],
+        "title": "TimelineStepDTO",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "AI 驱动的 GitHub Issue 修复平台",
+    "title": "既未 · Gwei",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/changes": {
+      "get": {
+        "description": "当前状态一栏:每个单元只出现一次,最新的在前。\n\n过滤在截断之前:先按 verdict / binding 收窄,再取前 limit 条,\ntotal 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。",
+        "operationId": "list_changes_api_changes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Verdict"
+            }
+          },
+          {
+            "in": "query",
+            "name": "binding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Binding"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Changes"
+      }
+    },
+    "/api/changes/{unit_id}": {
+      "get": {
+        "operationId": "get_change_api_changes__unit_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetailDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Change"
+      }
+    },
+    "/api/changes/{unit_id}/approve": {
+      "post": {
+        "description": "放行一个阻断的单元。\n\n放行只说明\"此刻有人在场\",不放宽判定口径:执行后照样读窗口、照样验证,\n验证不过照样回滚。真正不可逆的那类,执行后会被如实记成 irreversible。\n\nby 现在由调用方自报。认证接进来之前,它是一条备注,不是责任归属。",
+        "operationId": "approve_change_api_changes__unit_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "by",
+            "required": false,
+            "schema": {
+              "default": "人工",
+              "title": "By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "default": "人工放行",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetailDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Change"
+      }
+    },
+    "/api/changes/{unit_id}/rollback": {
+      "post": {
+        "description": "撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。",
+        "operationId": "rollback_change_api_changes__unit_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "default": "人工回滚",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetailDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Change"
+      }
+    },
+    "/api/changes/{unit_id}/veto": {
+      "post": {
+        "description": "不做这次变更。否决也写一行账——它和放行一样是一次决定。",
+        "operationId": "veto_change_api_changes__unit_id__veto_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "by",
+            "required": false,
+            "schema": {
+              "default": "人工",
+              "title": "By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "required": false,
+            "schema": {
+              "default": "人工否决",
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetailDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Veto Change"
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "operationId": "dashboard_api_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard"
+      }
+    },
+    "/api/dashboard/canary": {
+      "get": {
+        "operationId": "dashboard_canary_api_dashboard_canary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CanaryStatusDTO"
+                  },
+                  "title": "Response Dashboard Canary Api Dashboard Canary Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard Canary"
+      }
+    },
+    "/api/dashboard/overnight": {
+      "get": {
+        "operationId": "dashboard_overnight_api_dashboard_overnight_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OvernightEventDTO"
+                  },
+                  "title": "Response Dashboard Overnight Api Dashboard Overnight Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard Overnight"
+      }
+    },
+    "/api/dashboard/pending": {
+      "get": {
+        "operationId": "dashboard_pending_api_dashboard_pending_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingIssueDTO"
+                  },
+                  "title": "Response Dashboard Pending Api Dashboard Pending Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dashboard Pending"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check"
+      }
+    },
+    "/api/issues": {
+      "get": {
+        "operationId": "list_issues_api_issues_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IssueDTO"
+                  },
+                  "title": "Response List Issues Api Issues Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Issues"
+      }
+    },
+    "/api/issues/{issue_id}": {
+      "get": {
+        "operationId": "issue_detail_api_issues__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Detail"
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "description": "指标快照(最新值序列),供插件页面经桥只读拉取。",
+        "operationId": "list_metrics_api_metrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "prefix",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Prefix",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MetricDTO"
+                  },
+                  "title": "Response List Metrics Api Metrics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Metrics"
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "operationId": "list_plugins_api_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginDTO"
+                  },
+                  "title": "Response List Plugins Api Plugins Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Plugins"
+      }
+    },
+    "/api/plugins/widgets": {
+      "get": {
+        "operationId": "list_widgets_api_plugins_widgets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "default": "dashboard.bento",
+              "title": "Slot",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginWidgetDTO"
+                  },
+                  "title": "Response List Widgets Api Plugins Widgets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Widgets"
+      }
+    },
+    "/api/plugins/{name}/ui/{file_path}": {
+      "get": {
+        "description": "服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。\n\n安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。",
+        "operationId": "plugin_ui_asset_api_plugins__name__ui__file_path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_path",
+            "required": true,
+            "schema": {
+              "title": "File Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Plugin Ui Asset"
+      }
+    },
+    "/api/repos": {
+      "get": {
+        "operationId": "list_repos_api_repos_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepoDTO"
+                  },
+                  "title": "Response List Repos Api Repos Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Repos"
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "description": "执行记录:一次 AgentSession 就是一次执行。\n\n只读投影,不改任何状态。会话还没结束就没有 endedAt 与 durationMs,\n这里如实留空,不拿当前时间凑一个时长出来。",
+        "operationId": "list_runs_api_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "team_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Team Settings"
+      }
+    },
+    "/webhook/alertmanager": {
+      "post": {
+        "description": "监控信号入口。\n\nAlertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,\n不应该默认敞开。",
+        "operationId": "alertmanager_webhook_webhook_alertmanager_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Alertmanager Webhook"
+      }
+    },
+    "/webhook/github": {
+      "post": {
+        "description": "处理 GitHub Webhook（issues / issue_comment / ping）。",
+        "operationId": "github_webhook_webhook_github_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Github Webhook"
+      }
+    },
+    "/webhook/github/comment": {
+      "post": {
+        "description": "处理 GitHub Webhook 评论事件（@gwei 触发）。",
+        "operationId": "github_comment_webhook_webhook_github_comment_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Github Comment Webhook"
+      }
+    }
+  }
+}

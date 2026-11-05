@@ -17,6 +17,19 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import func, select
 
 from engine.db import async_session_factory
+from engine.api.schemas import (
+    CanaryStatusDTO,
+    DashboardDTO,
+    IssueDTO,
+    OvernightEventDTO,
+    PatchDTO,
+    PendingIssueDTO,
+    RepoDTO,
+    RunListDTO,
+    RunRowDTO,
+    SettingsDTO,
+    TimelineStepDTO,
+)
 from engine.db.models import AgentSession, Issue, Patch, Project
 from engine.plugin_manager import registry
 
@@ -33,36 +46,38 @@ def _severity(labels: list[str] | None) -> str:
     return "low"
 
 
-def _issue_dto(issue: Issue, project: Project, patches: list[Patch], latest_status: str | None) -> dict:
+def _issue_dto(
+    issue: Issue, project: Project, patches: list[Patch], latest_status: str | None
+) -> IssueDTO:
     patch_dtos = [
-        {
-            "id": str(p.id),
-            "type": (p.type or "patch").lower(),
-            "risk": (p.risk_assessment or "low").lower(),
-            "lines": (p.diff or "").count("\n") + 1,
-            "passRate": 100,
-            "latency": "-",
-            "description": (p.diff or "").strip().splitlines()[0][:80] if p.diff else "",
-        }
+        PatchDTO(
+            id=str(p.id),
+            type=(p.type or "patch").lower(),
+            risk=(p.risk_assessment or "low").lower(),
+            lines=(p.diff or "").count("\n") + 1,
+            passRate=100,
+            latency="-",
+            description=(p.diff or "").strip().splitlines()[0][:80] if p.diff else "",
+        )
         for p in patches
     ]
-    timeline = [{"id": "sensor", "label": "感知分析", "status": "done"}]
+    timeline = [TimelineStepDTO(id="sensor", label="感知分析", status="done")]
     if latest_status == "FIX_REQUESTED":
-        timeline.append({"id": "fix", "label": "修复建议", "status": "done"})
-    return {
-        "id": str(issue.id),
-        "title": issue.title,
-        "source": "github_issue",
-        "severity": _severity(issue.labels),
-        "status": "pending_review" if issue.status == "OPEN" else "completed",
-        "repo": project.name,
-        "triggeredAt": issue.created_at.isoformat(),
-        "patches": patch_dtos,
-        "timeline": timeline,
-    }
+        timeline.append(TimelineStepDTO(id="fix", label="修复建议", status="done"))
+    return IssueDTO(
+        id=str(issue.id),
+        title=issue.title,
+        source="github_issue",
+        severity=_severity(issue.labels),
+        status="pending_review" if issue.status == "OPEN" else "completed",
+        repo=project.name,
+        triggeredAt=issue.created_at.isoformat(),
+        patches=patch_dtos,
+        timeline=timeline,
+    )
 
 
-async def _load_issues() -> list[dict]:
+async def _load_issues() -> list[IssueDTO]:
     async with async_session_factory() as session:
         rows = (
             await session.execute(
@@ -102,7 +117,7 @@ async def _load_issues() -> list[dict]:
 
 
 @router.get("/api/dashboard")
-async def dashboard() -> dict:
+async def dashboard() -> DashboardDTO:
     async with async_session_factory() as session:
         pending = (
             await session.execute(select(func.count()).select_from(Issue).where(Issue.status == "OPEN"))
@@ -125,38 +140,38 @@ async def dashboard() -> dict:
     except Exception:
         success_rate = 100.0
 
-    return {
-        "status": "healthy",
-        "consecutiveDays": 0,      # 事故史未追踪,诚实返回 0
-        "lastIncident": "",
-        "pendingReview": pending,
-        "overnightFixed": overnight,
-        "memoryEntries": 0,        # 记忆系统未接线
-        "mttr": 0,                 # 未追踪
-        "successRate": success_rate,
-        "activeAgents": len(registry.names()),
-        "healthHistory": [True] * 10,
-    }
+    return DashboardDTO(
+        status="healthy",
+        consecutiveDays=0,      # 事故史未追踪,诚实返回 0
+        lastIncident="",
+        pendingReview=pending,
+        overnightFixed=overnight,
+        memoryEntries=0,        # 记忆系统未接线
+        mttr=0,                 # 未追踪
+        successRate=success_rate,
+        activeAgents=len(registry.names()),
+        healthHistory=[True] * 10,
+    )
 
 
 @router.get("/api/dashboard/pending")
-async def dashboard_pending() -> list[dict]:
+async def dashboard_pending() -> list[PendingIssueDTO]:
     issues = await _load_issues()
     return [
-        {
-            "id": i["id"],
-            "title": i["title"],
-            "severity": i["severity"],
-            "patchCount": len(i["patches"]),
-            "status": i["status"],
-        }
+        PendingIssueDTO(
+            id=i.id,
+            title=i.title,
+            severity=i.severity,
+            patchCount=len(i.patches),
+            status=i.status,
+        )
         for i in issues
-        if i["status"] == "pending_review"
+        if i.status == "pending_review"
     ]
 
 
 @router.get("/api/dashboard/overnight")
-async def dashboard_overnight() -> list[dict]:
+async def dashboard_overnight() -> list[OvernightEventDTO]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     async with async_session_factory() as session:
         rows = (
@@ -168,41 +183,41 @@ async def dashboard_overnight() -> list[dict]:
             )
         ).all()
     return [
-        {
-            "time": s.started_at.strftime("%H:%M"),
-            "title": issue.title[:40],
-            "description": f"{s.status} · {s.state.get('source', 'issue') if s.state else 'issue'}",
-            "result": "success",
-        }
+        OvernightEventDTO(
+            time=s.started_at.strftime("%H:%M"),
+            title=issue.title[:40],
+            description=f"{s.status} · {s.state.get('source', 'issue') if s.state else 'issue'}",
+            result="success",
+        )
         for s, issue in rows
     ]
 
 
 @router.get("/api/dashboard/canary")
-async def dashboard_canary() -> list[dict]:
+async def dashboard_canary() -> list[CanaryStatusDTO]:
     return []  # 金丝雀链路未实现,诚实返回空(UI 自动隐藏该区块)
 
 
 @router.get("/api/issues")
-async def list_issues() -> list[dict]:
+async def list_issues() -> list[IssueDTO]:
     return await _load_issues()
 
 
 @router.get("/api/issues/{issue_id}")
-async def issue_detail(issue_id: str) -> dict:
+async def issue_detail(issue_id: str) -> IssueDTO:
     try:
         uuid_id = UUID(issue_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Issue not found")
     issues = await _load_issues()
     for dto in issues:
-        if dto["id"] == str(uuid_id):
+        if dto.id == str(uuid_id):
             return dto
     raise HTTPException(status_code=404, detail="Issue not found")
 
 
 @router.get("/api/repos")
-async def list_repos() -> list[dict]:
+async def list_repos() -> list[RepoDTO]:
     async with async_session_factory() as session:
         rows = (
             await session.execute(
@@ -217,29 +232,76 @@ async def list_repos() -> list[dict]:
             )
         ).all()
     return [
-        {
-            "id": str(project.id),
-            "name": project.name,
-            "icon": "📦",
-            "status": "running",
-            "issueCount": issue_count,
-            "activeAgents": 0,
-            "lastSyncAt": (last_activity or project.created_at).isoformat(),
-        }
+        RepoDTO(
+            id=str(project.id),
+            name=project.name,
+            icon="📦",
+            status="running",
+            issueCount=issue_count,
+            activeAgents=0,
+            lastSyncAt=(last_activity or project.created_at).isoformat(),
+        )
         for project, issue_count, last_activity in rows
     ]
 
 
+@router.get("/api/runs")
+async def list_runs(limit: int = 100) -> RunListDTO:
+    """执行记录:一次 AgentSession 就是一次执行。
+
+    只读投影,不改任何状态。会话还没结束就没有 endedAt 与 durationMs,
+    这里如实留空,不拿当前时间凑一个时长出来。
+    """
+    async with async_session_factory() as session:
+        total = (
+            await session.execute(select(func.count()).select_from(AgentSession))
+        ).scalar_one()
+        rows = (
+            await session.execute(
+                select(AgentSession, Issue, Project)
+                .join(Issue, AgentSession.issue_id == Issue.id)
+                .join(Project, Issue.project_id == Project.id)
+                .order_by(AgentSession.started_at.desc())
+                .limit(max(0, limit))
+            )
+        ).all()
+
+    items = []
+    for s, issue, project in rows:
+        started, ended = s.started_at, s.ended_at
+        duration = (
+            int((ended - started).total_seconds() * 1000)
+            if started and ended
+            else None
+        )
+        items.append(
+            RunRowDTO(
+                id=str(s.id),
+                issueId=str(issue.id),
+                issueTitle=issue.title,
+                issueNumber=issue.number,
+                repo=project.name,
+                status=s.status,
+                source=(s.state or {}).get("source", "issue"),
+                startedAt=started.isoformat() if started else None,
+                endedAt=ended.isoformat() if ended else None,
+                durationMs=duration,
+                state=s.state or {},
+            )
+        )
+    return RunListDTO(items=items, total=total)
+
+
 @router.get("/api/settings")
-async def team_settings() -> dict:
+async def team_settings() -> SettingsDTO:
     # selfhost 单租户默认值;多租户/订阅接入后由计费插件提供
-    return {
-        "teamName": "Self-hosted",
-        "memberCount": 1,
-        "adminCount": 1,
-        "plan": "selfhost",
-        "planPrice": "-",
-        "issueQuota": "无限",
-        "notificationChannels": [],
-        "ssoProvider": "—",
-    }
+    return SettingsDTO(
+        teamName="Self-hosted",
+        memberCount=1,
+        adminCount=1,
+        plan="selfhost",
+        planPrice="-",
+        issueQuota="无限",
+        notificationChannels=[],
+        ssoProvider="—",
+    )

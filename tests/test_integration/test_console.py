@@ -55,3 +55,24 @@ class TestConsole:
 
     def test_canary_honest_empty(self, client):
         assert client.get("/api/dashboard/canary").json() == []
+
+    def test_runs_shape(self, client):
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert {"items", "total"} <= set(data)
+        for run in data["items"]:
+            assert {
+                "id",
+                "issueId",
+                "issueTitle",
+                "repo",
+                "status",
+                "source",
+                "startedAt",
+                "endedAt",
+                "durationMs",
+            } <= set(run)
+            # 会话没结束时耗时如实留空,不拿 0 顶替
+            if run["endedAt"] is None:
+                assert run["durationMs"] is None

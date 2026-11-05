@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
+from engine.api.schemas import MetricDTO, PluginDTO, PluginWidgetDTO
 from engine.plugin_manager.registry import registry
 from engine.shared.metrics import metrics
 
@@ -19,28 +20,28 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _plugin_dto(name: str) -> dict:
+def _plugin_dto(name: str) -> PluginDTO:
     manifest = registry.manifest(name)
-    return {
-        "name": manifest.name,
-        "version": manifest.version,
-        "type": manifest.type.value,
-        "description": manifest.description,
-        "capabilities": manifest.capabilities,
-        "widgets": [w.to_dict() for w in manifest.ui_widgets],
-        "pages": [p.to_dict() for p in manifest.ui_pages],
-    }
+    return PluginDTO(
+        name=manifest.name,
+        version=manifest.version,
+        type=manifest.type.value,
+        description=manifest.description,
+        capabilities=manifest.capabilities,
+        widgets=[w.to_dict() for w in manifest.ui_widgets],
+        pages=[p.to_dict() for p in manifest.ui_pages],
+    )
 
 
 @router.get("/api/plugins")
-async def list_plugins() -> list[dict]:
+async def list_plugins() -> list[PluginDTO]:
     if not registry.names():
         return []
     return [_plugin_dto(name) for name in registry.names()]
 
 
 @router.get("/api/plugins/widgets")
-async def list_widgets(slot: str = Query("dashboard.bento")) -> list[dict]:
+async def list_widgets(slot: str = Query("dashboard.bento")) -> list[PluginWidgetDTO]:
     widgets: list[dict] = []
     for name in registry.names():
         manifest = registry.manifest(name)
@@ -56,16 +57,16 @@ async def list_widgets(slot: str = Query("dashboard.bento")) -> list[dict]:
                     metric["value"] = metrics.sum_metric(
                         ref["name"], ref.get("labels")
                     )
-            widgets.append(entry)
+            widgets.append(PluginWidgetDTO(**entry))
     return widgets
 
 
 @router.get("/api/metrics")
-async def list_metrics(prefix: str = Query("")) -> list[dict]:
+async def list_metrics(prefix: str = Query("")) -> list[MetricDTO]:
     """指标快照(最新值序列),供插件页面经桥只读拉取。"""
     rows = metrics.snapshot(prefix=prefix or None)
     return [
-        {"name": m.name, "labels": m.labels, "value": m.value}
+        MetricDTO(name=m.name, labels=m.labels, value=m.value)
         for m in sorted(rows, key=lambda m: m.name)
     ]
 
