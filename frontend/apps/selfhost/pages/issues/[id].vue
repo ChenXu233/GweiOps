@@ -11,8 +11,8 @@ watch(
   data,
   (v) => {
     if (!v) return
-    const preset = v.patches.find(p => p.selected)
-    selectedPatch.value = preset?.id ?? v.patches[0]?.id ?? null
+    // 引擎不给"默认选中"这种字段,选中状态完全由这里决定:默认第一条
+    selectedPatch.value = v.patches[0]?.id ?? null
   },
   { immediate: true },
 )
@@ -29,9 +29,9 @@ const typeLabel: Record<string, string> = {
 const riskLabel: Record<string, string> = { low: '低风险', medium: '中风险', high: '高风险' }
 
 const riskCls: Record<string, string> = {
-  low: 'border-ok/25 bg-ok/10 text-ok',
-  medium: 'border-amber/30 bg-amber/10 text-amber',
-  high: 'border-coral/30 bg-coral/10 text-coral',
+  low: 'chip-ok',
+  medium: 'chip-warn',
+  high: 'chip-bad',
 }
 
 const statusLabel: Record<string, string> = {
@@ -43,11 +43,11 @@ const statusLabel: Record<string, string> = {
 }
 
 const statusCls: Record<string, string> = {
-  pending_review: 'border-amber/30 bg-amber/10 text-amber',
-  canary: 'border-brand/25 bg-brand/10 text-brand',
-  approved: 'border-ok/25 bg-ok/10 text-ok',
-  completed: 'border-ok/25 bg-ok/10 text-ok',
-  rolled_back: 'border-line bg-well text-ink-soft',
+  pending_review: 'chip-warn',
+  canary: 'chip-info',
+  approved: 'chip-ok',
+  completed: 'chip-ok',
+  rolled_back: '',
 }
 
 const sourceLabel: Record<string, string> = {
@@ -79,7 +79,7 @@ function stepIndex(steps: string[], current: string) {
       <div class="h-4 w-1/3 animate-pulse rounded bg-well" />
     </div>
 
-    <div v-else-if="error || !data" class="card p-6">
+    <div v-else-if="error || !data" class="panel p-6">
       <p class="text-[13px] font-medium">找不到这个议题</p>
       <p class="mt-1 text-[12px] text-ink-soft">它可能已经完成并被归档。</p>
     </div>
@@ -88,13 +88,10 @@ function stepIndex(steps: string[], current: string) {
       <header class="space-y-3">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-mono text-[11px] text-ink-faint">{{ data.id }}</span>
-          <span
-            class="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-            :class="statusCls[data.status]"
-          >
+          <span class="chip" :class="statusCls[data.status]">
             {{ statusLabel[data.status] }}
           </span>
-          <span class="rounded-full border border-line bg-well px-2 py-0.5 font-mono text-[10.5px] text-ink-soft">
+          <span class="chip font-mono text-[10.5px]">
             {{ sourceLabel[data.source] || data.source }}
           </span>
         </div>
@@ -111,7 +108,7 @@ function stepIndex(steps: string[], current: string) {
       </header>
 
       <div class="grid grid-cols-12 items-start gap-4">
-        <section class="col-span-12 rounded-panel border border-line bg-panel lg:col-span-7">
+        <section class="panel col-span-12 lg:col-span-7">
           <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <h2 class="text-[13px] font-semibold">候选方案</h2>
             <span class="mono-label">PATCHES</span>
@@ -135,7 +132,7 @@ function stepIndex(steps: string[], current: string) {
                   <AppIcon name="check" :size="9" :stroke="3" />
                 </span>
                 <span class="text-[13px] font-medium">{{ typeLabel[p.type] || p.type }}</span>
-                <span class="rounded-full border px-1.5 py-0.5 text-[10px] font-medium" :class="riskCls[p.risk]">
+                <span class="chip px-1.5 text-[10px]" :class="riskCls[p.risk]">
                   {{ riskLabel[p.risk] }}
                 </span>
                 <span class="ml-auto font-mono text-[10.5px] text-ink-faint">{{ p.lines }} 行</span>
@@ -159,7 +156,7 @@ function stepIndex(steps: string[], current: string) {
         </section>
 
         <div class="col-span-12 space-y-4 lg:col-span-5">
-          <section class="rounded-panel border border-line bg-panel">
+          <section class="panel">
             <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
               <h2 class="text-[13px] font-semibold">金丝雀</h2>
               <span class="mono-label">CANARY</span>
@@ -204,7 +201,7 @@ function stepIndex(steps: string[], current: string) {
                 </template>
               </div>
 
-              <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line">
+              <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-tile bg-line">
                 <div class="bg-panel px-3 py-2.5">
                   <div class="mono-label">通过率</div>
                   <div class="num mt-1 text-[15px] font-semibold">{{ data.canary.metrics.passRate }}%</div>
@@ -232,7 +229,7 @@ function stepIndex(steps: string[], current: string) {
             />
           </section>
 
-          <section class="rounded-panel border border-line bg-panel">
+          <section class="panel">
             <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
               <h2 class="text-[13px] font-semibold">时间线</h2>
               <span class="mono-label">TIMELINE</span>

@@ -51,7 +51,7 @@ export const mockIssues: Issue[] = [
     triggeredAt: '2026-06-21 03:17',
     patches: [
       { id: 'a', type: 'hotfix', risk: 'low', lines: 3, passRate: 99.2, latency: '+0.1ms', description: '添加资源释放逻辑，最小改动。适用于紧急止血，不解决根因。' },
-      { id: 'b', type: 'proper', risk: 'medium', lines: 28, passRate: 98.7, latency: '+0.3ms', description: '重构连接池管理，引入引用计数机制。从根本上解决资源泄漏问题。', selected: true },
+      { id: 'b', type: 'proper', risk: 'medium', lines: 28, passRate: 98.7, latency: '+0.3ms', description: '重构连接池管理，引入引用计数机制。从根本上解决资源泄漏问题。' },
       { id: 'c', type: 'refactor', risk: 'high', lines: 156, passRate: 97.1, latency: '-0.5ms', description: '替换为对象池模式，全面重构连接生命周期管理。长期最优但改动大。' },
     ],
     canary: {
@@ -115,10 +115,15 @@ export const mockIssues: Issue[] = [
   },
 ]
 
+/** 账本行的 effect 形状由引擎契约决定,这里统一构造,免得每条都抄一遍空字段。 */
+export function makeLedgerEffect(capability: string, task: string) {
+  return { capability, task, args: {}, undo_task: '', undo_kind: 'retained', label: '' }
+}
+
 export const mockRepos: Repo[] = [
-  { id: '1', name: 'acme/api-gateway', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
-  { id: '2', name: 'acme/auth-service', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
-  { id: '3', name: 'acme/frontend', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
+  { id: '1', name: 'acme/api-gateway', icon: '📦', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
+  { id: '2', name: 'acme/auth-service', icon: '📦', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
+  { id: '3', name: 'acme/frontend', icon: '📦', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
 ]
 
 export const mockPlugins: Plugin[] = [
@@ -149,6 +154,7 @@ export const mockPluginWidgets: PluginWidget[] = [
     span: 1,
     title: '观测采样',
     metrics: [{ label: '采样间隔', value: '60s', sub: '周期触发(静态演示)', variant: 'green' }],
+    items: [],
   },
 ]
 
@@ -162,8 +168,9 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: 'ghc_8812',
     idempotency_key: 'wf-8812:effects:effect:0',
+    facts: {},
     intent: { summary: '在 api-gateway#42 上发布内存泄漏修复的验证评论' },
-    effect: { capability: 'comment.create', task: 'github.comment_bridge' },
+    effect: makeLedgerEffect('comment.create', 'github.comment_bridge'),
   },
   {
     id: 'cu_01j9z3p8r2vk5m1c',
@@ -174,8 +181,9 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: 'cmp_api_1',
     idempotency_key: 'wf-8820:effects:effect:0',
+    facts: {},
     intent: { summary: '把 api 服务从 3 副本扩到 10 副本以吸收流量峰值' },
-    effect: { capability: 'compose.scale', task: 'docker-compose.scale' },
+    effect: makeLedgerEffect('compose.scale', 'docker-compose.scale'),
   },
   {
     id: 'cu_01j9z3t6x8bn4p7q',
@@ -186,8 +194,9 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: null,
     idempotency_key: 'wf-8831:effects:effect:0',
+    facts: {},
     intent: { summary: '强制推送 main 分支以回退一次错误合并' },
-    effect: { capability: 'repo.force_push', task: 'github.repo_ops' },
+    effect: makeLedgerEffect('repo.force_push', 'github.repo_ops'),
   },
   {
     id: 'cu_01j9z3w1q5dm8s3t',
@@ -198,8 +207,9 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: 'cmp_api_1',
     idempotency_key: 'wf-8840:effects:effect:0',
+    facts: {},
     intent: { summary: '把 worker 服务从 4 副本扩到 16 副本' },
-    effect: { capability: 'compose.scale', task: 'docker-compose.scale' },
+    effect: makeLedgerEffect('compose.scale', 'docker-compose.scale'),
   },
   {
     id: 'cu_01j9z40h7k3vq9nb',
@@ -210,8 +220,9 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: null,
     idempotency_key: 'wf-8855:effects:effect:0',
+    facts: {},
     intent: { summary: '清理 audit_log 表中 90 天前的历史记录' },
-  effect: { capability: 'db.purge', task: 'postgres.maintenance' },
+  effect: makeLedgerEffect('db.purge', 'postgres.maintenance'),
   },
   {
     id: 'cu_01j9z44m2p6r8w4x',
@@ -222,8 +233,8 @@ export const mockChanges: ChangeRow[] = [
     tenant: 'default',
     handle: null,
     idempotency_key: 'wf-8860:effects:effect:0',
+    facts: {},
     intent: { summary: '关闭仓库的必需状态检查以加速合并' },
-    effect: { capability: 'repo.protection', task: 'github.repo_ops' },
+    effect: makeLedgerEffect('repo.protection', 'github.repo_ops'),
   },
 ]
-

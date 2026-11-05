@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PluginWidget } from '../../types/plugin'
+import type { PluginWidget } from '../types/plugin'
 
 const props = defineProps<{ widget: PluginWidget }>()
 
@@ -9,7 +9,7 @@ const variantClass: Record<string, string> = {
   red: 'text-coral',
 }
 
-function valueClass(variant?: string) {
+function valueClass(variant?: string | null) {
   return (variant && variantClass[variant]) || 'text-ink'
 }
 

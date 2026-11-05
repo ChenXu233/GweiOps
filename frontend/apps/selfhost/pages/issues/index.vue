@@ -14,11 +14,11 @@ const statusLabel: Record<string, string> = {
 }
 
 const statusCls: Record<string, string> = {
-  pending_review: 'border-amber/30 bg-amber/10 text-amber',
-  canary: 'border-brand/25 bg-brand/10 text-brand',
-  approved: 'border-ok/25 bg-ok/10 text-ok',
-  completed: 'border-ok/25 bg-ok/10 text-ok',
-  rolled_back: 'border-line bg-well text-ink-soft',
+  pending_review: 'chip-warn',
+  canary: 'chip-info',
+  approved: 'chip-ok',
+  completed: 'chip-ok',
+  rolled_back: '',
 }
 
 const sourceLabel: Record<string, string> = {
@@ -62,20 +62,15 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
 
 <template>
   <div class="space-y-4">
-    <header class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div class="mono-label">ISSUES</div>
-        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">议题</h1>
-        <p class="mt-2 text-[12.5px] text-ink-soft">从信号到方案,每一步都留痕。</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="mono-label">{{ data.length }} 条</span>
-        <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh">
+    <PageHeader eyebrow="ISSUES" title="议题" description="从信号到方案，每一步都留痕。">
+      <template #actions>
+        <span class="eyebrow">{{ data.length }} 条</span>
+        <button class="btn-outline btn-sm" :disabled="loading" @click="refresh">
           <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
           刷新
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="no-scrollbar flex items-center gap-1 overflow-x-auto pb-1">
       <button
@@ -92,11 +87,11 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
       </button>
     </div>
 
-    <div v-if="error" class="card border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
+    <div v-if="error" class="panel border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
       拉不到议题列表。确认引擎在跑,或开启 mock 模式。
     </div>
 
-    <div class="overflow-hidden rounded-panel border border-line bg-panel">
+    <div class="panel overflow-hidden">
       <div v-if="loading && !data.length" class="divide-y divide-line/60">
         <div v-for="i in 5" :key="i" class="h-[72px] animate-pulse bg-well/50" />
       </div>
@@ -132,14 +127,11 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
               </div>
             </div>
 
-            <span class="hidden shrink-0 rounded-full border border-line bg-well px-2 py-0.5 font-mono text-[10.5px] text-ink-soft sm:inline">
+            <span class="chip hidden shrink-0 font-mono text-[10.5px] sm:inline">
               {{ issue.patches.length }} 方案
             </span>
 
-            <span
-              class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-              :class="statusCls[issue.status]"
-            >
+            <span class="chip shrink-0" :class="statusCls[issue.status]">
               {{ statusLabel[issue.status] }}
             </span>
 

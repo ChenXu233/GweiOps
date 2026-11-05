@@ -1,26 +1,16 @@
 // packages/core/types/changes.ts
-export type ChangeVerdict =
-  | 'pending'
-  | 'kept'
-  | 'rolled_back'
-  | 'blocked'
-  | 'vetoed'
-  | 'irreversible'
+import type { components } from '../api/schema'
 
-export interface ChangeRow {
-  id: string
-  created_at: string
-  verdict: ChangeVerdict
-  reason: string
-  binding: string
-  tenant: string
-  handle: string | null
-  idempotency_key: string
-  intent: { summary?: string }
-  effect: { capability?: string; task?: string }
-}
+type S = components['schemas']
 
-export interface ChangeList {
-  items: ChangeRow[]
-  total: number
-}
+/** 账本一行。字段由引擎的 ChangeRowDTO 决定,前端不额外加工。 */
+export type ChangeRow = S['ChangeRowDTO']
+export type ChangeVerdict = ChangeRow['verdict']
+export type ChangeIntent = S['ChangeIntentDTO']
+export type ChangeEffect = S['ChangeEffectDTO']
+
+/** GET /api/changes 的返回体。 */
+export type ChangeList = S['ChangeListDTO']
+
+/** 单个单元的全部事件(执行、放行、否决、撤销各一行)。 */
+export type ChangeDetail = S['ChangeDetailDTO']
