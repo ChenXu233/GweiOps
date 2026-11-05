@@ -615,6 +615,21 @@ export interface components {
              */
             tenant: string;
             /**
+             * Undo Expires At
+             * @default
+             */
+            undo_expires_at: string;
+            /**
+             * Undo Reason
+             * @default
+             */
+            undo_reason: string;
+            /**
+             * Undoable
+             * @default false
+             */
+            undoable: boolean;
+            /**
              * Verdict
              * @default pending
              * @enum {string}

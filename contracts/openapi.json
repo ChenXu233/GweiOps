@@ -258,6 +258,21 @@
             "title": "Tenant",
             "type": "string"
           },
+          "undo_expires_at": {
+            "default": "",
+            "title": "Undo Expires At",
+            "type": "string"
+          },
+          "undo_reason": {
+            "default": "",
+            "title": "Undo Reason",
+            "type": "string"
+          },
+          "undoable": {
+            "default": false,
+            "title": "Undoable",
+            "type": "boolean"
+          },
           "verdict": {
             "default": "pending",
             "enum": [
