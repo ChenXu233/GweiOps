@@ -146,7 +146,7 @@ function formatSync(value: string): string {
 
       <p class="max-w-[72ch] text-[12.5px] leading-relaxed text-ink-soft">
         GitHub 把动静送到下面这两个路径。两个入口都校验
-        <span class="font-mono text-[11.5px]">X-Hub-Signature-256</span>,
+        <span class="font-mono text-[12px]">X-Hub-Signature-256</span>,
         密钥在 GitHub 与引擎两侧各配一份,不经过这个页面。
       </p>
 

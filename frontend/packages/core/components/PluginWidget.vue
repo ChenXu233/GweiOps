@@ -31,7 +31,7 @@ const metricCols = computed(() => ((props.widget.metrics?.length ?? 0) <= 1 ? 'g
           <span class="num text-[19px] font-semibold leading-none tracking-tight" :class="valueClass(m.variant)">
             {{ m.value }}
           </span>
-          <span v-if="m.sub" class="truncate text-[11px] text-ink-faint">{{ m.sub }}</span>
+          <span v-if="m.sub" class="truncate text-[11.5px] text-ink-faint">{{ m.sub }}</span>
         </div>
       </div>
     </div>

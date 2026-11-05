@@ -87,11 +87,11 @@ function stepIndex(steps: string[], current: string) {
     <template v-else>
       <header class="space-y-3">
         <div class="flex flex-wrap items-center gap-2">
-          <span class="font-mono text-[11px] text-ink-faint">{{ data.id }}</span>
+          <span class="font-mono text-[11.5px] text-ink-faint">{{ data.id }}</span>
           <span class="chip" :class="statusCls[data.status]">
             {{ statusLabel[data.status] }}
           </span>
-          <span class="chip font-mono text-[10.5px]">
+          <span class="chip font-mono text-[11.5px]">
             {{ sourceLabel[data.source] || data.source }}
           </span>
         </div>
@@ -100,7 +100,7 @@ function stepIndex(steps: string[], current: string) {
           {{ data.title }}
         </h1>
 
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-ink-faint">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11.5px] text-ink-faint">
           <span class="flex items-center gap-1.5"><AppIcon name="repos" :size="12" />{{ data.repo }}</span>
           <span class="flex items-center gap-1.5"><AppIcon name="clock" :size="12" />{{ data.triggeredAt }}</span>
           <span class="flex items-center gap-1.5"><AppIcon name="layers" :size="12" />{{ data.patches.length }} 个方案</span>
@@ -132,15 +132,15 @@ function stepIndex(steps: string[], current: string) {
                   <AppIcon name="check" :size="9" :stroke="3" />
                 </span>
                 <span class="text-[13px] font-medium">{{ typeLabel[p.type] || p.type }}</span>
-                <span class="chip px-1.5 text-[10px]" :class="riskCls[p.risk]">
+                <span class="chip px-1.5 text-[11px]" :class="riskCls[p.risk]">
                   {{ riskLabel[p.risk] }}
                 </span>
-                <span class="ml-auto font-mono text-[10.5px] text-ink-faint">{{ p.lines }} 行</span>
+                <span class="ml-auto font-mono text-[11.5px] text-ink-faint">{{ p.lines }} 行</span>
               </div>
 
               <p class="mt-2 pl-6 text-[12px] leading-relaxed text-ink-soft">{{ p.description }}</p>
 
-              <div class="mt-2.5 flex gap-4 pl-6 font-mono text-[10.5px] text-ink-faint">
+              <div class="mt-2.5 flex gap-4 pl-6 font-mono text-[11.5px] text-ink-faint">
                 <span>通过率 {{ p.passRate }}%</span>
                 <span>延迟 {{ p.latency }}</span>
               </div>
@@ -172,7 +172,7 @@ function stepIndex(steps: string[], current: string) {
                 <template v-for="(step, i) in data.canary.steps" :key="step">
                   <div class="flex flex-col items-center gap-1.5">
                     <span
-                      class="grid h-6 w-6 place-items-center rounded-full text-[10px] font-semibold"
+                      class="grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold"
                       :class="
                         i < stepIndex(data.canary.steps, data.canary.current)
                           ? 'bg-ink text-paper'
@@ -262,7 +262,7 @@ function stepIndex(steps: string[], current: string) {
                 >
                   {{ step.label }}
                 </span>
-                <span v-if="step.status === 'active'" class="ml-auto font-mono text-[10px] text-brand">进行中</span>
+                <span v-if="step.status === 'active'" class="ml-auto font-mono text-[11px] text-brand">进行中</span>
               </li>
             </ol>
           </section>

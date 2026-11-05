@@ -101,7 +101,7 @@ onUnmounted(() => {
     <!-- 概览:待放行总数 + 阻断原因归类 -->
     <StatBand :columns="4" :stats="overview" />
 
-    <p v-if="groups.length" class="text-[11.5px] leading-relaxed text-ink-faint">
+    <p v-if="groups.length" class="text-[12px] leading-relaxed text-ink-faint">
       归类是我们照引擎写下的原因文本读出来的,不是引擎给的字段。
     </p>
 
@@ -131,7 +131,7 @@ onUnmounted(() => {
             {{ failure.action === 'approve' ? '这次放行没有生效' : '这次否决没有生效' }}
           </div>
           <p class="mt-1 leading-relaxed">{{ failure.message }}</p>
-          <p class="mt-1.5 text-[11.5px] opacity-80">
+          <p class="mt-1.5 text-[12px] opacity-80">
             这条还在队列里,状态没有变
             <span v-if="failure.status" class="num">(引擎返回 {{ failure.status }})</span>
           </p>
@@ -188,9 +188,9 @@ onUnmounted(() => {
             <h2 class="mt-2.5 text-balance text-[15px] font-semibold leading-snug">
               {{ row.intent?.summary || '(引擎没有写摘要)' }}
             </h2>
-            <p class="mt-1 truncate font-mono text-[10.5px] text-ink-faint">{{ row.id }}</p>
+            <p class="mt-1 truncate font-mono text-[11.5px] text-ink-faint">{{ row.id }}</p>
           </div>
-          <div class="flex shrink-0 items-center gap-1.5 text-[11.5px] text-ink-faint">
+          <div class="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-faint">
             <AppIcon name="clock" :size="13" />
             <span class="num font-mono">{{ when(row.created_at) }}</span>
           </div>
@@ -200,7 +200,7 @@ onUnmounted(() => {
           class="mt-4 grid gap-x-6 gap-y-2.5 border-t border-line/70 pt-4 sm:grid-cols-2"
         >
           <div v-for="f in fields(row)" :key="f.k" class="flex min-w-0 items-baseline gap-2">
-            <dt class="w-20 shrink-0 text-[11.5px] text-ink-faint">{{ f.k }}</dt>
+            <dt class="w-20 shrink-0 text-[12px] text-ink-faint">{{ f.k }}</dt>
             <dd class="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-soft" :title="f.v">
               {{ f.v }}
             </dd>
@@ -214,7 +214,7 @@ onUnmounted(() => {
           </p>
         </div>
 
-        <p class="mt-4 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-ink-faint">
+        <p class="mt-4 flex items-start gap-1.5 text-[12px] leading-relaxed text-ink-faint">
           <AppIcon name="shield-check" :size="13" class="mt-0.5 shrink-0" />
           <span>放行 = 此刻有人在场。执行后照样读窗口、照样验证,验证不过照样回滚。</span>
         </p>
@@ -244,7 +244,7 @@ onUnmounted(() => {
             />
             {{ vetoLabel(row) }}
           </button>
-          <span v-if="confirming?.id === row.id" class="text-[11.5px] text-ink-faint">
+          <span v-if="confirming?.id === row.id" class="text-[12px] text-ink-faint">
             再点一次「{{ confirming.action === 'approve' ? '放行' : '否决' }}」以确认。
           </span>
         </div>

@@ -30,7 +30,7 @@ const pillars = [
       <div class="mx-auto flex h-14 w-full max-w-[1080px] items-center justify-between px-5">
         <div class="flex items-center gap-2.5">
           <span class="relative grid h-7 w-7 place-items-center rounded-[9px] bg-ink text-paper">
-            <span class="font-mono text-[11px] font-semibold leading-none">未</span>
+            <span class="font-mono text-[11.5px] font-semibold leading-none">未</span>
             <span class="absolute right-[3px] top-[3px] h-[5px] w-[5px] rounded-full bg-lime" />
           </span>
           <span class="text-[15px] font-semibold tracking-tightest">既未</span>
@@ -48,7 +48,7 @@ const pillars = [
       <div class="relative mx-auto max-w-[1080px] px-5 pb-16 pt-20">
         <div class="inline-flex items-center gap-2 rounded-full border border-line bg-panel/70 px-3 py-1.5 backdrop-blur">
           <AppIcon name="zap" :size="12" class="text-brand" />
-          <span class="font-mono text-[10.5px] tracking-wider text-ink-soft">人只在不可逆的地方拦一下</span>
+          <span class="font-mono text-[11.5px] tracking-wider text-ink-soft">人只在不可逆的地方拦一下</span>
         </div>
 
         <h1 class="mt-6 max-w-[760px] text-balance text-[44px] font-semibold leading-[1.08] tracking-tightest sm:text-[56px]">
@@ -71,7 +71,7 @@ const pillars = [
 
         <div class="mt-14 grid gap-px overflow-hidden rounded-panel bg-line sm:grid-cols-3">
           <div class="bg-lime p-6 text-lime-ink">
-            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">MTTR</div>
+            <div class="font-mono text-[11px] uppercase tracking-[0.16em] text-lime-ink/55">MTTR</div>
             <div class="num mt-3 text-[40px] font-semibold leading-none tracking-tightest">8.2<span class="ml-1 text-[14px] font-normal opacity-60">分钟</span></div>
             <p class="mt-2 text-[12px] opacity-70">从信号到部署完成的中位耗时</p>
           </div>
@@ -81,7 +81,7 @@ const pillars = [
             <p class="mt-2 text-[12px] text-ink-soft">在没人看着的时候完成并验证</p>
           </div>
           <div class="bg-solid p-6 text-solid-ink">
-            <div class="font-mono text-[10px] uppercase tracking-[0.16em] text-solid-ink/45">回滚</div>
+            <div class="font-mono text-[11px] uppercase tracking-[0.16em] text-solid-ink/45">回滚</div>
             <div class="num mt-3 text-[40px] font-semibold leading-none tracking-tightest">0.6<span class="ml-1 text-[14px] font-normal opacity-50">%</span></div>
             <p class="mt-2 text-[12px] opacity-55">只有千分之六需要回退</p>
           </div>

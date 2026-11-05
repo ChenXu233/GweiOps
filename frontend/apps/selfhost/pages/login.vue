@@ -37,7 +37,7 @@ definePageMeta({ layout: false, modes: ['saas'] })
         </NuxtLink>
       </div>
 
-      <p class="mt-5 text-center text-[11.5px] leading-relaxed text-ink-faint">
+      <p class="mt-5 text-center text-[12px] leading-relaxed text-ink-faint">
         登录即表示同意服务条款与隐私政策
       </p>
     </div>

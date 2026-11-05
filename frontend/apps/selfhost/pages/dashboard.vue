@@ -114,9 +114,9 @@ function stepIndex(steps: string[], current: string) {
         >
 
           <div class="relative flex items-start justify-between">
-            <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">系统态势</span>
+            <span class="font-mono text-[11px] uppercase tracking-[0.16em] text-lime-ink/55">系统态势</span>
             <span
-              class="rounded-full border border-lime-ink/15 px-2 py-0.5 font-mono text-[10px] tracking-wider text-lime-ink/60"
+              class="rounded-full border border-lime-ink/15 px-2 py-0.5 font-mono text-[11px] tracking-wider text-lime-ink/60"
             >
               {{ data.status.toUpperCase() }}
             </span>
@@ -157,7 +157,7 @@ function stepIndex(steps: string[], current: string) {
               />
             </div>
             <div
-              class="mt-2.5 flex items-baseline justify-between font-mono text-[10px] tracking-wider text-lime-ink/45"
+              class="mt-2.5 flex items-baseline justify-between font-mono text-[11px] tracking-wider text-lime-ink/45"
             >
               <span>近 {{ data.healthHistory.length }} 天</span>
               <span v-if="health.incidentCount" class="text-lime-ink/60">{{ health.incidentCount }} 天异常</span>
@@ -172,7 +172,7 @@ function stepIndex(steps: string[], current: string) {
             class="group flex flex-col justify-between rounded-panel border border-amber/30 bg-amber/10 p-5 transition-colors hover:bg-amber/[0.16]"
           >
             <div class="flex items-center justify-between">
-              <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-amber">等你判断</span>
+              <span class="font-mono text-[11px] uppercase tracking-[0.16em] text-amber">等你判断</span>
               <AppIcon
                 name="arrow-up-right"
                 :size="15"
@@ -192,7 +192,7 @@ function stepIndex(steps: string[], current: string) {
               class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/[0.07] to-transparent"
             />
             <div class="flex items-center justify-between">
-              <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-solid-ink/45">昨夜自动修复</span>
+              <span class="font-mono text-[11px] uppercase tracking-[0.16em] text-solid-ink/45">昨夜自动修复</span>
               <AppIcon name="moon" :size="15" class="text-solid-ink/40" />
             </div>
             <div class="mt-5 flex items-baseline gap-2.5">
@@ -227,7 +227,7 @@ function stepIndex(steps: string[], current: string) {
                 <span class="h-7 w-[3px] shrink-0 rounded-full" :class="severityBar(item.severity)" />
                 <div class="min-w-0 flex-1">
                   <div class="truncate text-[13px] font-medium">{{ item.title }}</div>
-                  <div class="mt-1 font-mono text-[11px] text-ink-faint">
+                  <div class="mt-1 font-mono text-[11.5px] text-ink-faint">
                     {{ item.id }} · {{ item.patchCount }} 个方案
                   </div>
                 </div>
@@ -263,14 +263,14 @@ function stepIndex(steps: string[], current: string) {
           <div v-for="c in canaryStatuses" :key="c.issueId" class="p-5">
             <div class="flex items-baseline justify-between gap-3">
               <span class="truncate text-[13px] font-medium">{{ c.issueTitle }}</span>
-              <span class="shrink-0 font-mono text-[11px] text-ink-faint">{{ c.issueId }}</span>
+              <span class="shrink-0 font-mono text-[11.5px] text-ink-faint">{{ c.issueId }}</span>
             </div>
 
             <div class="mt-4 flex items-center">
               <template v-for="(step, i) in c.steps" :key="step">
                 <div class="flex flex-col items-center gap-1.5">
                   <span
-                    class="grid h-6 w-6 place-items-center rounded-full text-[10px] font-semibold"
+                    class="grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold"
                     :class="
                       i < stepIndex(c.steps, c.currentStep)
                         ? 'bg-ink text-paper'
@@ -331,7 +331,7 @@ function stepIndex(steps: string[], current: string) {
 
           <ol v-if="overnightEvents.length" class="divide-y divide-line/70">
             <li v-for="(e, i) in overnightEvents" :key="i" class="flex gap-3.5 px-5 py-3.5">
-              <span class="mt-0.5 shrink-0 font-mono text-[11px] text-ink-faint">{{ e.time }}</span>
+              <span class="mt-0.5 shrink-0 font-mono text-[11.5px] text-ink-faint">{{ e.time }}</span>
               <span
                 class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
                 :class="e.result === 'success' ? 'bg-ok' : 'bg-coral'"

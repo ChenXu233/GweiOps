@@ -81,7 +81,7 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
         @click="filter = f.key"
       >
         {{ f.label }}
-        <span class="num font-mono text-[10px] opacity-60">
+        <span class="num font-mono text-[11px] opacity-60">
           {{ f.key === 'all' ? data.length : counts[f.key] ?? 0 }}
         </span>
       </button>
@@ -114,9 +114,9 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <span class="truncate text-[13.5px] font-medium">{{ issue.title }}</span>
-                <span class="shrink-0 font-mono text-[10.5px] text-ink-faint">{{ issue.id }}</span>
+                <span class="shrink-0 font-mono text-[11.5px] text-ink-faint">{{ issue.id }}</span>
               </div>
-              <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10.5px] text-ink-faint">
+              <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11.5px] text-ink-faint">
                 <span>{{ issue.repo }}</span>
                 <span class="h-1 w-1 rounded-full bg-line" />
                 <span>{{ sourceLabel[issue.source] || issue.source }}</span>
@@ -127,7 +127,7 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
               </div>
             </div>
 
-            <span class="chip hidden shrink-0 font-mono text-[10.5px] sm:inline">
+            <span class="chip hidden shrink-0 font-mono text-[11.5px] sm:inline">
               {{ issue.patches.length }} 方案
             </span>
 

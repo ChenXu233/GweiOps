@@ -89,7 +89,7 @@ const sections = computed(() => {
             </span>
             <span class="min-w-0">
               <span class="block text-[13px] font-medium">{{ t.label }}</span>
-              <span class="block truncate text-[11.5px] text-ink-faint">{{ t.hint }}</span>
+              <span class="block truncate text-[12px] text-ink-faint">{{ t.hint }}</span>
             </span>
           </button>
         </div>
