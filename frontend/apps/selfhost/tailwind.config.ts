@@ -48,7 +48,7 @@ export default <Partial<Config>>{
       fontFamily: {
         sans: [
           'Inter',
-          'Inter var',
+          'Gwei Sans SC',
           'system-ui',
           '-apple-system',
           'Segoe UI Variable Text',
@@ -61,6 +61,9 @@ export default <Partial<Config>>{
         ],
         mono: [
           'JetBrains Mono',
+          // 等宽字体没有汉字,中文标签(系统态势/工作区)继续落到中文字体上,
+          // 不放进来的话这些字会掉回系统字体,和正文不是一套
+          'Gwei Sans SC',
           'Cascadia Code',
           'SFMono-Regular',
           'SF Mono',
