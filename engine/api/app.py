@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from dbos import DBOS, DBOSConfig
 from fastapi import FastAPI
 
+from engine.api.auth import load_tokens, make_middleware
 from engine.api.routes.health import router as health_router
 from engine.api.routes.plugins import router as plugins_router
 from engine.api.routes.changes import router as changes_router
@@ -70,3 +71,13 @@ app.include_router(plugins_router)
 app.include_router(console_router)
 app.include_router(changes_router)
 app.include_router(webhook_router)
+
+# 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。
+API_TOKENS = load_tokens(config.settings.api_tokens)
+if API_TOKENS:
+    logger.info("Console auth enabled: %d token(s)", len(API_TOKENS))
+else:
+    logger.warning(
+        "API 未配置控制台令牌(api_tokens 为空):服务不鉴权,by 与 tenant 由调用方自报"
+    )
+app.middleware("http")(make_middleware(API_TOKENS))

@@ -60,7 +60,7 @@ export interface paths {
          *     放行只说明"此刻有人在场",不放宽判定口径:执行后照样读窗口、照样验证,
          *     验证不过照样回滚。真正不可逆的那类,执行后会被如实记成 irreversible。
          *
-         *     by 现在由调用方自报。认证接进来之前,它是一条备注,不是责任归属。
+         *     by 以控制台令牌为准;没有配置令牌时才采信调用方写的那一个。
          */
         post: operations["approve_change_api_changes__unit_id__approve_post"];
         delete?: never;
