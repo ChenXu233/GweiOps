@@ -4,6 +4,20 @@
    不靠重投影。信号色只有四个:lime = 活着且已验证、amber = 等你判断、
    coral = 失控、brand = 可交互。solid 是可反色的大色块。
    =========================================================================== */
+/* ---------------------------------------------------------------------------
+   中文:Noto Sans SC 的可变子集,只含这个站点用得到的 937 个字(211KB)。
+   由 scripts/subset_cjk_font.py 生成,改了页面文案就重跑一次。
+   unicode-range 限死在中日韩区段:拉丁字母仍然走 Inter,两者不会互相抢字。
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Gwei Sans SC';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/gwei-sans-sc.woff2') format('woff2');
+  unicode-range: U+2E80-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
