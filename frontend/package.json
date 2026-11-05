@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "dev:selfhost": "pnpm --filter @gwei/selfhost dev",
-    "build:selfhost": "pnpm --filter @gwei/selfhost build"
+    "build:selfhost": "pnpm --filter @gwei/selfhost build",
+    "gen:api": "pnpm --filter @gwei/core gen:api"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

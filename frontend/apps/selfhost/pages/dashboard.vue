@@ -62,11 +62,11 @@ const issueStatusLabel: Record<string, string> = {
 }
 
 const issueStatusClass: Record<string, string> = {
-  pending_review: 'border-amber/30 bg-amber/10 text-amber',
-  canary: 'border-brand/25 bg-brand/10 text-brand',
-  approved: 'border-ok/25 bg-ok/10 text-ok',
-  completed: 'border-ok/25 bg-ok/10 text-ok',
-  rolled_back: 'border-line bg-well text-ink-soft',
+  pending_review: 'chip-warn',
+  canary: 'chip-info',
+  approved: 'chip-ok',
+  completed: 'chip-ok',
+  rolled_back: '',
 }
 
 function stepIndex(steps: string[], current: string) {
@@ -77,51 +77,54 @@ function stepIndex(steps: string[], current: string) {
 
 <template>
   <div class="space-y-4">
-    <header class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div class="mono-label">CONTROL ROOM</div>
-        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">控制室</h1>
-      </div>
-      <div class="flex items-center gap-3">
+    <PageHeader eyebrow="CONTROL ROOM" title="控制室" description="夜里发生的事，早上只做判断。">
+      <template #actions>
         <StatusPip tone="ok" pulse label="实时同步" />
-        <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh">
+        <button class="btn-outline btn-sm" :disabled="loading" @click="refresh">
           <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
           刷新
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div v-if="loading && !data" class="grid grid-cols-12 gap-4">
-      <div class="col-span-12 h-64 animate-pulse rounded-panel bg-well lg:col-span-7" />
+      <div class="col-span-12 h-64 skeleton lg:col-span-7" />
       <div class="col-span-12 grid gap-4 lg:col-span-5">
-        <div class="h-[122px] animate-pulse rounded-panel bg-well" />
-        <div class="h-[122px] animate-pulse rounded-panel bg-well" />
+        <div class="h-[122px] skeleton" />
+        <div class="h-[122px] skeleton" />
       </div>
     </div>
 
-    <div v-else-if="error" class="card border-coral/30 bg-coral/5 p-6">
+    <div v-else-if="error" class="panel border-coral/30 bg-coral/5 p-6">
       <div class="flex items-center gap-2 text-[13px] font-medium text-coral">
         <AppIcon name="alert" :size="15" />
         拉不到控制室数据
       </div>
       <p class="mt-1.5 text-[12px] text-ink-soft">
-        确认引擎在跑(NUXT_ENGINE_URL),或者用 NUXT_PUBLIC_USE_MOCK=true 看演示数据。
+        确认引擎在跑(NUXT_ENGINE_URL)，或者用 NUXT_PUBLIC_USE_MOCK=true 看演示数据。
       </p>
-      <button class="btn-outline mt-4 h-8 px-3 text-[12px]" @click="refresh">重试</button>
+      <button class="btn-outline btn-sm mt-4" @click="refresh">重试</button>
     </div>
 
     <template v-else-if="data">
       <div class="grid grid-cols-12 gap-4">
         <!-- 主色块:系统态势 -->
-        <section class="col-span-12 flex flex-col justify-between rounded-panel bg-lime p-6 text-lime-ink lg:col-span-7">
-          <div class="flex items-start justify-between">
+        <section
+          class="relative col-span-12 flex flex-col justify-between overflow-hidden rounded-panel bg-lime p-6 text-lime-ink lg:col-span-7"
+        >
+          <div
+            class="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/25 blur-3xl"
+          />
+          <div class="relative flex items-start justify-between">
             <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">系统态势</span>
-            <span class="rounded-full border border-lime-ink/15 px-2 py-0.5 font-mono text-[10px] tracking-wider text-lime-ink/60">
+            <span
+              class="rounded-full border border-lime-ink/15 px-2 py-0.5 font-mono text-[10px] tracking-wider text-lime-ink/60"
+            >
               {{ data.status.toUpperCase() }}
             </span>
           </div>
 
-          <div class="mt-6">
+          <div class="relative mt-6">
             <h2 class="text-[38px] font-semibold leading-none tracking-tightest">
               {{ statusText[data.status] }}
             </h2>
@@ -130,7 +133,7 @@ function stepIndex(steps: string[], current: string) {
             </p>
           </div>
 
-          <div v-if="health" class="mt-7">
+          <div v-if="health" class="relative mt-7">
             <div class="relative h-16">
               <svg
                 class="absolute inset-0 h-full w-full"
@@ -155,7 +158,9 @@ function stepIndex(steps: string[], current: string) {
                 :style="{ left: health.incident.x + '%', top: health.incident.y + '%' }"
               />
             </div>
-            <div class="mt-2.5 flex items-baseline justify-between font-mono text-[10px] tracking-wider text-lime-ink/45">
+            <div
+              class="mt-2.5 flex items-baseline justify-between font-mono text-[10px] tracking-wider text-lime-ink/45"
+            >
               <span>近 {{ data.healthHistory.length }} 天</span>
               <span v-if="health.incidentCount" class="text-lime-ink/60">{{ health.incidentCount }} 天异常</span>
               <span>今天</span>
@@ -180,7 +185,7 @@ function stepIndex(steps: string[], current: string) {
               <span class="num text-[34px] font-semibold leading-none tracking-tightest text-amber">
                 {{ data.pendingReview }}
               </span>
-              <span class="text-[12px] leading-tight text-ink-soft">件事已经做完,只差一个人点头</span>
+              <span class="text-[12px] leading-tight text-ink-soft">件事已经做完，只差一个人点头</span>
             </div>
           </NuxtLink>
 
@@ -201,10 +206,10 @@ function stepIndex(steps: string[], current: string) {
         <div
           v-for="m in metrics"
           :key="m.label"
-          class="col-span-6 rounded-panel border border-line bg-panel p-4 lg:col-span-3"
+          class="tile col-span-6 transition-colors duration-200 ease-[var(--ease)] hover:border-line-strong lg:col-span-3"
         >
           <div class="flex items-center justify-between">
-            <span class="mono-label">{{ m.label }}</span>
+            <span class="eyebrow">{{ m.label }}</span>
             <AppIcon :name="m.icon" :size="13" class="text-ink-faint" />
           </div>
           <div class="mt-3.5 flex items-baseline gap-1">
@@ -213,10 +218,13 @@ function stepIndex(steps: string[], current: string) {
           </div>
         </div>
 
-        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-7">
+        <section class="panel col-span-12 overflow-hidden lg:col-span-7">
           <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <h2 class="text-[13px] font-semibold">待你判断</h2>
-            <NuxtLink to="/issues" class="flex items-center gap-1 text-[12px] text-ink-faint transition-colors hover:text-ink">
+            <NuxtLink
+              to="/issues"
+              class="flex items-center gap-1 text-[12px] text-ink-faint transition-colors hover:text-ink"
+            >
               全部
               <AppIcon name="arrow-right" :size="12" />
             </NuxtLink>
@@ -236,7 +244,7 @@ function stepIndex(steps: string[], current: string) {
                   </div>
                 </div>
                 <span
-                  class="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                  class="chip shrink-0"
                   :class="issueStatusClass[item.status]"
                 >
                   {{ issueStatusLabel[item.status] }}
@@ -254,14 +262,14 @@ function stepIndex(steps: string[], current: string) {
             v-else
             icon="check-circle"
             title="没有待审条目"
-            hint="夜里发生的改变都已经落在可回滚状态,醒来不需要做任何判断。"
+            hint="夜里发生的改变都已经落在可回滚状态，醒来不需要做任何判断。"
           />
         </section>
 
-        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-5">
+        <section class="panel col-span-12 overflow-hidden lg:col-span-5">
           <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <h2 class="text-[13px] font-semibold">金丝雀</h2>
-            <span class="mono-label">CANARY</span>
+            <span class="eyebrow">CANARY</span>
           </div>
 
           <div v-for="c in canaryStatuses" :key="c.issueId" class="p-5">
@@ -299,21 +307,21 @@ function stepIndex(steps: string[], current: string) {
               </template>
             </div>
 
-            <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-line">
+            <div class="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-tile bg-line">
               <div class="bg-panel px-3 py-2.5">
-                <div class="mono-label">通过率</div>
+                <div class="eyebrow">通过率</div>
                 <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.passRate }}%</div>
               </div>
               <div class="bg-panel px-3 py-2.5">
-                <div class="mono-label">错误率</div>
+                <div class="eyebrow">错误率</div>
                 <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.errorRate }}%</div>
               </div>
               <div class="bg-panel px-3 py-2.5">
-                <div class="mono-label">P99</div>
+                <div class="eyebrow">P99</div>
                 <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.p99Latency }}</div>
               </div>
               <div class="bg-panel px-3 py-2.5">
-                <div class="mono-label">内存峰值</div>
+                <div class="eyebrow">内存峰值</div>
                 <div class="num mt-1 text-[15px] font-semibold">{{ c.metrics.memoryPeak }}</div>
               </div>
             </div>
@@ -323,14 +331,14 @@ function stepIndex(steps: string[], current: string) {
             v-if="!canaryStatuses.length"
             icon="activity"
             title="没有进行中的金丝雀"
-            hint="有变更进入灰度时,这里会显示每一步的实时指标。"
+            hint="有变更进入灰度时，这里会显示每一步的实时指标。"
           />
         </section>
 
-        <section class="col-span-12 overflow-hidden rounded-panel border border-line bg-panel lg:col-span-7">
+        <section class="panel col-span-12 overflow-hidden lg:col-span-7">
           <div class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <h2 class="text-[13px] font-semibold">昨夜回顾</h2>
-            <span class="mono-label">NIGHT SHIFT</span>
+            <span class="eyebrow">NIGHT SHIFT</span>
           </div>
 
           <ol v-if="overnightEvents.length" class="divide-y divide-line/70">
@@ -354,7 +362,7 @@ function stepIndex(steps: string[], current: string) {
           <section
             v-for="w in pluginWidgets"
             :key="w.plugin + w.title"
-            class="overflow-hidden rounded-panel border border-line bg-panel"
+            class="panel overflow-hidden"
           >
             <PluginWidget :widget="w" />
           </section>

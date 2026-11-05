@@ -49,7 +49,7 @@ async function onBridgeMessage(ev: MessageEvent) {
   const msg = ev.data as { type: 'gwei:bridge:fetch'; id: number; path: string } | undefined
   if (!msg || msg.type !== 'gwei:bridge:fetch') return
 
-  let payload: unknown
+  let payload: Record<string, unknown>
   if (typeof msg.path !== 'string' || !bridgeAllowed(msg.path)) {
     payload = { id: msg.id, ok: false, status: 403, body: { error: 'forbidden' } }
   } else {
@@ -80,7 +80,7 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
       回到插件
     </NuxtLink>
 
-    <div v-if="notFound" class="card">
+    <div v-if="notFound" class="panel">
       <EmptyState icon="plugins" title="这个插件没有页面" hint="它可能只提供了能力,没有声明 UI。" />
     </div>
 
@@ -90,13 +90,13 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
           <div class="mono-label">{{ manifest.name }}</div>
           <h1 class="mt-1.5 text-[24px] font-semibold leading-none tracking-tightest">{{ page.title }}</h1>
         </div>
-        <span class="flex items-center gap-1.5 rounded-full border border-line bg-well px-2.5 py-1 font-mono text-[10.5px] text-ink-soft">
+        <span class="chip gap-1.5 font-mono text-[10.5px]">
           <AppIcon name="shield-check" :size="12" />
           沙箱运行
         </span>
       </header>
 
-      <div class="overflow-hidden rounded-panel border border-line bg-panel">
+      <div class="panel overflow-hidden">
         <iframe
           ref="iframeRef"
           :src="assetUrl"

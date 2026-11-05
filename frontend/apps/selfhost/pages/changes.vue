@@ -12,12 +12,12 @@ const detailLoading = ref(false)
 const confirming = ref(false)
 
 const verdictMeta: Record<ChangeVerdict, { label: string; cls: string }> = {
-  kept: { label: '已执行 · 可撤', cls: 'border-transparent bg-lime text-lime-ink' },
-  blocked: { label: '阻断等人', cls: 'border-amber/30 bg-amber/10 text-amber' },
-  rolled_back: { label: '已回滚', cls: 'border-line bg-well text-ink-soft' },
-  irreversible: { label: '不可逆', cls: 'border-coral/30 bg-coral/10 text-coral' },
-  vetoed: { label: '被否决', cls: 'border-line bg-well text-ink-faint' },
-  pending: { label: '进行中', cls: 'border-brand/25 bg-brand/10 text-brand' },
+  kept: { label: '已执行 · 可撤', cls: 'chip-lime' },
+  blocked: { label: '阻断等人', cls: 'chip-warn' },
+  rolled_back: { label: '已回滚', cls: '' },
+  irreversible: { label: '不可逆', cls: 'chip-bad' },
+  vetoed: { label: '被否决', cls: '' },
+  pending: { label: '进行中', cls: 'chip-info' },
 }
 
 const order: ChangeVerdict[] = ['kept', 'blocked', 'rolled_back', 'irreversible', 'vetoed', 'pending']
@@ -87,22 +87,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <div class="space-y-4">
-    <header class="flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <div class="mono-label">LEDGER</div>
-        <h1 class="mt-1.5 text-[27px] font-semibold leading-none tracking-tightest">变更账本</h1>
-        <p class="mt-2 text-[12.5px] text-ink-soft">
-          每一次改变都是一条可回滚的事件,不是一个被覆盖的字段。
-        </p>
-      </div>
-      <div class="flex items-center gap-3">
-        <span class="mono-label">{{ total }} 条记录</span>
-        <button class="btn-outline h-8 px-3 text-[12px]" :disabled="loading" @click="refresh()">
+    <PageHeader
+      eyebrow="LEDGER"
+      title="变更账本"
+      description="每一次改变都是一条可回滚的事件，不是一个被覆盖的字段。"
+    >
+      <template #actions>
+        <span class="eyebrow">{{ total }} 条记录</span>
+        <button class="btn-outline btn-sm" :disabled="loading" @click="refresh()">
           <AppIcon name="refresh" :size="13" :class="loading ? 'animate-spin' : ''" />
           刷新
         </button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="no-scrollbar flex items-center gap-1 overflow-x-auto pb-1">
       <button class="tab" :class="filter === 'all' ? 'tab-active' : ''" @click="filter = 'all'">
@@ -121,11 +118,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </button>
     </div>
 
-    <div v-if="error" class="card border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
+    <div v-if="error" class="panel border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
       {{ error }}
     </div>
 
-    <div class="overflow-hidden rounded-panel border border-line bg-panel">
+    <div class="panel overflow-hidden">
       <div v-if="loading && !items.length" class="space-y-px">
         <div v-for="i in 5" :key="i" class="h-[62px] animate-pulse bg-well/60" />
       </div>
@@ -158,10 +155,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               @click="open(row)"
             >
               <td class="px-4 py-3">
-                <span
-                  class="inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                  :class="verdictMeta[row.verdict].cls"
-                >
+                <span class="chip whitespace-nowrap" :class="verdictMeta[row.verdict].cls">
                   {{ verdictMeta[row.verdict].label }}
                 </span>
               </td>
@@ -212,10 +206,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         >
           <div class="flex items-start justify-between gap-3 border-b border-line/60 px-5 py-4">
             <div class="min-w-0">
-              <span
-                class="inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                :class="current ? verdictMeta[current.verdict].cls : ''"
-              >
+              <span class="chip" :class="current ? verdictMeta[current.verdict].cls : ''">
                 {{ current ? verdictMeta[current.verdict].label : '' }}
               </span>
               <h2 class="mt-2.5 line-clamp-2 text-[15px] font-semibold leading-snug">

@@ -14,9 +14,23 @@ export default defineNuxtConfig({
 
   devtools: { enabled: false },
 
-  typescript: { strict: true },
+  // 核心层是工作区包,@gwei/core/* 的 exports 没有扩展名,
+  // tsc 的 Bundler 解析认不出来,这里补一条路径映射给类型检查用(不影响运行时解析)。
+  typescript: {
+    strict: true,
+    tsConfig: {
+      compilerOptions: {
+        paths: {
+          '@gwei/core': ['../../../packages/core/nuxt.config.ts'],
+          '@gwei/core/*': ['../../../packages/core/*'],
+        },
+      },
+    },
+  },
 
   app: {
+    // 页面切换用 main.css 里的 .page-* 过渡,保持和卡片抬起同一条缓动
+    pageTransition: { name: 'page', mode: 'out-in' },
     head: {
       htmlAttrs: { lang: 'zh-CN' },
       title: '既未 · Gwei Ops',

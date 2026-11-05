@@ -11,14 +11,19 @@ export default <Partial<Config>>{
     './layouts/**/*.vue',
     './pages/**/*.vue',
     './components/**/*.vue',
+    './composables/**/*.vue',
     '../../packages/core/components/**/*.vue',
   ],
   theme: {
     extend: {
       colors: {
         paper: 'rgb(var(--paper) / <alpha-value>)',
-        panel: 'rgb(var(--panel) / <alpha-value>)',
+        panel: {
+          DEFAULT: 'rgb(var(--panel) / <alpha-value>)',
+          2: 'rgb(var(--panel-2) / <alpha-value>)',
+        },
         well: 'rgb(var(--well) / <alpha-value>)',
+        sunken: 'rgb(var(--sunken) / <alpha-value>)',
         solid: 'rgb(var(--solid) / <alpha-value>)',
         'solid-ink': 'rgb(var(--solid-ink) / <alpha-value>)',
         ink: {
@@ -29,6 +34,7 @@ export default <Partial<Config>>{
         line: {
           DEFAULT: 'rgb(var(--line) / <alpha-value>)',
           soft: 'rgb(var(--line-soft) / <alpha-value>)',
+          strong: 'rgb(var(--line-strong) / <alpha-value>)',
         },
         brand: 'rgb(var(--brand) / <alpha-value>)',
         lime: {
@@ -40,20 +46,59 @@ export default <Partial<Config>>{
         ok: 'rgb(var(--ok) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'sans-serif'],
-        mono: ['JetBrains Mono', 'SFMono-Regular', 'SF Mono', 'ui-monospace', 'Menlo', 'Consolas', 'monospace'],
+        sans: [
+          'Inter',
+          'Inter var',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI Variable Text',
+          'Segoe UI',
+          'PingFang SC',
+          'HarmonyOS Sans SC',
+          'Microsoft YaHei UI',
+          'Noto Sans SC',
+          'sans-serif',
+        ],
+        mono: [
+          'JetBrains Mono',
+          'Cascadia Code',
+          'SFMono-Regular',
+          'SF Mono',
+          'ui-monospace',
+          'Menlo',
+          'Consolas',
+          'monospace',
+        ],
       },
       letterSpacing: { tightest: '-0.035em' },
-      borderRadius: { panel: '20px' },
+      borderRadius: {
+        panel: '20px',
+        card: '16px',
+        tile: '13px',
+      },
+      boxShadow: {
+        panel: 'var(--shadow-1)',
+        raised: 'var(--shadow-2)',
+        float: 'var(--shadow-3)',
+        pop: 'var(--shadow-pop)',
+      },
+      transitionDuration: { 150: '150ms', 220: '220ms', 380: '380ms' },
       keyframes: {
         rise: { '0%': { opacity: '0', transform: 'translateY(6px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
         fade: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
         slide: { '0%': { opacity: '0', transform: 'translateX(24px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+        'slide-in': { '0%': { opacity: '0', transform: 'translateX(-12px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+        shimmer: {
+          '0%': { backgroundPosition: '-180% 0' },
+          '100%': { backgroundPosition: '180% 0' },
+        },
       },
       animation: {
         rise: 'rise .32s cubic-bezier(.22,.68,0,1) both',
         fade: 'fade .2s ease both',
         slide: 'slide .28s cubic-bezier(.22,.68,0,1) both',
+        'slide-in': 'slide-in .26s cubic-bezier(.22,.68,0,1) both',
+        shimmer: 'shimmer 1.6s linear infinite',
       },
     },
   },

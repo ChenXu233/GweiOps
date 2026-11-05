@@ -1,47 +1,15 @@
-import type { IssueSeverity } from './issues'
+// packages/core/types/dashboard.ts
+// 形状全部来自 openapi.json(经 pnpm gen:api 生成),不再手抄字段。
+import type { components } from '../api/schema'
 
-export type SystemStatus = 'healthy' | 'warning' | 'critical'
-export type PendingIssueStatus = 'pending_review' | 'canary' | 'approved' | 'completed' | 'rolled_back'
+type S = components['schemas']
 
-export interface CanaryMetrics {
-  passRate: number
-  errorRate: number
-  p99Latency: string
-  memoryPeak: string
-}
+/** 系统态势。引擎目前恒为 "healthy",类型如实是字符串,不假装有更细的枚举。 */
+export type SystemStatus = S['DashboardDTO']['status']
 
-export interface DashboardData {
-  status: SystemStatus
-  consecutiveDays: number
-  lastIncident: string
-  pendingReview: number
-  overnightFixed: number
-  memoryEntries: number
-  mttr: number
-  successRate: number
-  activeAgents: number
-  healthHistory: boolean[]
-}
-
-export interface PendingIssue {
-  id: string
-  title: string
-  severity: IssueSeverity
-  patchCount: number
-  status: PendingIssueStatus
-}
-
-export interface OvernightEvent {
-  time: string
-  title: string
-  description: string
-  result: 'success' | 'failed'
-}
-
-export interface CanaryStatus {
-  issueId: string
-  issueTitle: string
-  currentStep: string
-  steps: string[]
-  metrics: CanaryMetrics
-}
+export type DashboardData = S['DashboardDTO']
+export type PendingIssue = S['PendingIssueDTO']
+export type PendingIssueStatus = PendingIssue['status']
+export type OvernightEvent = S['OvernightEventDTO']
+export type CanaryMetrics = S['CanaryMetricsDTO']
+export type CanaryStatus = S['CanaryStatusDTO']

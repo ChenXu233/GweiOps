@@ -1,50 +1,86 @@
+/* ===========================================================================
+   既未 · Gwei Ops — 视觉层
+   纸(paper)/ 面板(panel)/ 井(well) 是三层平面,层次靠 1px 描边加极淡阴影,
+   不靠重投影。信号色只有四个:lime = 活着且已验证、amber = 等你判断、
+   coral = 失控、brand = 可交互。solid 是可反色的大色块。
+   =========================================================================== */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===========================================================================
-   设计令牌
-   纸(paper)/ 面板(panel)/ 井(well) 是三层平面,层次靠 1px 描边而不是阴影。
-   信号色只有四个:lime = 活着且已验证、amber = 等你判断、coral = 失控、
-   brand = 可交互。solid 是可反色的大色块。
-   =========================================================================== */
 @layer base {
   :root {
+    /* 平面 */
     --paper: 247 246 242;
     --panel: 255 255 255;
+    --panel-2: 252 251 247;
     --well: 240 239 233;
+    --sunken: 234 233 226;
+
+    /* 墨 */
     --ink: 18 18 16;
     --ink-soft: 96 95 89;
     --ink-faint: 140 139 130;
+
+    /* 线 */
     --line: 227 225 216;
     --line-soft: 237 235 227;
+    --line-strong: 206 203 192;
+
+    /* 可反色大色块 */
     --solid: 18 18 16;
     --solid-ink: 247 246 242;
+
+    /* 语义色 */
     --brand: 88 78 232;
     --lime: 214 249 79;
     --lime-ink: 24 42 4;
     --amber: 198 134 12;
     --coral: 214 66 38;
     --ok: 24 138 78;
+
+    /* 动效:全站只用一条缓动曲线,避免各页面手感不一致 */
+    --ease: cubic-bezier(.22, .68, 0, 1);
+    --t-fast: 140ms;
+    --t-base: 220ms;
+    --t-slow: 380ms;
+
+    /* 阴影:极淡,只用来把浮起的面从背景里分出来 */
+    --shadow-1: 0 1px 2px rgb(18 18 16 / 0.04), 0 1px 1px rgb(18 18 16 / 0.03);
+    --shadow-2: 0 2px 6px rgb(18 18 16 / 0.05), 0 10px 26px -10px rgb(18 18 16 / 0.12);
+    --shadow-3: 0 16px 44px -14px rgb(18 18 16 / 0.20), 0 4px 12px rgb(18 18 16 / 0.05);
+    --shadow-pop: 0 24px 60px -20px rgb(18 18 16 / 0.26);
   }
 
   .dark {
     --paper: 8 8 10;
     --panel: 16 16 19;
+    --panel-2: 21 21 25;
     --well: 12 12 15;
+    --sunken: 10 10 13;
+
     --ink: 240 239 233;
     --ink-soft: 158 157 150;
     --ink-faint: 106 105 100;
+
     --line: 36 36 41;
     --line-soft: 26 26 30;
+    --line-strong: 58 58 65;
+
     --solid: 26 26 31;
     --solid-ink: 240 239 233;
+
     --brand: 137 124 255;
     --lime: 198 242 78;
     --lime-ink: 20 34 4;
     --amber: 245 186 62;
     --coral: 255 110 76;
     --ok: 74 222 128;
+
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.36);
+    --shadow-2: 0 2px 8px rgb(0 0 0 / 0.40), 0 14px 34px -14px rgb(0 0 0 / 0.60);
+    --shadow-3: 0 20px 52px -18px rgb(0 0 0 / 0.72), 0 4px 12px rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 28px 70px -22px rgb(0 0 0 / 0.78);
   }
 
   * {
@@ -96,26 +132,88 @@
     outline: 2px solid rgb(var(--brand));
     outline-offset: 2px;
   }
+
+  /* 系统里开了"减少动态效果"就把动效收掉:状态仍然可见,只是不再移动 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
-  .card {
+  /* ---------------------------------------------------------------------
+     表面
+     --------------------------------------------------------------------- */
+  .panel {
     @apply rounded-panel border border-line bg-panel;
+    box-shadow: var(--shadow-1);
   }
 
-  .card-well {
-    @apply rounded-panel border border-line-soft bg-well;
+  .panel-quiet {
+    @apply rounded-panel border border-line-soft bg-panel-2;
   }
 
-  /* 小号等宽标签:全站唯一的"仪表盘语气" */
+  .panel-inset {
+    @apply rounded-card border border-line-soft bg-well;
+  }
+
+  /* 可交互面板:悬停时抬起一像素并加深阴影 */
+  .panel-lift {
+    @apply transition duration-200 ease-[var(--ease)];
+    transition-property: transform, box-shadow, border-color;
+  }
+
+  .panel-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
+    border-color: rgb(var(--line-strong));
+  }
+
+  /* 页面底噪:两团几乎看不见的色雾,给纯色背景一点纵深 */
+  .app-bg {
+    background-image:
+      radial-gradient(1100px 520px at 8% -10%, rgb(var(--brand) / 0.07), transparent 62%),
+      radial-gradient(900px 460px at 96% 0%, rgb(var(--lime) / 0.12), transparent 64%);
+  }
+
+  .dark .app-bg {
+    background-image:
+      radial-gradient(1100px 520px at 8% -10%, rgb(var(--brand) / 0.10), transparent 62%),
+      radial-gradient(900px 460px at 96% 0%, rgb(var(--lime) / 0.05), transparent 64%);
+  }
+
+  /* ---------------------------------------------------------------------
+     排版
+     --------------------------------------------------------------------- */
   .mono-label {
     @apply font-mono text-[10px] uppercase leading-none tracking-[0.16em] text-ink-faint;
+  }
+
+  .eyebrow {
+    @apply font-mono text-[10px] uppercase leading-none tracking-[0.18em] text-ink-faint;
   }
 
   .num {
     font-variant-numeric: tabular-nums;
   }
 
+  .page-title {
+    @apply text-[26px] font-semibold leading-none tracking-tightest;
+  }
+
+  .page-desc {
+    @apply mt-2 text-[12.5px] leading-relaxed text-ink-soft;
+  }
+
+  /* ---------------------------------------------------------------------
+     控件
+     --------------------------------------------------------------------- */
   .btn {
     @apply inline-flex h-9 select-none items-center justify-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40;
   }
@@ -132,8 +230,16 @@
     @apply btn border border-line bg-panel text-ink hover:border-ink/25 hover:bg-well;
   }
 
+  .btn-danger {
+    @apply btn border border-coral/30 bg-coral/10 text-coral hover:bg-coral/20;
+  }
+
   .btn-icon {
     @apply inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition-colors hover:bg-well hover:text-ink;
+  }
+
+  .btn-sm {
+    @apply h-8 px-3 text-[12px];
   }
 
   .tab {
@@ -142,6 +248,83 @@
 
   .tab-active {
     @apply bg-ink text-paper hover:bg-ink hover:text-paper;
+  }
+
+  .field {
+    @apply h-9 w-full rounded-xl border border-line bg-panel px-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-brand/60;
+  }
+
+  .kbd {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line bg-panel px-1 font-mono text-[10px] text-ink-faint;
+  }
+
+  /* ---------------------------------------------------------------------
+     侧边导航
+     --------------------------------------------------------------------- */
+  .nav-link {
+    @apply relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink-soft transition-colors duration-200 ease-[var(--ease)];
+  }
+
+  .nav-link:hover {
+    @apply bg-well text-ink;
+  }
+
+  .nav-link-active {
+    @apply bg-ink text-paper;
+  }
+
+  .nav-link-active:hover {
+    @apply bg-ink text-paper;
+  }
+
+  .nav-section {
+    @apply px-2.5 pb-1 pt-4 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-faint;
+  }
+
+  /* ---------------------------------------------------------------------
+     小块面
+     --------------------------------------------------------------------- */
+  .tile {
+    @apply rounded-card border border-line bg-panel p-4;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-line bg-well px-2 py-0.5 text-[11px] font-medium text-ink-soft;
+  }
+
+  .chip-ok {
+    @apply border-ok/25 bg-ok/10 text-ok;
+  }
+
+  .chip-warn {
+    @apply border-amber/30 bg-amber/10 text-amber;
+  }
+
+  .chip-bad {
+    @apply border-coral/30 bg-coral/10 text-coral;
+  }
+
+  .chip-info {
+    @apply border-brand/25 bg-brand/10 text-brand;
+  }
+
+  .chip-lime {
+    @apply border-transparent bg-lime text-lime-ink;
+  }
+
+  .hairline {
+    @apply border-b border-line/70;
+  }
+
+  /* ---------------------------------------------------------------------
+     状态
+     --------------------------------------------------------------------- */
+  .dot {
+    @apply inline-block h-1.5 w-1.5 shrink-0 rounded-full;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-well;
   }
 
   .glass {
@@ -156,8 +339,21 @@
     backdrop-filter: blur(20px) saturate(180%);
   }
 
-  .kbd {
-    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line bg-panel px-1 font-mono text-[10px] text-ink-faint;
+  /* 路由切换:轻微上浮 + 淡入,和卡片抬起的缓动同一条曲线 */
+  .page-enter-active,
+  .page-leave-active {
+    transition:
+      opacity var(--t-base) var(--ease),
+      transform var(--t-base) var(--ease);
+  }
+
+  .page-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  .page-leave-to {
+    opacity: 0;
   }
 
   .grid-bg {
@@ -177,5 +373,16 @@
 
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* 统一的手感:颜色、边框、阴影、位移共用同一条缓动 */
+  .transition-ui {
+    transition:
+      color var(--t-fast) var(--ease),
+      background-color var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-base) var(--ease),
+      transform var(--t-base) var(--ease),
+      opacity var(--t-fast) var(--ease);
   }
 }
