@@ -24,6 +24,7 @@ from .model import (
     VERDICT_VETOED,
 )
 from .policy import EXECUTE, DEFAULT_HUMAN_RESPONSE_S, Policy
+from .undo import undo_state
 
 # 旧的模块级常量,保留给已有调用方;真正的口径在 Policy.human_response_s。
 HUMAN_RESPONSE_S = DEFAULT_HUMAN_RESPONSE_S
@@ -260,6 +261,12 @@ async def rollback(
     _assert_binding(unit, provider)
     if not unit.handle:
         raise ValueError("没有句柄的单元无法回滚")
+
+    # 窗口过去了就不该再兑现撤销:下游保留的旧状态已经不在保证范围内。
+    state = undo_state(unit.to_dict())
+    if not state.undoable:
+        raise ValueError(f"这次变更已经不能撤:{state.reason}")
+
     await provider.undo(unit.effect.undo_task, unit.effect.args, unit.handle)
     unit.verdict = VERDICT_ROLLED_BACK
     unit.reason = reason

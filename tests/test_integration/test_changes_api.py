@@ -59,6 +59,8 @@ def _unit(verdict="kept", handle="42", unit_id="u1"):
         tenant="",
         binding="github",
         handle=handle,
+        # 撤销能不能兑现,靠的是写入时记下的窗口
+        window=Window(unbounded=True, source="test"),
         verdict=verdict,
         reason="验证通过",
     )

@@ -24,6 +24,7 @@ from .policy import (
     window_label,
 )
 from .runner import HUMAN_RESPONSE_S, apply, approve, rollback, veto
+from .undo import UndoState, undo_state
 from .ledger import JsonlLedger, Ledger, create_ledger
 
 __all__ = [
@@ -39,6 +40,8 @@ __all__ = [
     "window_label",
     "apply",
     "approve",
+    "UndoState",
+    "undo_state",
     "veto",
     "rollback",
     "HUMAN_RESPONSE_S",
