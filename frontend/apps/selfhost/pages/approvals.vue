@@ -6,6 +6,12 @@ import type { Tone } from '@gwei/core/utils/tone'
 const { items, total, loading, error, actingId, actingAction, failure, notice, groups, refresh, approve, veto } =
   useApprovals()
 
+/** 页首那排数字:待放行总数,再加按阻断原因拆开的条数。 */
+const overview = computed(() => [
+  { label: '待放行', value: total.value, hint: '停在账本里等人点头的改变' },
+  ...groups.value.map((g) => ({ label: g.label, value: g.count })),
+])
+
 /** 二次确认:一次点击只是"把手放在按钮上",再点一次才算。 */
 const confirming = ref<{ id: string; action: ApprovalAction } | null>(null)
 
@@ -78,7 +84,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="待放行"
       title="需要人点头的改变"
@@ -93,34 +99,11 @@ onUnmounted(() => {
     </PageHeader>
 
     <!-- 概览:待放行总数 + 阻断原因归类 -->
-    <section class="panel flex flex-wrap items-center gap-x-7 gap-y-4 p-4 sm:p-5">
-      <div class="flex items-center gap-3">
-        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-card bg-ink text-paper">
-          <AppIcon name="shield-alert" :size="17" />
-        </span>
-        <div>
-          <div class="mono-label">待放行</div>
-          <div class="num mt-1.5 text-[26px] font-semibold leading-none">{{ total }}</div>
-        </div>
-      </div>
+    <StatBand :columns="4" :stats="overview" />
 
-      <div class="hidden h-10 w-px bg-line sm:block" />
-
-      <div class="min-w-0">
-        <div class="mono-label">按阻断原因归类</div>
-        <div class="mt-2 flex flex-wrap items-center gap-1.5">
-          <span v-for="g in groups" :key="g.kind" class="chip" :class="toneChip[g.tone]">
-            {{ g.label }}
-            <span class="num font-mono text-[10px] opacity-70">{{ g.count }}</span>
-          </span>
-          <span v-if="!groups.length" class="text-[12px] text-ink-faint">队列里没有要归类的阻断。</span>
-        </div>
-      </div>
-
-      <p class="text-[11.5px] leading-relaxed text-ink-faint sm:flex-1">
-        归类是我们照引擎写下的原因文本读出来的,不是引擎给的字段。
-      </p>
-    </section>
+    <p v-if="groups.length" class="text-[11.5px] leading-relaxed text-ink-faint">
+      归类是我们照引擎写下的原因文本读出来的,不是引擎给的字段。
+    </p>
 
     <!-- 读不到队列 -->
     <div

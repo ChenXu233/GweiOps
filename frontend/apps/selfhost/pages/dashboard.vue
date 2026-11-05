@@ -76,7 +76,7 @@ function stepIndex(steps: string[], current: string) {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader eyebrow="CONTROL ROOM" title="控制室" description="夜里发生的事，早上只做判断。">
       <template #actions>
         <StatusPip tone="ok" pulse label="实时同步" />
@@ -112,9 +112,7 @@ function stepIndex(steps: string[], current: string) {
         <section
           class="relative col-span-12 flex flex-col justify-between overflow-hidden rounded-panel bg-lime p-6 text-lime-ink lg:col-span-7"
         >
-          <div
-            class="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/25 blur-3xl"
-          />
+
           <div class="relative flex items-start justify-between">
             <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-lime-ink/55">系统态势</span>
             <span
@@ -189,7 +187,10 @@ function stepIndex(steps: string[], current: string) {
             </div>
           </NuxtLink>
 
-          <div class="flex flex-col justify-between rounded-panel bg-solid p-5 text-solid-ink">
+          <div class="relative flex flex-col justify-between overflow-hidden rounded-panel bg-solid p-5 text-solid-ink">
+            <div
+              class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/[0.07] to-transparent"
+            />
             <div class="flex items-center justify-between">
               <span class="font-mono text-[10px] uppercase tracking-[0.16em] text-solid-ink/45">昨夜自动修复</span>
               <AppIcon name="moon" :size="15" class="text-solid-ink/40" />
@@ -203,20 +204,7 @@ function stepIndex(steps: string[], current: string) {
           </div>
         </div>
 
-        <div
-          v-for="m in metrics"
-          :key="m.label"
-          class="tile col-span-6 transition-colors duration-200 ease-[var(--ease)] hover:border-line-strong lg:col-span-3"
-        >
-          <div class="flex items-center justify-between">
-            <span class="eyebrow">{{ m.label }}</span>
-            <AppIcon :name="m.icon" :size="13" class="text-ink-faint" />
-          </div>
-          <div class="mt-3.5 flex items-baseline gap-1">
-            <span class="num text-[23px] font-semibold leading-none tracking-tight">{{ m.value }}</span>
-            <span class="text-[11px] text-ink-faint">{{ m.unit }}</span>
-          </div>
-        </div>
+        <StatBand class="col-span-12" :columns="4" :stats="metrics" />
 
         <section class="panel col-span-12 overflow-hidden lg:col-span-7">
           <div class="flex items-center justify-between border-b border-line px-5 py-3.5">

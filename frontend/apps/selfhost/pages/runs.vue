@@ -20,6 +20,20 @@ const successRate = computed<number | null>(() => {
   return ((ended - failedCount.value) / ended) * 100
 })
 
+/** 页首那排数字。口径与表格一致:分母是"已结束的执行",不是全部。 */
+const overview = computed(() => [
+  { label: '执行总数', value: total.value, hint: '引擎记录过的会话数' },
+  { label: '进行中', value: runningCount.value, hint: '还没结束的执行' },
+  {
+    label: '成功率',
+    value: successRate.value === null ? '—' : successRate.value.toFixed(1) + '%',
+    hint:
+      successRate.value === null
+        ? '结束一次执行后才有分母'
+        : endedRows.value.length + ' 次已结束执行中,' + failedCount.value + ' 次失败',
+  },
+])
+
 const visible = computed(() => {
   if (filter.value === 'running') return items.value.filter((r) => r.endedAt === null)
   if (filter.value === 'ended') return endedRows.value
@@ -89,7 +103,7 @@ function toggle(row: RunRow) {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="RUNS"
       title="执行记录"
@@ -115,33 +129,7 @@ function toggle(row: RunRow) {
     </div>
 
     <!-- 概览 -->
-    <div class="grid gap-3 sm:grid-cols-3">
-      <div class="tile">
-        <div class="eyebrow">执行总数</div>
-        <div class="num mt-2 text-[22px] font-semibold leading-none sm:text-[26px]">{{ total }}</div>
-        <div class="mt-2 text-[11.5px] leading-relaxed text-ink-faint">引擎记录过的会话数</div>
-      </div>
-
-      <div class="tile">
-        <div class="eyebrow">进行中</div>
-        <div class="num mt-2 text-[22px] font-semibold leading-none sm:text-[26px]">{{ runningCount }}</div>
-        <div class="mt-2 text-[11.5px] leading-relaxed text-ink-faint">还没结束的执行</div>
-      </div>
-
-      <div class="tile">
-        <div class="eyebrow">成功率</div>
-        <div class="mt-2 leading-none">
-          <span v-if="successRate === null" class="text-[13px] leading-snug text-ink-faint">
-            暂无已结束的执行
-          </span>
-          <span v-else class="num text-[22px] font-semibold sm:text-[26px]">{{ successRate.toFixed(1) }}%</span>
-        </div>
-        <div class="mt-2 text-[11.5px] leading-relaxed text-ink-faint">
-          <template v-if="successRate === null">结束一次执行后才有分母</template>
-          <template v-else>{{ endedRows.length }} 次已结束执行中,{{ failedCount }} 次失败</template>
-        </div>
-      </div>
-    </div>
+    <StatBand :columns="3" :stats="overview" />
 
     <p class="text-[11.5px] text-ink-faint">
       进行中与成功率按本次加载的 {{ items.length }} 条记录统计;引擎共记录 {{ total }} 次执行。

@@ -61,7 +61,7 @@ const filters: { key: 'all' | IssueStatus; label: string }[] = [
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader eyebrow="ISSUES" title="议题" description="从信号到方案，每一步都留痕。">
       <template #actions>
         <span class="eyebrow">{{ data.length }} 条</span>
