@@ -33,18 +33,27 @@ OUT = ROOT / "frontend" / "apps" / "selfhost" / "public" / "fonts" / "gwei-sans-
 # 只收中文(含中文标点、全角符号);拉丁字母交给 Inter
 CJK = re.compile(r"[\u2e80-\u303f\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]")
 
-# 运行期才会出现的中文(议题标题、引擎返回的 reason)不在源码里,
-# 所以补一批高频字兜底,减少同一条句子里两种字体的概率。
-FALLBACK_TEXT = (
-    "的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经"
-    "十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严龙飞"
-    "待放行变更账本议题仓库插件设置控制室信号源执行记录指标观测节点集群滚动回滚阻断放量窗口观测验证撤消撤销重试失败成功等待超时"
-    "秒分钟小时天周月年今日昨夜凌晨刚才最近全部加载中刷新读取错误警告提示说明注意暂无数据空状态"
-)
 ALWAYS = "·—…“”‘’《》〈〉「」『』【】〔〕、。，；：？！（）％＋－×÷＝"
 
 
-def collect() -> set[str]:
+def gb2312_level1() -> set[str]:
+    """GB2312 一级汉字,3755 个。
+
+    运行期才会出现的中文(议题标题、引擎写的 reason)预先扫不到,
+    用这张标准表兜住:日常技术/运营文案的用字绝大部分落在里面。
+    由编码表直接算出来,不联网、不会过期。
+    """
+    chars: set[str] = set()
+    for high in range(0xB0, 0xD8):
+        for low in range(0xA1, 0xFF):
+            try:
+                chars.add(bytes([high, low]).decode("gb2312"))
+            except UnicodeDecodeError:
+                continue
+    return chars
+
+
+def collect(scope: str = "common") -> set[str]:
     chars: set[str] = set()
     patterns = ("*.vue", "*.ts", "*.js", "*.css")
     for base in SRC_DIRS:
@@ -57,7 +66,8 @@ def collect() -> set[str]:
                 except (UnicodeDecodeError, OSError):
                     continue
                 chars.update(CJK.findall(text))
-    chars.update(CJK.findall(FALLBACK_TEXT))
+    if scope == "common":
+        chars.update(gb2312_level1())
     chars.update(ch for ch in ALWAYS if CJK.match(ch))
     return chars
 
@@ -65,6 +75,12 @@ def collect() -> set[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, help="源字体路径(.ttf/.otf,可变字体也行)")
+    parser.add_argument(
+        "--scope",
+        choices=("common", "used"),
+        default="common",
+        help="common=站内用字 + GB2312 一级字(默认);used=只收站内用字",
+    )
     parser.add_argument(
         "--axis",
         default="400:600",
@@ -79,8 +95,8 @@ def main() -> int:
         print(f"找不到源字体: {source}", file=sys.stderr)
         return 2
 
-    chars = collect()
-    print(f"字符数: {len(chars)}")
+    chars = collect(scope=args.scope)
+    print(f"字符数: {len(chars)}(scope={args.scope})")
 
     # 可变轴先收窄:Noto Sans SC 是 100-900,界面只用 400/500/600,
     # 收窄后 gvar 小一大圈(235KB → 211KB)
@@ -115,7 +131,10 @@ def main() -> int:
         f"--output-file={OUT}",
         "--flavor=woff2",
         # 保留可变字重轴:一个文件同时给 400 / 500 / 600
-        "--layout-features=kern",
+        # 中文用不到连字/字距调整,清空布局特性表能再省一点
+        "--layout-features=",
+        "--no-glyph-names",
+        "--no-legacy-cmap",
         "--no-hinting",
         "--drop-tables+=DSIG",
         "--name-IDs=1,2,3,4,5,6",

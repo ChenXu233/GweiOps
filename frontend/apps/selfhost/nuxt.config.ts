@@ -49,6 +49,12 @@ export default defineNuxtConfig({
         { name: 'color-scheme', content: 'light dark' },
         { name: 'description', content: '把外部信号变成外部世界里已经验证过的改变。' },
       ],
+      // 脚本完全没跑起来时,别让首屏那个启动画面一直挂着
+      noscript: [
+        {
+          innerHTML: '<style>.boot{display:none!important}</style>',
+        },
+      ],
       script: [
         {
           // 首帧前定主题:避免亮暗模式闪一下
