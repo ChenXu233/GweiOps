@@ -38,8 +38,8 @@ SIGNAL = {
 }
 
 
-def test_signal_without_an_issue_gets_no_comment_effect():
-    """监控信号没有回评载体:参考实现给空 effects,而不是编一个 comment.create。"""
+def test_alert_without_a_declared_action_gets_no_effect():
+    """监控告警没声明动作就用空 effects:不编一个 comment.create 出来。"""
     builder = builder_mod.IntentBuilder(FakeResolver())
     intent = asyncio.run(
         builder.propose(
@@ -54,7 +54,7 @@ def test_signal_without_an_issue_gets_no_comment_effect():
         )
     )
     assert intent.effects == ()
-    assert "没有可回评的载体" in intent.summary
+    assert "没有声明动作" in intent.summary
 
 
 def test_parse_intent_rejects_missing_summary():

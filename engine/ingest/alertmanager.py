@@ -51,6 +51,7 @@ def from_alert(alert: dict[str, Any]) -> dict[str, Any] | None:
         extra={
             "alertname": str(labels.get("alertname") or ""),
             "labels": dict(labels),
+            "annotations": dict(annotations),
             "started_at": str(alert.get("startsAt") or ""),
         },
     )

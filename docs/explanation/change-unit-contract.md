@@ -57,7 +57,9 @@ intent 是推理提供者(harness 或参考实现)唯一被允许产出的东西
 | `severity` | `critical` / `medium` / `low` |
 | `ref` | 来源侧的稳定标识(issue 号 / 告警 fingerprint) |
 
-来源专有的字段随信号一起交出去(`github` 带 `repo` 与 `issue_number`),由提供者决定用不用——回评这种效果需要它们,而平台不去理解任何一方的语法。
+来源专有的字段随信号一起交出去(`github` 带 `repo` 与 `issue_number`,告警带 `labels` 与 `annotations`),由提供者决定用不用——回评这种效果需要它们,而平台不去理解任何一方的语法。
+
+监控来源可以用 `annotations.gwei_effect` 随告警带一个动作声明(JSON:`{capability, args}`)。参考提供者只做翻译,不替运维决定做什么;没有声明就是空 effects。动作声明指向一个没人提供的能力时,该效果被记成 `blocked`,其余效果照常推进——一个够不着的动作不该让整条链路崩掉。
 
 ## 4. 两条路径
 

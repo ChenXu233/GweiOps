@@ -64,7 +64,13 @@ class IntentBuilder(PluginBase):
         if not isinstance(signal, dict) or not signal.get("title"):
             raise ValueError("signal 缺少 title")
 
-        # 参考实现只会把 issue 翻成一条回评。没有 repo 与 issue 号的信号(例如监控告警)
+        # 监控告警自带动作声明时,直接翻译;没有就返回空 effects(见 alerts.py)
+        if signal.get("source") == "alertmanager":
+            from .alerts import intent_from_alert
+
+            return parse_intent(intent_from_alert(signal))
+
+        # 其余来源:参考实现只会把 issue 翻成一条回评。没有 repo 与 issue 号
         # 不该被硬塞一个 comment.create:空 effects 是合法结论。
         if not signal.get("repo") or signal.get("issue_number") in (None, ""):
             return parse_intent(
