@@ -280,7 +280,21 @@ async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> di
                 continue
             args["body"] = gated["payload"]["body"]
 
-        provider, decl = registry.effect_decl(capability, tenant=tenant, binding=binding)
+        try:
+            provider, decl = registry.effect_decl(capability, tenant=tenant, binding=binding)
+        except LookupError as e:
+            # intent 点了一个没人提供的能力(比如告警声明的动作还没装):
+            # 记成阻断,不让整个工作流因为一个效果崩掉。
+            applied.append(
+                {
+                    "capability": capability,
+                    "verdict": "blocked",
+                    "handle": None,
+                    "reason": f"没有提供者声明这个能力: {e}",
+                }
+            )
+            continue
+
         unit = ChangeUnit(
             intent={"workflow": idem_base, "summary": parsed.summary},
             effect=decl.to_effect(args),

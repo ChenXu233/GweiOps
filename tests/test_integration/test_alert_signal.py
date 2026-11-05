@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 
 import httpx
 import pytest
@@ -193,6 +194,91 @@ def test_alert_signal_without_a_provider_produces_no_effect(monkeypatch):
     assert intent["effects"] == []
     assert "没有可执行的意图" in intent["summary"]
     assert intent["evidence"][0]["kind"] == "alertmanager"
+
+
+# ---------------------------------------------------------------------------
+# 告警声明动作:平台只翻译,不猜
+# ---------------------------------------------------------------------------
+
+
+def _alert_signal(**annotations):
+    return {
+        "source": "alertmanager",
+        "subject": "api-gateway",
+        "title": "内存占用过高",
+        "detail": "RSS 超过 2GiB",
+        "severity": "critical",
+        "ref": "abc123",
+        "labels": {"alertname": "HighMemory"},
+        "annotations": annotations,
+    }
+
+
+def test_alert_declaration_becomes_one_effect():
+    import json as _json
+
+    from engine.change_unit.intent import parse_intent
+
+    plugin_mod = importlib.import_module("plugins.builtin.agents.intent-builder.plugin")
+    alerts_mod = importlib.import_module("plugins.builtin.agents.intent-builder.alerts")
+
+    signal = _alert_signal(
+        gwei_effect=_json.dumps(
+            {"capability": "compose.scale", "args": {"service": "api", "replicas": 10}}
+        )
+    )
+    effect = alerts_mod.declared_effect(signal)
+    assert effect == {
+        "capability": "compose.scale",
+        "args": {"service": "api", "replicas": 10},
+    }
+
+    intent = asyncio.run(plugin_mod.IntentBuilder().propose({"signal": signal}))
+    parsed = parse_intent(intent.to_dict())
+    assert len(parsed.effects) == 1
+    assert parsed.effects[0]["capability"] == "compose.scale"
+
+
+def test_broken_declaration_is_treated_as_absent():
+    alerts_mod = importlib.import_module("plugins.builtin.agents.intent-builder.alerts")
+    assert alerts_mod.declared_effect(_alert_signal(gwei_effect="{not json")) is None
+    assert alerts_mod.declared_effect(_alert_signal(gwei_effect='{"args": {}}')) is None
+    assert alerts_mod.declared_effect(_alert_signal()) is None
+
+
+def test_alert_without_declaration_yields_empty_effects():
+    alerts_mod = importlib.import_module("plugins.builtin.agents.intent-builder.alerts")
+    intent = alerts_mod.intent_from_alert(_alert_signal())
+    assert intent["effects"] == []
+    assert "没有声明动作" in intent["summary"]
+
+
+def test_intent_naming_an_unknown_capability_blocks_instead_of_crashing(tmp_path, monkeypatch):
+    """告警声明的动作没人提供时,记成阻断,不让整个工作流崩。"""
+    from engine.workflows import pipeline
+
+    monkeypatch.setattr(pipeline.config.settings, "change_ledger_backend", "file")
+    monkeypatch.setattr(
+        pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")
+    )
+
+    def no_provider(*args, **kwargs):
+        raise LookupError("no provider declares effect: compose.scale")
+
+    monkeypatch.setattr(pipeline.registry, "effect_decl", no_provider)
+
+    intent = {
+        "version": 1,
+        "summary": "针对 api-gateway 执行 compose.scale",
+        "evidence": [],
+        "effects": [{"capability": "compose.scale", "args": {"service": "api"}}],
+        "rationale": "r",
+    }
+    out = asyncio.run(
+        pipeline._apply_effects_impl(intent, {"tenant_slug": "default"}, "wf-alert:effects")
+    )
+    assert out["applied"][0]["verdict"] == "blocked"
+    assert "没有提供者" in out["applied"][0]["reason"]
 
 
 def test_payload_signal_is_used_verbatim():
