@@ -388,6 +388,30 @@ async def apply_effects_step(intent: dict, payload: dict) -> dict:
     return await _apply_effects_impl(intent, payload, f"{DBOS.workflow_id}:effects")
 
 
+async def _handle_incident_impl(payload: dict) -> dict | None:
+    """有 agent 提供者就让它整场处理;没有就返回 None,走原来的声明式路径。
+
+    两条路落在同一本账上:agent 每动一次世界,都是一个变更单元。
+    """
+    if registry.best_capability_provider("incident.handle") is None:
+        return None
+    signal = signal_from_payload(payload)
+    return await registry.run_capability(
+        "incident.handle",
+        {
+            "signal": signal,
+            "tenant": payload.get("tenant_slug", ""),
+            "binding": config.settings.default_binding,
+            "idem_base": f"{DBOS.workflow_id}:incident",
+        },
+    )
+
+
+@DBOS.step()
+async def handle_incident_step(payload: dict) -> dict | None:
+    return await _handle_incident_impl(payload)
+
+
 @DBOS.step()
 async def propose_alert_intent_step(payload: dict) -> dict:
     return await _propose_intent_impl(payload, {}, [])
@@ -400,6 +424,10 @@ async def alert_triage_workflow(payload: dict) -> dict:
     信号本身不携带动作。能做什么由 intent 提供者决定;没有提供者时
     effects 为空,工作流正常结束——不假装做了什么。
     """
+    handled = await handle_incident_step(payload)
+    if handled is not None:
+        return handled
+
     intent = await propose_alert_intent_step(payload)
     applied = await apply_effects_step(intent, payload)
 

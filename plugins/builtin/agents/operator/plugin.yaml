@@ -1,0 +1,9 @@
+name: operator
+version: 0.1.0
+type: agent
+description: 带出口的值班 agent —— 自己决定看什么、做什么,每次改世界都过闸门
+class_name: OperatorAgent
+capabilities:
+  - incident.handle
+tasks:
+  incident.handle: handle

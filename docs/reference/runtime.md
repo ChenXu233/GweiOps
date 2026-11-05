@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → `intent.propose` → 效果单元(回评,可撤销) |
 | `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 补丁建议 → `patch.generated` transform → `intent.propose` → 效果单元(回评,不自动建 PR) |
-| `alert_triage_workflow` | 监控告警 firing | 归化信号 → `intent.propose` → 效果单元(没有补丁、没有回评) |
+| `alert_triage_workflow` | 监控告警 firing | 归化信号 → 有 `incident.handle` 提供者就整场交给 agent,否则 `intent.propose` → 效果单元(没有补丁、没有回评) |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
