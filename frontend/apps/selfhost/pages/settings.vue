@@ -49,7 +49,7 @@ const sections = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="SETTINGS"
       title="设置"

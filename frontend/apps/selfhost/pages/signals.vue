@@ -105,7 +105,7 @@ function formatSync(value: string): string {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="SIGNALS"
       title="信号源"
@@ -127,27 +127,15 @@ function formatSync(value: string): string {
     </div>
 
     <!-- 一眼看完的四个数 -->
-    <div class="panel-inset flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3.5">
-      <div>
-        <div class="mono-label">接入口</div>
-        <div class="num mt-1 text-[16px] font-semibold">{{ entries.length }}</div>
-      </div>
-      <span class="hidden h-8 w-px bg-line sm:block" />
-      <div>
-        <div class="mono-label">订阅仓库</div>
-        <div class="num mt-1 text-[16px] font-semibold">{{ repos.length }}</div>
-      </div>
-      <span class="hidden h-8 w-px bg-line sm:block" />
-      <div>
-        <div class="mono-label">插件</div>
-        <div class="num mt-1 text-[16px] font-semibold">{{ plugins.length }}</div>
-      </div>
-      <span class="hidden h-8 w-px bg-line sm:block" />
-      <div>
-        <div class="mono-label">可用能力</div>
-        <div class="num mt-1 text-[16px] font-semibold">{{ capabilities.length }}</div>
-      </div>
-    </div>
+    <StatBand
+      :columns="4"
+      :stats="[
+        { label: '接入口', value: entries.length, hint: '引擎收信的 webhook 路径' },
+        { label: '订阅仓库', value: repos.length, hint: '当前租户绑定、引擎会接的仓库' },
+        { label: '插件', value: plugins.length, hint: '注册表里已发现的插件' },
+        { label: '可用能力', value: capabilities.length, hint: '插件声明、引擎可调度的能力' },
+      ]"
+    />
 
     <!-- 第一块:接入口 -->
     <section class="space-y-3">

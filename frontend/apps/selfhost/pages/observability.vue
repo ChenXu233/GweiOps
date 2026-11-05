@@ -13,6 +13,25 @@ const snapshotTime = computed(() => {
   return p(at.getHours()) + ':' + p(at.getMinutes()) + ':' + p(at.getSeconds())
 })
 
+/** 页首那排数字。口径和页面正文一致,不在这里额外加工。 */
+const overview = computed(() => [
+  {
+    label: '指标序列',
+    value: total.value,
+    hint: '收集器里当前存在的每一条时间序列,同名不同标签算两条。',
+  },
+  {
+    label: '分组',
+    value: groupCount.value,
+    hint: '按指标名的前缀归堆,同堆的放在一起看。',
+  },
+  {
+    label: '快照',
+    value: snapshotTime.value,
+    hint: '这是引擎当前的快照,不是时间序列——刷新一次就是一次新的读数。',
+  },
+])
+
 /** 大数用千分位,小数保留到能看清差异的位数。 */
 function formatValue(value: number): string {
   if (!Number.isFinite(value)) return '—'
@@ -35,7 +54,7 @@ function sortedLabels(row: MetricRow): Array<[string, string]> {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="OBSERVABILITY"
       title="指标观测"
@@ -50,35 +69,7 @@ function sortedLabels(row: MetricRow): Array<[string, string]> {
       </template>
     </PageHeader>
 
-    <section class="grid gap-4 sm:grid-cols-3">
-      <div class="tile">
-        <div class="eyebrow">指标序列</div>
-        <div class="num mt-2.5 text-[26px] font-semibold leading-none tracking-tightest">
-          {{ total }}
-        </div>
-        <p class="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
-          收集器里当前存在的每一条时间序列,同名不同标签算两条。
-        </p>
-      </div>
-
-      <div class="tile">
-        <div class="eyebrow">分组</div>
-        <div class="num mt-2.5 text-[26px] font-semibold leading-none tracking-tightest">
-          {{ groupCount }}
-        </div>
-        <p class="mt-2.5 text-[11.5px] leading-relaxed text-ink-faint">
-          按指标名的前缀归堆,同堆的放在一起看。
-        </p>
-      </div>
-
-      <div class="tile flex flex-col justify-between">
-        <div class="eyebrow">快照</div>
-        <p class="mt-2.5 text-[12px] leading-relaxed text-ink-soft">
-          这是引擎当前的快照,不是时间序列——刷新一次就是一次新的读数,不是下一秒的预测。
-        </p>
-        <div class="num mt-3 text-[11px] text-ink-faint">读数于 {{ snapshotTime }} · {{ pollText }}</div>
-      </div>
-    </section>
+    <StatBand :columns="3" :stats="overview" />
 
     <p class="text-[11.5px] leading-relaxed text-ink-faint">
       分组按指标名前缀;“变化”是同名指标里这一条减去上一条序列的差值,只有一条序列的指标没有可比对象。

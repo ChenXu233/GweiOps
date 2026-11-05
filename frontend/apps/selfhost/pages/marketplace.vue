@@ -7,7 +7,7 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="PLUGINS"
       title="插件"

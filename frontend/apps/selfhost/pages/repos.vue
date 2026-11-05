@@ -23,7 +23,7 @@ const statusChip: Record<string, string> = {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <PageHeader
       eyebrow="REPOSITORIES"
       title="仓库"

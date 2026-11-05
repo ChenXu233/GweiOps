@@ -72,9 +72,11 @@ export default <Partial<Config>>{
       },
       letterSpacing: { tightest: '-0.035em' },
       borderRadius: {
-        panel: '20px',
-        card: '16px',
-        tile: '13px',
+        // 圆润的节奏:外壳 24 / 分区 18 / 小块 16 / 控件 14
+        panel: '24px',
+        card: '18px',
+        tile: '16px',
+        control: '14px',
       },
       boxShadow: {
         panel: 'var(--shadow-1)',
