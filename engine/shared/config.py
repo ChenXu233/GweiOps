@@ -234,6 +234,10 @@ class Settings(BaseSettings):
     # token:tenant:actor:scope,逗号分隔;tenant 写 * 表示不限租户;空 = 不鉴权
     api_tokens: str = ""
 
+    # ---- 出口 ----
+    # 一个租户每小时能通过出口改几次世界;0 表示不限。循环搬进沙箱后,平台只能数次数。
+    agent_max_exits_per_hour: int = 20
+
     # ---- 变更单元 ----
     default_binding: str = "github"  # 效果执行的下游目标;多目标解析前只有一个
     alertmanager_webhook_token: str = ""  # 监控信号入口的共享令牌;空 = 拒绝接收

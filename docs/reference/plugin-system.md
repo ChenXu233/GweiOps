@@ -150,7 +150,7 @@ effects:
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
 - triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
-- `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账;
+- `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账。跑在进程外沙箱里的 harness 不经过这个接缝,它直接调[出口端点](runtime.md);
 - `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为这次查询付钱。模型拿不准就给空 effects —— 空效果是合法结论,编一个动作不是;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不重复执行。

@@ -366,6 +366,40 @@
         "title": "DashboardDTO",
         "type": "object"
       },
+      "ExitCallDTO": {
+        "additionalProperties": true,
+        "description": "一次出口调用。args 的形状由出口清单决定,这里只兜住外层。",
+        "properties": {
+          "args": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Args",
+            "type": "object"
+          },
+          "binding": {
+            "default": "",
+            "title": "Binding",
+            "type": "string"
+          },
+          "call_id": {
+            "default": "",
+            "title": "Call Id",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "title": "ExitCallDTO",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1077,6 +1111,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/exits": {
+      "get": {
+        "description": "出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。",
+        "operationId": "list_exits_api_agent_exits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Exits Api Agent Exits Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Exits"
+      }
+    },
+    "/api/agent/exits/{name}": {
+      "post": {
+        "operationId": "call_exit_api_agent_exits__name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExitCallDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Call Exit Api Agent Exits  Name  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Call Exit"
+      }
+    },
     "/api/changes": {
       "get": {
         "description": "当前状态一栏:每个单元只出现一次,最新的在前。\n\n过滤在截断之前:先按 verdict / binding 收窄,再取前 limit 条,\ntotal 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。",

@@ -4,6 +4,43 @@
  */
 
 export interface paths {
+    "/api/agent/exits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Exits
+         * @description 出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。
+         */
+        get: operations["list_exits_api_agent_exits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/exits/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Call Exit */
+        post: operations["call_exit_api_agent_exits__name__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/changes": {
         parameters: {
             query?: never;
@@ -665,6 +702,41 @@ export interface components {
             /** Successrate */
             successRate: number;
         };
+        /**
+         * ExitCallDTO
+         * @description 一次出口调用。args 的形状由出口清单决定,这里只兜住外层。
+         */
+        ExitCallDTO: {
+            /**
+             * Args
+             * @default {}
+             */
+            args: {
+                [key: string]: unknown;
+            };
+            /**
+             * Binding
+             * @default
+             */
+            binding: string;
+            /**
+             * Call Id
+             * @default
+             */
+            call_id: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -968,6 +1040,65 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_exits_api_agent_exits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    call_exit_api_agent_exits__name__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExitCallDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_changes_api_changes_get: {
         parameters: {
             query?: {
