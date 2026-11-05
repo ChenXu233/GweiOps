@@ -61,6 +61,17 @@ class Effect:
             raise ValueError(f"非法 undo_kind: {self.undo_kind}")
 
 
+def _window_from_dict(raw: Any) -> Window | None:
+    if not isinstance(raw, dict):
+        return None
+    seconds = raw.get("seconds")
+    return Window(
+        seconds=seconds if isinstance(seconds, int) else None,
+        unbounded=bool(raw.get("unbounded")),
+        source=str(raw.get("source") or ""),
+    )
+
+
 @dataclass
 class ChangeUnit:
     """一次意图 + 一个效果 + 一个绑定 + 一个句柄 + 一个判定。
@@ -86,7 +97,11 @@ class ChangeUnit:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChangeUnit":
-        """从账本行还原。窗口不入库(它是一次读取的结果,不是状态)。"""
+        """从账本行还原。
+
+        窗口是执行后一次读取的结果,但它必须以写入时的样子被读回来——
+        撤销能不能兑现,靠的就是它。
+        """
         eff = data.get("effect") or {}
         return cls(
             intent=data.get("intent") or {},
@@ -105,6 +120,7 @@ class ChangeUnit:
             binding=data.get("binding", ""),
             idempotency_key=data.get("idempotency_key", ""),
             handle=data.get("handle"),
+            window=_window_from_dict(data.get("window")),
             verdict=data.get("verdict", VERDICT_PENDING),
             reason=data.get("reason", ""),
             facts=dict(data.get("facts") or {}),
