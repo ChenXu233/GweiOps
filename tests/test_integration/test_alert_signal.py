@@ -281,6 +281,94 @@ def test_intent_naming_an_unknown_capability_blocks_instead_of_crashing(tmp_path
     assert "没有提供者" in out["applied"][0]["reason"]
 
 
+# ---------------------------------------------------------------------------
+# 端到端:告警声明 → 信号 → intent → 变更单元 → 账本
+# ---------------------------------------------------------------------------
+
+
+class _ComposeProvider:
+    binding = "local"
+    tenant = ""
+
+    def __init__(self):
+        self.executed = 0
+
+    async def window(self, effect, handle):
+        from engine.change_unit import Window
+
+        return Window(unbounded=True, source="project_present")
+
+    async def execute(self, task, args):
+        self.executed += 1
+        return {"handle": "compose-1"}
+
+    async def undo(self, task, args, handle):
+        return {}
+
+    async def verify(self, effect, handle):
+        return True, {"running_replicas": 10}
+
+
+def test_alert_declaration_becomes_a_change_unit_in_the_ledger(tmp_path, monkeypatch):
+    """一条告警声明执行 compose.scale,走完 intent → 效果 → 账本,落成一条可撤的单元。"""
+    import json as _json
+
+    from engine.change_unit import JsonlLedger
+    from engine.plugin_manager.manifest import EffectDecl
+
+    plugin_mod = importlib.import_module("plugins.builtin.agents.intent-builder.plugin")
+    builder = plugin_mod.IntentBuilder()
+
+    async def run_capability(capability, params):
+        if capability != "intent.propose":
+            raise LookupError(capability)
+        return (await builder.propose(params)).to_dict()
+
+    provider = _ComposeProvider()
+    decl = EffectDecl(
+        capability="compose.scale",
+        execute_task="scale",
+        undo_task="undo_scale",
+        undo_kind="symmetric",
+        window_read="project_present",
+        verify=({"query": "running_replicas", "expect": ">= 10"},),
+    )
+
+    ledger_path = tmp_path / "ledger.jsonl"
+    monkeypatch.setattr(pipeline.registry, "run_capability", run_capability)
+    monkeypatch.setattr(
+        pipeline.registry, "effect_decl", lambda *a, **k: (provider, decl)
+    )
+    monkeypatch.setattr(pipeline.config.settings, "change_ledger_backend", "file")
+    monkeypatch.setattr(pipeline.config.settings, "change_ledger_path", str(ledger_path))
+    monkeypatch.setattr(pipeline.config.settings, "default_binding", "local")
+
+    payload = {
+        "tenant_slug": "default",
+        "signal": _alert_signal(
+            gwei_effect=_json.dumps(
+                {
+                    "capability": "compose.scale",
+                    "args": {"project_dir": "/srv/api", "service": "api", "replicas": 10},
+                }
+            )
+        ),
+    }
+
+    intent = asyncio.run(pipeline._propose_intent_impl(payload, {}, []))
+    out = asyncio.run(pipeline._apply_effects_impl(intent, payload, "wf-alert:effects"))
+
+    assert provider.executed == 1
+    assert out["applied"][0]["verdict"] == "kept"
+
+    rows = asyncio.run(JsonlLedger(ledger_path).read())
+    assert len(rows) == 1
+    assert rows[0]["verdict"] == "kept"
+    assert rows[0]["binding"] == "local"
+    assert rows[0]["effect"]["capability"] == "compose.scale"
+    assert rows[0]["window"]["unbounded"] is True
+
+
 def test_payload_signal_is_used_verbatim():
     signal = {"source": "alertmanager", "subject": "api-gateway", "title": "x", "detail": ""}
     assert pipeline.signal_from_payload({"signal": signal}) is signal

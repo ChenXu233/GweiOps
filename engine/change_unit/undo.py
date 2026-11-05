@@ -33,7 +33,11 @@ def _parse(value: Any) -> datetime | None:
 
 
 def undo_state(row: dict[str, Any], now: datetime | None = None) -> UndoState:
-    """row 是账本里的一行(或 unit.to_dict())。"""
+    """row 是账本里的一行(或 unit.to_dict())。
+
+    起算点是单元的 created_at,比真正执行的时间略早——判过期宁可早一点,
+    不可晚一点:晚判会把下游已经不再保证的状态当成"可撤"。
+    """
     if not row.get("handle"):
         return UndoState(False, "没有句柄")
     if row.get("verdict") == "rolled_back":
