@@ -23,6 +23,7 @@ from .policy import (
     Policy,
     window_label,
 )
+from .record import DEFAULT_LOOKBACK, TrackRecord, summarize, track_record
 from .runner import HUMAN_RESPONSE_S, apply, approve, rollback, veto
 from .undo import UndoState, undo_state
 from .ledger import JsonlLedger, Ledger, create_ledger
@@ -44,6 +45,10 @@ __all__ = [
     "undo_state",
     "veto",
     "rollback",
+    "TrackRecord",
+    "summarize",
+    "track_record",
+    "DEFAULT_LOOKBACK",
     "HUMAN_RESPONSE_S",
     "DEFAULT_HUMAN_RESPONSE_S",
     "EXECUTE",
