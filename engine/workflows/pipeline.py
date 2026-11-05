@@ -205,14 +205,45 @@ def signal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return from_github(payload)
 
 
+async def _recent_conclusions(tenant: str, limit: int = 20) -> list[dict[str, Any]]:
+    """这个租户最近的账本结论,给 intent 提供者当证据。
+
+    读不到就是读不到:空列表表示"没有证据",不表示"一直很顺"。
+    """
+    try:
+        rows = await create_ledger().latest(tenant=tenant, limit=limit)
+    except Exception:
+        logger.warning("账本读不到,这次提议不带履历", exc_info=True)
+        return []
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        effect = row.get("effect")
+        out.append(
+            {
+                "verdict": row.get("verdict", ""),
+                "capability": effect.get("capability", "") if isinstance(effect, dict) else "",
+                "binding": row.get("binding", ""),
+                "reason": row.get("reason", ""),
+            }
+        )
+    return out
+
+
 async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict]) -> dict:
     """经能力通道拿 intent;没有提供者时用现有结论兜底,工作流不因缺插件停摆。"""
     signal = signal_from_payload(payload)
+    params: dict[str, Any] = {"signal": signal, "analysis": analysis, "patches": patches}
+    # 只有明确要证据的提供者才去读账本:没人读的时候,这个读只是把库的延迟加进工作流。
+    provider = registry.best_capability_provider("intent.propose")
+    if provider is not None and getattr(provider, "wants_history", False):
+        history = await _recent_conclusions(payload.get("tenant_slug", ""))
+        if history:
+            params["history"] = history
     try:
-        return await registry.run_capability(
-            "intent.propose",
-            {"signal": signal, "analysis": analysis, "patches": patches},
-        )
+        return await registry.run_capability("intent.propose", params)
     except LookupError:
         logger.info("No provider for intent.propose; falling back to local intent")
 

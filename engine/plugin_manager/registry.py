@@ -339,6 +339,23 @@ class PluginRegistry:
             raise LookupError(f"{key} 没有声明 effect {capability}")
         return provider, decl
 
+    def declared_effects(self) -> dict[str, dict[str, Any]]:
+        """这个部署里声明了效果的能力 → 标签与参数名。
+
+        给 intent 提供者当菜单:点一个这里没有的能力,平台只会把它记成阻断。
+        不管插件绑在哪个目标上,"有人声明过"都是部署级的事实。
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for capability, providers in self._effect_index.items():
+            for provider in providers:
+                manifest = self._manifests.get(self._instance_names.get(provider.key, ""))
+                decl = manifest.effects.get(capability) if manifest else None
+                if decl is None:
+                    continue
+                out[capability] = {"label": decl.label, "args": list(decl.execute_args)}
+                break
+        return out
+
     def _key_of(self, instance: PluginBase) -> str | None:
         for key, candidate in self._instances.items():
             if candidate is instance:
