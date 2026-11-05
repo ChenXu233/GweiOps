@@ -26,6 +26,18 @@
 | `handle` | 撤销句柄 | 下游返回,平台持久化 |
 | `verdict` | 保留 / 回滚 / 阻断等人 | 人或沉默默认 |
 
+`verdict` 只有五个结论,每条路径结束时都必须落在其中之一,而且都要落一行账:
+
+- `kept` —— 验证通过,仍在窗口内。
+- `rolled_back` —— 已经撤回:验证没过、窗口不足、人工撤销。
+- `blocked` —— 没有执行,等人:窗口读不到、盖不住响应时延、放行范围外、读窗口时就报错。
+- `vetoed` —— 人明确说不做。
+- `irreversible` —— 撤销承诺已经兑不了:没句柄、执行后读不到窗口、执行报错不知动没动、撤销本身也失败。
+
+`pending` 是刚建好、还没走,不算结论。
+
+下游报错不是"这次没发生",而是一种结论:请求可能已经到了对面。所以 `irreversible` 说的不是"动过了",而是**平台再也无法兑现这个单元的撤销承诺**;具体哪一步、什么错,写在 `reason` 与 `facts.error` 里。
+
 一个单元只有一个效果。要改三处就是三个单元,共享同一个 `intent`——撤销的原子性由单元的粒度保证,不由事务保证。
 
 提供者的 `tenant` 为空表示它不按租户隔离(例如一个 GitHub 适配器服务所有租户);解析先找精确租户,再退化到这种共享提供者。`binding` 始终精确匹配。
@@ -161,7 +173,7 @@ effects:
 2. `window` 只能来自读取,不得来自插件声明。
 3. 每个单元必须有一条可判定的 `verify`。
 4. 核心代码不得出现任何运维动作的直接调用(k8s / 云厂商 / CI SDK)。
-5. 不可逆单元必须在账本中显式标注为不可逆,不允许以"待验证"掩盖。
+5. 任何出口都必须落一行账,包括下游报错;不可逆单元必须显式标注为不可逆,不允许以"待验证"掩盖。
 6. 单元必须带 `binding`,且提供者的 `binding` 必须与之一致。
 7. 带 `idempotency_key` 的单元必须配账本;账本里已有同键记录时只复用结论,不得再次执行。
 8. 判定的证据只能从账本复算,不接受插件或模型的"经验"。
@@ -178,6 +190,7 @@ effects:
 - 幂等已落地:带 `idempotency_key` 的单元重放时只读账本、复用既有结论,不二次外呼;带键却没有账本直接拒绝。
 - 推进器可直接吃注册表:`apply(unit, registry)` 按 (租户, 目标) 解析提供者,解析不到直接抛;已解析的 provider 仍可注入(测试与降级路径),但 binding / tenant 不一致会被拒。
 - 同一清单可挂多个实例(每租户 / 每目标一个),实例键默认取清单名;SaaS 下按 `<插件>@<租户>/<目标>` 命名。
+- 下游报错不是空白:读窗口、执行、读后窗口、验证、撤销五处各自兜住异常,各写一行账并记下阶段与错因,重放时按这一行复用结论、不把效果再做一遍。测试见 [test_change_failure.py](../../tests/test_integration/test_change_failure.py)。
 - 履历:[engine/change_unit/record.py](../../engine/change_unit/record.py) 把账本结论按 (租户, 下游, 能力) 聚成一条,策略据此做第二个问题的判定。测试见 [test_change_record.py](../../tests/test_integration/test_change_record.py)。
 - 测试:[test_change_unit.py](../../tests/test_integration/test_change_unit.py),真 docker 的用例在守护进程不可用时跳过。
 - 策略与阻断出口:[engine/change_unit/policy.py](../../engine/change_unit/policy.py) 给出响应时延、无人值守时段与放行范围;放行 / 否决由 `POST /api/changes/{id}/approve|veto` 触发,各写一行账。`by` 由调用方自报,认证接入前只算备注。

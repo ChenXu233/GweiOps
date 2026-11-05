@@ -104,6 +104,44 @@ def _merge(unit: ChangeUnit, facts: dict[str, Any]) -> None:
     unit.facts = {**unit.facts, **facts}
 
 
+def _brief(exc: BaseException, limit: int = 200) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _error_facts(stage: str, exc: BaseException) -> dict[str, Any]:
+    """下游报错也是一条事实,按阶段存起来,别让它只活在日志里。"""
+    return {
+        "error": {
+            "stage": stage,
+            "type": type(exc).__name__,
+            "message": str(exc)[:500],
+        }
+    }
+
+
+async def _revert(
+    unit: ChangeUnit,
+    provider: EffectProvider,
+    ledger: Ledger | None,
+    why: str,
+    *,
+    ok_reason: str = "",
+) -> ChangeUnit:
+    """撤销本身也是一次外呼。撤不掉要如实说,不能记成撤掉了。"""
+    try:
+        await provider.undo(unit.effect.undo_task, unit.effect.args, unit.handle or "")
+    except Exception as exc:
+        unit.verdict = VERDICT_IRREVERSIBLE
+        unit.reason = f"{why},撤销也失败: {_brief(exc)}"
+        _merge(unit, _error_facts("undo", exc))
+    else:
+        unit.verdict = VERDICT_ROLLED_BACK
+        unit.reason = ok_reason or f"{why},已回滚"
+    await _record(ledger, unit)
+    return unit
+
+
 async def _run(
     unit: ChangeUnit,
     provider: EffectProvider,
@@ -115,7 +153,15 @@ async def _run(
 ) -> ChangeUnit:
     effect = unit.effect
 
-    pre = await provider.window(effect, None)
+    try:
+        pre = await provider.window(effect, None)
+    except Exception as exc:
+        # 读不到就不能判:阻断的代价是人看一眼,放行的代价是夜里动了撤不回来的东西。
+        unit.verdict = VERDICT_BLOCKED
+        unit.reason = f"读窗口时下游报错,按不可逆处理: {_brief(exc)}"
+        _merge(unit, _error_facts("window.pre", exc))
+        await _record(ledger, unit)
+        return unit
     unit.window = pre
 
     if authorized_by:
@@ -141,7 +187,20 @@ async def _run(
         _merge(unit, {"gate": decision.reason})
         response_s = decision.response_s
 
-    result = await provider.execute(effect.task, effect.args)
+    try:
+        result = await provider.execute(effect.task, effect.args)
+    except Exception as exc:
+        # 请求已经发出去了。当没发生是掩盖,当成功是撒谎:没有句柄就兑不了撤销。
+        unit.verdict = VERDICT_IRREVERSIBLE
+        unit.reason = f"执行时下游报错,结果未确认: {_brief(exc)}"
+        _merge(unit, _error_facts("execute", exc))
+        await _record(ledger, unit)
+        return unit
+    if not isinstance(result, dict):
+        unit.verdict = VERDICT_IRREVERSIBLE
+        unit.reason = f"执行结果不是对象({type(result).__name__}),拿不到句柄"
+        await _record(ledger, unit)
+        return unit
     handle = result.get("handle")
     if not handle:
         # 已经动了外部世界,但兑现不了撤销:显式记为不可逆,不允许掩盖。
@@ -153,29 +212,36 @@ async def _run(
     unit.handle = handle
     _merge(unit, {k: v for k, v in result.items() if k != "handle"})
 
-    post = await provider.window(effect, handle)
+    try:
+        post = await provider.window(effect, handle)
+    except Exception as exc:
+        unit.verdict = VERDICT_IRREVERSIBLE
+        unit.reason = f"已执行,但执行后读窗口报错,撤销兑现不了: {_brief(exc)}"
+        _merge(unit, _error_facts("window.post", exc))
+        await _record(ledger, unit)
+        return unit
     unit.window = post
     # 人在场:只问"撤得了吗";人不在:要问"到他能反应过来时还撤得了吗"。
     still_reversible = post.known if authorized_by else post.covers(response_s)
     if not still_reversible:
         if post.known:
-            await provider.undo(effect.undo_task, effect.args, handle)
-            unit.verdict = VERDICT_ROLLED_BACK
-            unit.reason = f"执行后窗口不足: {post.source or 'unknown'}"
-        else:
-            unit.verdict = VERDICT_IRREVERSIBLE
-            unit.reason = "已执行,但执行后读不到窗口,撤销兑现不了"
+            return await _revert(
+                unit, provider, ledger, f"执行后窗口不足: {post.source or 'unknown'}"
+            )
+        unit.verdict = VERDICT_IRREVERSIBLE
+        unit.reason = "已执行,但执行后读不到窗口,撤销兑现不了"
         await _record(ledger, unit)
         return unit
 
-    ok, facts = await provider.verify(effect, handle)
+    try:
+        ok, facts = await provider.verify(effect, handle)
+    except Exception as exc:
+        # 验不了就不能说成了。窗口还在,回滚比留着更安全。
+        _merge(unit, _error_facts("verify", exc))
+        return await _revert(unit, provider, ledger, f"验证时下游报错: {_brief(exc)}")
     _merge(unit, facts)
     if not ok:
-        await provider.undo(effect.undo_task, effect.args, handle)
-        unit.verdict = VERDICT_ROLLED_BACK
-        unit.reason = "验证未通过,已回滚"
-        await _record(ledger, unit)
-        return unit
+        return await _revert(unit, provider, ledger, "验证未通过")
 
     unit.verdict = VERDICT_KEPT
     unit.reason = "人工放行后验证通过,保持运行" if authorized_by else "验证通过,进入待审(可撤)"
@@ -277,8 +343,4 @@ async def rollback(
     if not state.undoable:
         raise ValueError(f"这次变更已经不能撤:{state.reason}")
 
-    await provider.undo(unit.effect.undo_task, unit.effect.args, unit.handle)
-    unit.verdict = VERDICT_ROLLED_BACK
-    unit.reason = reason
-    await _record(ledger, unit)
-    return unit
+    return await _revert(unit, provider, ledger, "撤销时下游报错", ok_reason=reason)
