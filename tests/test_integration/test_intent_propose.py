@@ -28,8 +28,33 @@ class FakeResolver:
         raise LookupError(capability)
 
 
-SIGNAL = {"source": "issue", "repo": "ChenXu233/GweiOps", "issue_number": 1,
-          "title": "空指针崩溃", "body": "打开页面就崩"}
+SIGNAL = {
+    "source": "github",
+    "subject": "ChenXu233/GweiOps#1",
+    "repo": "ChenXu233/GweiOps",
+    "issue_number": 1,
+    "title": "空指针崩溃",
+    "detail": "打开页面就崩",
+}
+
+
+def test_signal_without_an_issue_gets_no_comment_effect():
+    """监控信号没有回评载体:参考实现给空 effects,而不是编一个 comment.create。"""
+    builder = builder_mod.IntentBuilder(FakeResolver())
+    intent = asyncio.run(
+        builder.propose(
+            {
+                "signal": {
+                    "source": "alertmanager",
+                    "subject": "api-gateway",
+                    "title": "内存占用过高",
+                    "detail": "RSS 超过 2GiB",
+                }
+            }
+        )
+    )
+    assert intent.effects == ()
+    assert "没有可回评的载体" in intent.summary
 
 
 def test_parse_intent_rejects_missing_summary():

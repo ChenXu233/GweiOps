@@ -24,6 +24,7 @@ from engine.db.models import AgentSession, Issue, Project, Tenant
 from engine.plugin_manager import hooks, registry
 from engine.shared.cache import LLM_ANALYSIS_TTL_S, cached_json, cache_key
 from engine.change_unit import ChangeUnit, apply as apply_change_unit, create_ledger
+from engine.ingest import from_github
 from engine.shared.config import config
 from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 from engine.shared.runtime import get_adapter, get_sensor
@@ -196,25 +197,35 @@ async def _post_comment_impl(payload: dict, body: str) -> dict:
         return {"posted": False, "error": str(e)}
 
 
+def signal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """监控载荷本身已经是一条归一化信号;GitHub 载荷是内联字段,现场翻译。"""
+    inline = payload.get("signal")
+    if isinstance(inline, dict) and inline.get("title"):
+        return inline
+    return from_github(payload)
+
+
 async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict]) -> dict:
     """经能力通道拿 intent;没有提供者时用现有结论兜底,工作流不因缺插件停摆。"""
+    signal = signal_from_payload(payload)
     try:
         return await registry.run_capability(
             "intent.propose",
-            {
-                "signal": {
-                    "source": payload.get("source", "issue"),
-                    "repo": payload["repo_full_name"],
-                    "issue_number": payload["issue_number"],
-                    "title": payload["title"],
-                    "body": payload["body"],
-                },
-                "analysis": analysis,
-                "patches": patches,
-            },
+            {"signal": signal, "analysis": analysis, "patches": patches},
         )
     except LookupError:
         logger.info("No provider for intent.propose; falling back to local intent")
+
+    if not payload.get("repo_full_name"):
+        # 本地兜底只会把 GitHub issue 信号翻成一条回评。别的来源没有提供者就是没有动作,
+        # 这里如实返回空 effects:编一个动作出来,比什么都不做更危险。
+        return {
+            "version": 1,
+            "summary": f"信号「{signal['title']}」没有可执行的意图",
+            "evidence": [{"kind": signal["source"], "ref": signal["subject"]}],
+            "effects": [],
+            "rationale": "没有 intent 提供者能处理这个来源;本地兜底只处理 GitHub issue。",
+        }
 
     body = _format_suggestion_reply(payload, patches) if patches else analysis.get("reply")
     effects = []
@@ -254,7 +265,7 @@ async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> di
         capability = effect["capability"]
         args = dict(effect.get("args") or {})
 
-        if capability == "comment.create":
+        if capability == "comment.create" and payload.get("repo_full_name"):
             gated = await hooks.apply(
                 "comment.posting",
                 {
@@ -330,6 +341,28 @@ async def propose_intent_step(payload: dict, analysis: dict, patches: list) -> d
 async def apply_effects_step(intent: dict, payload: dict) -> dict:
     """效果执行以 workflow_id 作为幂等基座:重放只复用账本结论。"""
     return await _apply_effects_impl(intent, payload, f"{DBOS.workflow_id}:effects")
+
+
+@DBOS.step()
+async def propose_alert_intent_step(payload: dict) -> dict:
+    return await _propose_intent_impl(payload, {}, [])
+
+
+@DBOS.workflow()
+async def alert_triage_workflow(payload: dict) -> dict:
+    """监控信号:没有补丁、没有回评,只有意图与效果。
+
+    信号本身不携带动作。能做什么由 intent 提供者决定;没有提供者时
+    effects 为空,工作流正常结束——不假装做了什么。
+    """
+    intent = await propose_alert_intent_step(payload)
+    applied = await apply_effects_step(intent, payload)
+
+    return {
+        "signal": (payload.get("signal") or {}).get("subject", ""),
+        "intent": intent.get("summary", ""),
+        "applied": applied,
+    }
 
 
 @DBOS.workflow()

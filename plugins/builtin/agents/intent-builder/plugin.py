@@ -64,11 +64,28 @@ class IntentBuilder(PluginBase):
         if not isinstance(signal, dict) or not signal.get("title"):
             raise ValueError("signal 缺少 title")
 
+        # 参考实现只会把 issue 翻成一条回评。没有 repo 与 issue 号的信号(例如监控告警)
+        # 不该被硬塞一个 comment.create:空 effects 是合法结论。
+        if not signal.get("repo") or signal.get("issue_number") in (None, ""):
+            return parse_intent(
+                {
+                    "summary": f"信号「{signal.get('title', '')}」没有可回评的载体",
+                    "evidence": [
+                        {
+                            "kind": signal.get("source", "signal"),
+                            "ref": signal.get("subject") or signal.get("title", ""),
+                        }
+                    ],
+                    "effects": [],
+                    "rationale": "参考实现只处理 GitHub issue 信号;其它来源需要各自的 intent 提供者。",
+                }
+            )
+
         analysis = params.get("analysis")
         if analysis is None:
             analysis = await self._resolve(
                 "issue.analyze",
-                {"issue": {"title": signal.get("title", ""), "body": signal.get("body", "")}},
+                {"issue": {"title": signal.get("title", ""), "body": signal.get("detail", "")}},
             )
 
         patches = params.get("patches")
@@ -76,7 +93,7 @@ class IntentBuilder(PluginBase):
             patches = list(
                 (await self._resolve(
                     "patch.generate",
-                    {"title": signal.get("title", ""), "body": signal.get("body", "")},
+                    {"title": signal.get("title", ""), "body": signal.get("detail", "")},
                 )).get("patches", [])
             )
 
@@ -88,7 +105,13 @@ class IntentBuilder(PluginBase):
     ) -> dict[str, Any]:
         from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
 
-        evidence = [{"kind": "issue", "ref": f"{signal.get('repo', '')}#{signal.get('issue_number', '')}"}]
+        evidence = [
+            {
+                "kind": signal.get("source", "issue"),
+                "ref": signal.get("subject")
+                or f"{signal.get('repo', '')}#{signal.get('issue_number', '')}",
+            }
+        ]
         if analysis.get("labels"):
             evidence.append({"kind": "labels", "ref": ",".join(analysis["labels"])})
         if analysis.get("llm_analysis"):

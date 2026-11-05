@@ -7,16 +7,19 @@
 
 import json
 import logging
+import re
 import uuid
 
 from dbos import DBOS, SetEnqueueOptions, SetWorkflowID
 from fastapi import APIRouter, HTTPException, Request
 
+from engine.ingest import parse_alerts
 from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
 from engine.shared.config import config
 from engine.shared.runtime import get_adapter, get_sensor  # noqa: F401 — 兼容既有导入
 from engine.workflows.pipeline import (
     WORKFLOW_QUEUE,
+    alert_triage_workflow,
     fix_suggestion_workflow,
     issue_triage_workflow,
 )
@@ -97,12 +100,13 @@ async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: di
         queue_partition_key=payload["tenant_slug"]
     ):
         await DBOS.enqueue_workflow_async(WORKFLOW_QUEUE, workflow, payload)
+    subject = (
+        f"{payload['repo_full_name']}#{payload['issue_number']}"
+        if payload.get("repo_full_name")
+        else (payload.get("signal") or {}).get("subject", "-")
+    )
     logger.info(
-        "Enqueued workflow %s (tenant=%s %s#%s)",
-        workflow_id,
-        payload["tenant_slug"],
-        payload["repo_full_name"],
-        payload["issue_number"],
+        "Enqueued workflow %s (tenant=%s %s)", workflow_id, payload["tenant_slug"], subject
     )
     return {"status": "queued", "workflow_id": workflow_id}
 
@@ -160,6 +164,60 @@ async def github_webhook(request: Request):
         return await _handle_event(event_type, delivery_id, headers, body)
 
     return {"status": "ignored", "event": event_type}
+
+
+@router.post("/webhook/alertmanager")
+async def alertmanager_webhook(request: Request):
+    """监控信号入口。
+
+    Alertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,
+    不应该默认敞开。
+    """
+    token = config.settings.alertmanager_webhook_token
+    if not token:
+        raise HTTPException(
+            status_code=503, detail="未配置 ALERTMANAGER_WEBHOOK_TOKEN,拒绝接收监控信号"
+        )
+    if request.headers.get("X-Gwei-Token", "") != token:
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    signals = parse_alerts(payload)
+    if not signals:
+        return {"status": "ignored", "message": "没有 firing 的告警"}
+
+    tenant = config.settings.default_tenant_slug
+    queued: list[dict] = []
+    for signal in signals:
+        # 同一条告警会被重复投递;fingerprint + 起始时间是它这一次发作的身份
+        occurrence = "".join(ch for ch in signal.get("started_at", "") if ch.isalnum())
+        delivery = _safe_id(signal["ref"] or signal["title"], occurrence)
+        if not await dedup_once(f"gwei:{tenant}:alert-dedup:{delivery}", WEBHOOK_DEDUP_TTL_S):
+            continue
+        queued.append(
+            await _enqueue_workflow(
+                "gwei-alert",
+                alert_triage_workflow,
+                delivery,
+                {"tenant_slug": tenant, "signal": signal},
+            )
+        )
+
+    if not queued:
+        return {"status": "duplicate", "message": "告警已经处理过"}
+    return {"status": "queued", "count": len(queued), "workflows": queued}
+
+
+def _safe_id(*parts: str) -> str:
+    """工作流 id 只留安全字符:告警标题可能带空格和中文。"""
+    raw = "-".join(part for part in parts if part)
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-") or "alert"
 
 
 @router.post("/webhook/github/comment")
