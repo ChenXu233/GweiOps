@@ -124,6 +124,7 @@ async def run_tool(
     idem_base: str = "",
     index: int = 0,
     summary: str = "",
+    actor: str = "",
     policy: Any = None,
 ) -> ToolResult:
     """走一次出口。改世界的过闸门,只读的直接调。
@@ -152,8 +153,16 @@ async def run_tool(
             False, reason=f"这个目标上没有能执行 {call.name} 的提供者: {exc}"
         )
 
+    intent: dict[str, Any] = {
+        "summary": summary or f"agent 调用 {call.name}",
+        "tool": call.name,
+        "via": "exit",  # 从出口进来的变更,数量上限按它统计
+    }
+    if actor:
+        intent["by"] = actor
+
     unit = ChangeUnit(
-        intent={"summary": summary or f"agent 调用 {call.name}", "tool": call.name},
+        intent=intent,
         effect=decl.to_effect(args),
         tenant=tenant,
         binding=binding,

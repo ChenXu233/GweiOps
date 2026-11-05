@@ -51,6 +51,17 @@
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
 - 令牌写错(段数不对、scope 非法、重复)拒绝启动:写错的令牌不能静默降级成"不鉴权"。
 
+## 出口
+
+沙箱里的 agent 唯一能改变外部世界的地方。两件事:问清单,走一次。
+
+- 清单来自各插件声明过的效果;名字以 `.read` 结尾的能力是只读口,其余不能调。
+- **每次改世界的调用都是一个变更单元**:读窗口、判定、执行、验证、记账,和人工操作走同一条闸门。只读调用不落账。
+- 参数 `call_id` 带上时,同一次调用重发只复用账本里的结论,不二次外呼;不带就当两次调用,老实做两次。
+- 参数 `binding` 缺省取 `default_binding`。绑错目标不是结论,是配置错误:拒绝执行,不留账本行。
+- `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
+- 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
+
 ## 租户
 
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
@@ -96,6 +107,8 @@
 | POST | `/api/changes/{id}/rollback` | 撤销已执行的单元,并追加一行审计 |
 | POST | `/api/changes/{id}/approve` | 放行一个阻断的单元,执行后照样读窗口与验证 |
 | POST | `/api/changes/{id}/veto` | 不做这次变更,追加一行否决 |
+| GET | `/api/agent/exits` | 出口清单:沙箱里的 agent 能改什么、每个动作的参数名 |
+| POST | `/api/agent/exits/{name}` | 走一次出口;改世界的调用落成一个变更单元 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/webhook/github` | GitHub Webhook(issue 事件) |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
