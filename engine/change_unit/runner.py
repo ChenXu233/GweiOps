@@ -1,5 +1,5 @@
 # engine/change_unit/runner.py
-"""单元的推进:预读窗口 → 判定路径 → 执行 → 后读窗口 → 验证 → 保持或回滚。
+"""单元的推进:预读窗口 → 查履历 → 判定路径 → 执行 → 后读窗口 → 验证 → 保持或回滚。
 
 平台只做判定;执行、撤销、取数、验证全部委托给 provider(插件)。
 provider 声明自己服务的 binding,与单元不一致时拒绝执行——跨环境执行是事故,不是配置错。
@@ -24,6 +24,7 @@ from .model import (
     VERDICT_VETOED,
 )
 from .policy import EXECUTE, DEFAULT_HUMAN_RESPONSE_S, Policy
+from .record import track_record
 from .undo import undo_state
 
 # 旧的模块级常量,保留给已有调用方;真正的口径在 Policy.human_response_s。
@@ -122,7 +123,16 @@ async def _run(
         _merge(unit, {"authorized_by": authorized_by})
         response_s = 0
     else:
-        decision = policy.decide(unit, pre, now)
+        # 判定要用到"这类变更以前怎么样",所以先查一次履历;没有账本就是没有证据。
+        record = None
+        if policy.wants_history():
+            record = await track_record(
+                ledger,
+                tenant=unit.tenant,
+                binding=unit.binding,
+                capability=effect.capability,
+            )
+        decision = policy.decide(unit, pre, now, record=record)
         if decision.action != EXECUTE:
             unit.verdict = VERDICT_BLOCKED
             unit.reason = decision.reason

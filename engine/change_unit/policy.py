@@ -1,12 +1,13 @@
 # engine/change_unit/policy.py
 """策略即预授权:夜里哪些变更可以直接做,不用先等人点头。
 
-策略只回答一个问题——"人要多久才能赶回来"。赶得回来就直接做,赶不回来就阻断。
-所以四个参数里的三个最后都收敛到同一个量:人的响应时延。
+策略回答两个问题,一个算得出,一个只能查:
 
-- 响应时延本身(一个人 8 小时,三班倒 15 分钟)
-- 无人值守时段(周五 18:00 之后,响应时延不是 8 小时,而是到周一早上)
-- 放行范围(哪几类能力允许走这条路;空 = 不按能力限制)
+1. 人到能赶回来的时候,还撤得回来吗。窗口与响应时延相比——三个参数量的是同一件事:
+   响应时延本身(一个人 8 小时,三班倒 15 分钟)、无人值守时段(周五 18:00 之后是到周一早上)、
+   放行范围(哪几类能力允许走这条路;空 = 不按能力限制)。
+2. 这个动作以前在这台下游身上留下过什么。账本里的履历——同一类变更失败得够多,
+   就不再夜间自动做,改为人看一眼。
 
 "沉默默认"没有实现:它需要一个到点就会触发的调度器,而现在没有。
 在调度器出现之前写进策略里,只是一个不会执行的参数。
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .model import ChangeUnit, Window
+from .record import TrackRecord
 
 EXECUTE = "execute"
 BLOCK = "block"
@@ -105,6 +107,9 @@ class Policy:
     human_response_s: int = DEFAULT_HUMAN_RESPONSE_S
     away: AwayWindow | None = field(default_factory=AwayWindow)
     allow_capabilities: tuple[str, ...] = ()
+    # 履历门槛:少于这么多次就先不下结论;0 表示不看履历。
+    history_min_attempts: int = 3
+    history_max_failure_rate: float = 0.5
 
     def response_seconds(self, at: datetime) -> int:
         """此刻人的响应时延。落在无人值守时段里,答案是"到那之后"。"""
@@ -112,7 +117,22 @@ class Policy:
             return max(1, int((self.away.ends_at(at) - at).total_seconds()))
         return self.human_response_s
 
-    def decide(self, unit: ChangeUnit, window: Window, at: datetime) -> Decision:
+    def wants_history(self) -> bool:
+        return self.history_min_attempts > 0
+
+    def history_blocks(self, record: TrackRecord) -> bool:
+        """履历够不够烂,烂到不该再由机器自己决定。"""
+        if not self.wants_history() or record.attempts < self.history_min_attempts:
+            return False
+        return record.failure_rate >= self.history_max_failure_rate
+
+    def decide(
+        self,
+        unit: ChangeUnit,
+        window: Window,
+        at: datetime,
+        record: TrackRecord | None = None,
+    ) -> Decision:
         """走第一类路径还是阻断。没有第三种答案。"""
         capability = unit.effect.capability
         if self.allow_capabilities and capability not in self.allow_capabilities:
@@ -123,6 +143,15 @@ class Policy:
 
         if not window.known:
             return Decision(BLOCK, "窗口读不到,按不可逆处理")
+
+        # 窗口只说明"撤得回来",不说明"撤回来的概率"。后者只能从账本里看。
+        if record is not None and self.history_blocks(record):
+            tail = f",上次:{record.last_reason}" if record.last_reason else ""
+            return Decision(
+                BLOCK,
+                f"同类变更在 {unit.binding} 上已经失败 "
+                f"{record.failures}/{record.attempts} 次{tail}",
+            )
 
         response_s = self.response_seconds(at)
         if not window.covers(response_s):
