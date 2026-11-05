@@ -255,6 +255,10 @@ class ChangeRowDTO(BaseModel):
     effect: ChangeEffectDTO = ChangeEffectDTO()
     facts: dict[str, Any] = {}
     window: dict[str, Any] | None = None
+    # 以这一行为当前状态时,还撤不撤得回来。历史行按它自己那一刻算。
+    undoable: bool = False
+    undo_reason: str = ""
+    undo_expires_at: str = ""  # 空字符串 = 不会过期(对称撤销)
 
 
 class ChangeListDTO(BaseModel):

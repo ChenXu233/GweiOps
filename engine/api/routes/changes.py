@@ -15,7 +15,14 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from engine.api.schemas import ChangeDetailDTO, ChangeListDTO
-from engine.change_unit import ChangeUnit, approve, create_ledger, rollback, veto
+from engine.change_unit import (
+    ChangeUnit,
+    approve,
+    create_ledger,
+    rollback,
+    undo_state,
+    veto,
+)
 from engine.plugin_manager import registry
 
 router = APIRouter()
@@ -28,6 +35,25 @@ NOT_APPLIED = ("blocked", "vetoed", "pending")
 
 def _ledger():
     return create_ledger()
+
+
+def _with_undo(row: dict) -> dict:
+    """给一行账补上"此刻还撤不撤得回来"。
+
+    撤销承诺会到期,所以这件事只能在读的时候算,不能落库:写下的那一刻可信,
+    第二天早上未必。历史行按它自己那一刻算——它就是那一刻的当前状态。
+    """
+    state = undo_state(row)
+    return {
+        **row,
+        "undoable": state.undoable,
+        "undo_reason": state.reason,
+        "undo_expires_at": state.expires_at,
+    }
+
+
+def _rows_with_undo(rows: list[dict]) -> list[dict]:
+    return [_with_undo(row) for row in rows]
 
 
 async def _latest_or_404(unit_id: str, tenant: str | None = None) -> tuple[object, dict]:
@@ -69,7 +95,7 @@ async def list_changes(
         rows = [row for row in rows if row.get("verdict") == verdict]
     if binding:
         rows = [row for row in rows if row.get("binding") == binding]
-    return ChangeListDTO(items=rows[: max(0, limit)], total=len(rows))
+    return ChangeListDTO(items=_rows_with_undo(rows[: max(0, limit)]), total=len(rows))
 
 
 @router.get("/api/changes/{unit_id}")
@@ -77,7 +103,9 @@ async def get_change(unit_id: str, tenant: str | None = None) -> ChangeDetailDTO
     rows = await _ledger().history(unit_id, tenant=tenant)
     if not rows:
         raise HTTPException(status_code=404, detail="unknown change")
-    return ChangeDetailDTO(latest=rows[-1], history=rows)
+    return ChangeDetailDTO(
+        latest=_with_undo(rows[-1]), history=_rows_with_undo(rows)
+    )
 
 
 @router.post("/api/changes/{unit_id}/approve")
@@ -110,8 +138,8 @@ async def approve_change(
         raise HTTPException(status_code=502, detail=f"放行后执行失败: {e}") from e
 
     return ChangeDetailDTO(
-        latest=unit.to_dict(),
-        history=await ledger.history(unit_id, tenant=tenant),
+        latest=_with_undo(unit.to_dict()),
+        history=_rows_with_undo(await ledger.history(unit_id, tenant=tenant)),
     )
 
 
@@ -137,8 +165,8 @@ async def veto_change(
         raise HTTPException(status_code=409, detail=str(e)) from e
 
     return ChangeDetailDTO(
-        latest=unit.to_dict(),
-        history=await ledger.history(unit_id, tenant=tenant),
+        latest=_with_undo(unit.to_dict()),
+        history=_rows_with_undo(await ledger.history(unit_id, tenant=tenant)),
     )
 
 
@@ -168,6 +196,6 @@ async def rollback_change(
         raise HTTPException(status_code=502, detail=f"撤销失败: {e}") from e
 
     return ChangeDetailDTO(
-        latest=unit.to_dict(),
-        history=await ledger.history(unit_id, tenant=tenant),
+        latest=_with_undo(unit.to_dict()),
+        history=_rows_with_undo(await ledger.history(unit_id, tenant=tenant)),
     )

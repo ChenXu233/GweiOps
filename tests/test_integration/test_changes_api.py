@@ -232,3 +232,59 @@ def test_veto_rejects_an_executed_unit(client, ledger):
 
 def test_veto_unknown_change_404(client):
     assert client.post("/api/changes/nope/veto").status_code == 404
+
+# ---------------------------------------------------------------------------
+# 还能不能撤:撤销承诺会到期,所以这个判断只能在读的时候算
+# ---------------------------------------------------------------------------
+
+
+def _row_of(client, unit_id="u1") -> dict:
+    return client.get(f"/api/changes/{unit_id}").json()["latest"]
+
+
+def test_a_fresh_kept_unit_says_it_can_still_be_undone(client, ledger):
+    asyncio.run(ledger.append(_unit("kept")))
+    row = _row_of(client)
+    assert row["undoable"] is True
+    assert row["undo_reason"]
+    assert row["undo_expires_at"] == ""  # 对称撤销不会过期
+
+
+def test_a_rolled_back_unit_is_not_undoable(client, ledger):
+    asyncio.run(ledger.append(_unit("rolled_back")))
+    row = _row_of(client)
+    assert row["undoable"] is False
+    assert "撤销过" in row["undo_reason"]
+
+
+def test_a_unit_without_handle_is_not_undoable(client, ledger):
+    asyncio.run(ledger.append(_unit("kept", handle=None)))
+    row = _row_of(client)
+    assert row["undoable"] is False
+    assert "句柄" in row["undo_reason"]
+
+
+def test_a_bounded_window_reports_when_it_closes(client, ledger):
+    unit = _unit("kept")
+    unit.window = Window(seconds=3600, source="revision")
+    asyncio.run(ledger.append(unit))
+    row = _row_of(client)
+    assert row["undoable"] is True
+    assert row["undo_expires_at"].endswith("+00:00")
+
+
+def test_an_expired_window_stops_claiming_it_can_be_undone(client, ledger):
+    unit = _unit("kept")
+    unit.window = Window(seconds=60, source="revision")
+    unit.created_at = "2026-01-01T00:00:00+00:00"
+    asyncio.run(ledger.append(unit))
+    row = _row_of(client)
+    assert row["undoable"] is False
+    assert "窗口已过" in row["undo_reason"]
+
+
+def test_every_history_row_carries_its_own_answer(client, ledger):
+    asyncio.run(ledger.append(_unit("kept")))
+    asyncio.run(ledger.append(_unit("rolled_back")))
+    body = client.get("/api/changes/u1").json()
+    assert [row["undoable"] for row in body["history"]] == [True, False]
