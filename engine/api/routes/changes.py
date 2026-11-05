@@ -14,6 +14,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from engine.api.schemas import ChangeDetailDTO, ChangeListDTO
 from engine.change_unit import ChangeUnit, approve, create_ledger, rollback, veto
 from engine.plugin_manager import registry
 
@@ -54,7 +55,7 @@ async def list_changes(
     binding: str | None = None,
     tenant: str | None = None,
     limit: int = 100,
-) -> dict:
+) -> ChangeListDTO:
     """当前状态一栏:每个单元只出现一次,最新的在前。
 
     过滤在截断之前:先按 verdict / binding 收窄,再取前 limit 条,
@@ -68,15 +69,15 @@ async def list_changes(
         rows = [row for row in rows if row.get("verdict") == verdict]
     if binding:
         rows = [row for row in rows if row.get("binding") == binding]
-    return {"items": rows[: max(0, limit)], "total": len(rows)}
+    return ChangeListDTO(items=rows[: max(0, limit)], total=len(rows))
 
 
 @router.get("/api/changes/{unit_id}")
-async def get_change(unit_id: str, tenant: str | None = None) -> dict:
+async def get_change(unit_id: str, tenant: str | None = None) -> ChangeDetailDTO:
     rows = await _ledger().history(unit_id, tenant=tenant)
     if not rows:
         raise HTTPException(status_code=404, detail="unknown change")
-    return {"latest": rows[-1], "history": rows}
+    return ChangeDetailDTO(latest=rows[-1], history=rows)
 
 
 @router.post("/api/changes/{unit_id}/approve")
@@ -85,7 +86,7 @@ async def approve_change(
     by: str = "人工",
     reason: str = "人工放行",
     tenant: str | None = None,
-) -> dict:
+) -> ChangeDetailDTO:
     """放行一个阻断的单元。
 
     放行只说明"此刻有人在场",不放宽判定口径:执行后照样读窗口、照样验证,
@@ -108,7 +109,10 @@ async def approve_change(
         logger.error("approve %s failed: %s", unit_id, e)
         raise HTTPException(status_code=502, detail=f"放行后执行失败: {e}") from e
 
-    return {"latest": unit.to_dict(), "history": await ledger.history(unit_id, tenant=tenant)}
+    return ChangeDetailDTO(
+        latest=unit.to_dict(),
+        history=await ledger.history(unit_id, tenant=tenant),
+    )
 
 
 @router.post("/api/changes/{unit_id}/veto")
@@ -117,7 +121,7 @@ async def veto_change(
     by: str = "人工",
     reason: str = "人工否决",
     tenant: str | None = None,
-) -> dict:
+) -> ChangeDetailDTO:
     """不做这次变更。否决也写一行账——它和放行一样是一次决定。"""
     ledger, latest = await _latest_or_404(unit_id, tenant)
     if latest.get("verdict") not in (BLOCKED, "pending"):
@@ -132,7 +136,10 @@ async def veto_change(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
 
-    return {"latest": unit.to_dict(), "history": await ledger.history(unit_id, tenant=tenant)}
+    return ChangeDetailDTO(
+        latest=unit.to_dict(),
+        history=await ledger.history(unit_id, tenant=tenant),
+    )
 
 
 @router.post("/api/changes/{unit_id}/rollback")
@@ -140,7 +147,7 @@ async def rollback_change(
     unit_id: str,
     reason: str = "人工回滚",
     tenant: str | None = None,
-) -> dict:
+) -> ChangeDetailDTO:
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
     ledger, latest = await _latest_or_404(unit_id, tenant)
 
@@ -160,4 +167,7 @@ async def rollback_change(
         logger.error("rollback %s failed: %s", unit_id, e)
         raise HTTPException(status_code=502, detail=f"撤销失败: {e}") from e
 
-    return {"latest": unit.to_dict(), "history": await ledger.history(unit_id, tenant=tenant)}
+    return ChangeDetailDTO(
+        latest=unit.to_dict(),
+        history=await ledger.history(unit_id, tenant=tenant),
+    )

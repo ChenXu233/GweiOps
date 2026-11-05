@@ -88,6 +88,19 @@
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
 | POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |
 
+### 接口契约
+
+响应模型写在 `engine/api/schemas.py`,FastAPI 据此生成 OpenAPI;前端类型不手抄,从这个文件生成。
+
+| 步骤 | 命令 | 产物 |
+| --- | --- | --- |
+| 导出契约 | `python scripts/dump_openapi.py` | `contracts/openapi.json` |
+| 生成前端类型 | `pnpm --filter @gwei/core gen:api` | `frontend/packages/core/api/schema.d.ts` |
+
+- 前端调用点统一走 `frontend/packages/core/api/typed.ts`:路径、路径参数、响应体都由 `paths` 推出,新增端点不用再写一遍泛型。
+- `frontend/packages/core/types/*` 是 schema 里 DTO 的别名,字段与后端同源;类型名对不上时 `vue-tsc` 直接报错。
+- 改响应模型后两个命令都要重跑;`tests/test_integration/test_openapi_contract.py` 会在 `contracts/openapi.json` 过期时报错(不需要 Postgres)。
+
 ## 插件
 
 清单、注册表、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
