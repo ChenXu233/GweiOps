@@ -45,6 +45,20 @@ intent 是推理提供者(harness 或参考实现)唯一被允许产出的东西
 
 校验在控制面做(`engine/change_unit/intent.py`),不信任提供者:形状不对就是 `blocked`,不重试——重试归提供者,判断归平台。提供者拿不到下游凭据,也拿不到执行结果。
 
+### 3.1 信号
+
+`intent.propose` 的入参是信号,不是原始 webhook:两种来源进来,同一种说法出去。
+
+| 字段 | 含义 |
+| --- | --- |
+| `source` | `github` / `alertmanager` |
+| `subject` | 主体:`owner/repo#3` 或服务名 |
+| `title` / `detail` | 出了什么事 |
+| `severity` | `critical` / `medium` / `low` |
+| `ref` | 来源侧的稳定标识(issue 号 / 告警 fingerprint) |
+
+来源专有的字段随信号一起交出去(`github` 带 `repo` 与 `issue_number`),由提供者决定用不用——回评这种效果需要它们,而平台不去理解任何一方的语法。
+
 ## 4. 两条路径
 
 | 判定 | 夜间动作 | 人的动作 | 整夜沉默时 |

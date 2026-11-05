@@ -6,7 +6,8 @@
 
 | 工作 | 状态 | 下一步 |
 | --- | --- | --- |
-| 变更单元闭环 | 工作流已接入:`intent.propose` → 效果单元(回评);账本仍是 JSONL 文件 | 账本进业务库;用真 Postgres 跑一次 DBOS 重放,确认幂等键生效 |
+| 变更单元闭环 | 工作流已接入:`intent.propose` → 效果单元;账本已进业务库(`change_events`);阻断可放行/否决 | 用真 Postgres 跑一次 DBOS 重放,确认幂等键生效 |
+| 监控信号的动作 | 入口与归化已落地(`/webhook/alertmanager` → `alert_triage_workflow`),仍走同一条链路;没有能按告警提出意图的提供者 | 由插件提供 `intent.propose`(例如按 service 标签选动作);平台不内置运维知识 |
 | 远程提供者 | 解析层已支持 (租户, 目标),但提供者仍是进程内实例 | gRPC 提供者接线,插件部署在目标环境内、出站连回控制面 |
 | Harness 执行层(D1–D5) | 切缝已就位:能力 `intent.propose` 与参考实现已落地,尚无 harness 适配器 | 提供 HTTP 或子进程适配器;调用方与契约不动 |
 | gRPC 进程外插件(B5) | 骨架:`grpc_loader.py` 有代理与 `PLUGINS_GRPC` 解析,尚无 stub 生成与接线 | 代码生成、代理补全、超时隔离、demo、e2e、compose 示例 |

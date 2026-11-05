@@ -19,10 +19,12 @@
 | --- | --- | --- |
 | `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → `intent.propose` → 效果单元(回评,可撤销) |
 | `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 补丁建议 → `patch.generated` transform → `intent.propose` → 效果单元(回评,不自动建 PR) |
+| `alert_triage_workflow` | 监控告警 firing | 归化信号 → `intent.propose` → 效果单元(没有补丁、没有回评) |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
+- 两种来源归化成一个信号再入队:GitHub 载荷现场翻译,监控告警由 `/webhook/alertmanager` 解析。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 
 ## 变更账本
@@ -45,7 +47,7 @@
 ## Redis
 
 - 只承载可丢失状态;Redis 故障时降级放行,不阻塞主链路。
-- webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。
+- webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。监控告警按 `fingerprint + startsAt` 去重,键 `gwei:{tenant_slug}:alert-dedup:{...}`。
 - LLM 分析缓存:内容哈希键(前缀 `gwei:`),TTL 24 小时;失败文案不写缓存。
 - 幂等兜底始终是 DBOS workflow ID,不是 Redis。
 
@@ -84,6 +86,7 @@
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/webhook/github` | GitHub Webhook(issue 事件) |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
+| POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |
 
 ## 插件
 

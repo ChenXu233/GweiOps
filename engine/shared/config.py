@@ -232,6 +232,7 @@ class Settings(BaseSettings):
 
     # ---- 变更单元 ----
     default_binding: str = "github"  # 效果执行的下游目标;多目标解析前只有一个
+    alertmanager_webhook_token: str = ""  # 监控信号入口的共享令牌;空 = 拒绝接收
     change_ledger_backend: str = "db"  # db(业务库)| file(演示与离线调试)
     change_ledger_path: str = "var/change-ledger.jsonl"  # file 后端的落盘位置
 
