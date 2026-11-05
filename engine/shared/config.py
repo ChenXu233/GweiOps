@@ -230,6 +230,10 @@ class Settings(BaseSettings):
     # ---- 租户 ----
     default_tenant_slug: str = "default"  # webhook 事件的缺省租户(多租户映射接入前)
 
+    # ---- 控制台鉴权 ----
+    # token:tenant:actor:scope,逗号分隔;tenant 写 * 表示不限租户;空 = 不鉴权
+    api_tokens: str = ""
+
     # ---- 变更单元 ----
     default_binding: str = "github"  # 效果执行的下游目标;多目标解析前只有一个
     alertmanager_webhook_token: str = ""  # 监控信号入口的共享令牌;空 = 拒绝接收

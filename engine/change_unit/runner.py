@@ -331,6 +331,7 @@ async def rollback(
     target: Any,
     ledger: Ledger | None = None,
     reason: str = "人工回滚",
+    by: str = "",
 ) -> ChangeUnit:
     """人对账本按下撤销。没有句柄的单元不允许伪造回滚。"""
     provider = _resolve_target(unit, target)
@@ -343,4 +344,6 @@ async def rollback(
     if not state.undoable:
         raise ValueError(f"这次变更已经不能撤:{state.reason}")
 
+    if by:
+        _merge(unit, {"rolled_back_by": by})
     return await _revert(unit, provider, ledger, "撤销时下游报错", ok_reason=reason)

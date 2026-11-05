@@ -194,5 +194,5 @@ effects:
 - 下游报错不是空白:读窗口、执行、读后窗口、验证、撤销五处各自兜住异常,各写一行账并记下阶段与错因,重放时按这一行复用结论、不把效果再做一遍。测试见 [test_change_failure.py](../../tests/test_integration/test_change_failure.py)。
 - 履历:[engine/change_unit/record.py](../../engine/change_unit/record.py) 把账本结论按 (租户, 下游, 能力) 聚成一条,策略据此做第二个问题的判定;intent 提供者也拿得到它。测试见 [test_change_record.py](../../tests/test_integration/test_change_record.py)。
 - 测试:[test_change_unit.py](../../tests/test_integration/test_change_unit.py),真 docker 的用例在守护进程不可用时跳过。
-- 策略与阻断出口:[engine/change_unit/policy.py](../../engine/change_unit/policy.py) 给出响应时延、无人值守时段与放行范围;放行 / 否决由 `POST /api/changes/{id}/approve|veto` 触发,各写一行账。`by` 由调用方自报,认证接入前只算备注。
+- 策略与阻断出口:[engine/change_unit/policy.py](../../engine/change_unit/policy.py) 给出响应时延、无人值守时段与放行范围;放行 / 否决由 `POST /api/changes/{id}/approve|veto` 触发,各写一行账。`by` 以控制台令牌为准([engine/api/auth.py](../../engine/api/auth.py)),没配令牌时才采信调用方写的那个。
 - `plugins/builtin/actions/k8s-scaler/` 只有空的 `__init__.py`,尚无清单与实现。
