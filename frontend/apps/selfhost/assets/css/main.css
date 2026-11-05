@@ -51,6 +51,9 @@
     --shadow-3: 0 24px 56px -18px rgb(18 18 16 / 0.22), 0 6px 16px rgb(18 18 16 / 0.05);
     --shadow-pop: 0 30px 72px -22px rgb(18 18 16 / 0.28);
     --surface-sheen: rgb(255 255 255 / 0.55);
+    --panel-glass: 255 255 255;
+    --panel-glass-alpha: 0.72;
+    --edge-light: rgb(255 255 255 / 0.85);
   }
 
   .dark {
@@ -83,6 +86,9 @@
     --shadow-3: 0 26px 60px -20px rgb(0 0 0 / 0.72), 0 6px 16px rgb(0 0 0 / 0.35);
     --shadow-pop: 0 32px 80px -24px rgb(0 0 0 / 0.80);
     --surface-sheen: rgb(255 255 255 / 0.035);
+    --panel-glass: 20 20 24;
+    --panel-glass-alpha: 0.66;
+    --edge-light: rgb(255 255 255 / 0.06);
   }
 
   * {
@@ -153,9 +159,13 @@
      表面
      --------------------------------------------------------------------- */
   .panel {
-    @apply rounded-panel border bg-panel;
+    @apply rounded-panel border;
     border-color: rgb(var(--line) / 0.7);
-    box-shadow: var(--shadow-1);
+    /* 淡透明 + 轻模糊:底下的暖光会透上来一点,像卡片在反光 */
+    background-color: rgb(var(--panel-glass) / var(--panel-glass-alpha));
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+    backdrop-filter: blur(12px) saturate(115%);
+    box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-1);
     background-image: linear-gradient(180deg, var(--surface-sheen), transparent 42%);
   }
 
@@ -183,6 +193,7 @@
   /* 页面底噪:两团几乎看不见的色雾,给纯色背景一点纵深 */
   .app-bg {
     background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.6) 0%, rgb(255 255 255 / 0) 42%),
       radial-gradient(1100px 520px at 8% -10%, rgb(var(--brand) / 0.07), transparent 62%),
       radial-gradient(900px 460px at 96% 0%, rgb(var(--lime) / 0.12), transparent 64%);
     /* 锚在视口而不是内容盒:短页面和长页面看到的是同一层光 */
@@ -192,6 +203,7 @@
 
   .dark .app-bg {
     background-image:
+      linear-gradient(180deg, rgb(255 255 255 / 0.035) 0%, rgb(255 255 255 / 0) 40%),
       radial-gradient(1100px 520px at 8% -10%, rgb(var(--brand) / 0.10), transparent 62%),
       radial-gradient(900px 460px at 96% 0%, rgb(var(--lime) / 0.05), transparent 64%);
   }
@@ -295,9 +307,12 @@
   /* 概览块:比面板内一层,靠底色分层,描边几乎看不见 */
   .tile,
   .stat {
-    @apply rounded-tile border bg-panel p-[18px];
+    @apply rounded-tile border p-[18px];
     border-color: rgb(var(--line) / 0.55);
-    box-shadow: var(--shadow-1);
+    background-color: rgb(var(--panel-glass) / calc(var(--panel-glass-alpha) - 0.08));
+    -webkit-backdrop-filter: blur(10px) saturate(112%);
+    backdrop-filter: blur(10px) saturate(112%);
+    box-shadow: inset 0 1px 0 var(--edge-light), var(--shadow-1);
     background-image: linear-gradient(180deg, var(--surface-sheen), transparent 46%);
   }
 
