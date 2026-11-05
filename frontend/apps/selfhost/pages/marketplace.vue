@@ -65,7 +65,7 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
         </p>
 
         <div class="mt-auto flex items-center justify-between border-t border-line/70 pt-3.5">
-          <span class="font-mono text-[10.5px] text-ink-faint">
+          <span class="font-mono text-[11.5px] text-ink-faint">
             {{ plugin.author === 'official' ? '官方' : '社区' }}
             <template v-if="plugin.price !== null"> · ¥{{ plugin.price }}</template>
           </span>
@@ -73,12 +73,12 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
           <NuxtLink
             v-if="plugin.pageTitle"
             :to="'/plugins/' + encodeURIComponent(plugin.id)"
-            class="inline-flex items-center gap-1 text-[11.5px] font-medium text-ink-soft transition-colors hover:text-ink"
+            class="inline-flex items-center gap-1 text-[12px] font-medium text-ink-soft transition-colors hover:text-ink"
           >
             打开页面
             <AppIcon name="external-link" :size="12" />
           </NuxtLink>
-          <span v-else class="text-[11.5px] text-ink-faint">无页面</span>
+          <span v-else class="text-[12px] text-ink-faint">无页面</span>
         </div>
       </article>
     </div>

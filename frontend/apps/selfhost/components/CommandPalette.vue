@@ -111,11 +111,11 @@ function onKey(e: KeyboardEvent) {
                 <AppIcon :name="row.item.icon" :size="15" />
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[13px] font-medium">{{ row.item.label }}</span>
-                  <span v-if="row.item.hint" class="block truncate text-[11px] text-ink-faint">
+                  <span v-if="row.item.hint" class="block truncate text-[11.5px] text-ink-faint">
                     {{ row.item.hint }}
                   </span>
                 </span>
-                <span class="font-mono text-[11px] text-ink-faint">{{ row.item.to }}</span>
+                <span class="font-mono text-[11.5px] text-ink-faint">{{ row.item.to }}</span>
                 <AppIcon v-if="i === active" name="arrow-right" :size="13" class="text-ink-faint" />
               </button>
             </li>

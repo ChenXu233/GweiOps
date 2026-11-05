@@ -90,7 +90,7 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
           <div class="mono-label">{{ manifest.name }}</div>
           <h1 class="mt-1.5 text-[24px] font-semibold leading-none tracking-tightest">{{ page.title }}</h1>
         </div>
-        <span class="chip gap-1.5 font-mono text-[10.5px]">
+        <span class="chip gap-1.5 font-mono text-[11.5px]">
           <AppIcon name="shield-check" :size="12" />
           沙箱运行
         </span>

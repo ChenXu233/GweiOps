@@ -80,7 +80,7 @@ const statusChip: Record<string, string> = {
           </div>
         </div>
 
-        <div class="mt-3 font-mono text-[10.5px] text-ink-faint">同步于 {{ repo.lastSyncAt }}</div>
+        <div class="mt-3 font-mono text-[11.5px] text-ink-faint">同步于 {{ repo.lastSyncAt }}</div>
       </article>
     </div>
   </div>

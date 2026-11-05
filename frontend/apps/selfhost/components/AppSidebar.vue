@@ -70,7 +70,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
     >
       <NuxtLink to="/dashboard" class="flex min-w-0 items-center gap-2.5" aria-label="既未 Gwei Ops">
         <span class="relative grid h-7 w-7 shrink-0 place-items-center rounded-[9px] bg-ink text-paper">
-          <span class="font-mono text-[11px] font-semibold leading-none">未</span>
+          <span class="font-mono text-[11.5px] font-semibold leading-none">未</span>
           <span class="absolute right-[3px] top-[3px] h-[5px] w-[5px] rounded-full bg-lime" />
         </span>
         <span v-if="!rail" class="min-w-0">
@@ -138,7 +138,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
                 <span class="flex-1 truncate">{{ item.label }}</span>
                 <span
                   v-if="countFor(item.badge)"
-                  class="num shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] leading-none"
+                  class="num shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none"
                   :class="isActive(item.to) ? 'bg-paper/20 text-paper' : 'bg-amber/15 text-amber'"
                 >
                   {{ countFor(item.badge) }}
@@ -169,7 +169,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
 
         <div class="mt-2 flex items-center gap-2.5 rounded-xl border border-line-soft bg-well/60 px-2.5 py-2">
           <span
-            class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-paper"
+            class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink text-[11.5px] font-semibold text-paper"
           >
             {{ (settings?.teamName || '当').slice(0, 1) }}
           </span>

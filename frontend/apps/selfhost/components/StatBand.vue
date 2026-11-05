@@ -45,10 +45,10 @@ const colClass: Record<number, string> = {
           class="num text-[24px] font-semibold leading-none tracking-tight"
           :class="toneClass[s.tone ?? 'default']"
         >{{ s.value }}</span>
-        <span v-if="s.unit" class="text-[11px] text-ink-faint">{{ s.unit }}</span>
+        <span v-if="s.unit" class="text-[11.5px] text-ink-faint">{{ s.unit }}</span>
       </div>
 
-      <p v-if="s.hint" class="mt-2 text-[11.5px] leading-relaxed text-ink-faint">{{ s.hint }}</p>
+      <p v-if="s.hint" class="mt-2 text-[12px] leading-relaxed text-ink-faint">{{ s.hint }}</p>
     </div>
   </div>
 </template>

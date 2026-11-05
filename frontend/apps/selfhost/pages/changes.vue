@@ -104,7 +104,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <div class="no-scrollbar flex items-center gap-1 overflow-x-auto pb-1">
       <button class="tab" :class="filter === 'all' ? 'tab-active' : ''" @click="filter = 'all'">
         全部
-        <span class="num font-mono text-[10px] opacity-60">{{ items.length }}</span>
+        <span class="num font-mono text-[11px] opacity-60">{{ items.length }}</span>
       </button>
       <button
         v-for="v in order"
@@ -114,7 +114,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         @click="filter = v"
       >
         {{ verdictMeta[v].label }}
-        <span class="num font-mono text-[10px] opacity-60">{{ counts[v] ?? 0 }}</span>
+        <span class="num font-mono text-[11px] opacity-60">{{ counts[v] ?? 0 }}</span>
       </button>
     </div>
 
@@ -163,21 +163,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 <div class="truncate text-[13px] font-medium">
                   {{ row.intent?.summary || '(无摘要)' }}
                 </div>
-                <div class="mt-0.5 truncate font-mono text-[10.5px] text-ink-faint">{{ row.id }}</div>
+                <div class="mt-0.5 truncate font-mono text-[11.5px] text-ink-faint">{{ row.id }}</div>
               </td>
               <td class="px-4 py-3">
-                <span class="font-mono text-[11.5px] text-ink-soft">{{ row.effect?.capability || '—' }}</span>
+                <span class="font-mono text-[12px] text-ink-soft">{{ row.effect?.capability || '—' }}</span>
               </td>
               <td class="px-4 py-3">
-                <span class="font-mono text-[11.5px] text-ink-soft">{{ row.binding || '—' }}</span>
+                <span class="font-mono text-[12px] text-ink-soft">{{ row.binding || '—' }}</span>
               </td>
               <td class="px-4 py-3">
-                <span class="num font-mono text-[11.5px] text-ink-faint">{{ when(row.created_at) }}</span>
+                <span class="num font-mono text-[12px] text-ink-faint">{{ when(row.created_at) }}</span>
               </td>
               <td class="px-4 py-3 text-right">
                 <span
                   v-if="canRollback(row)"
-                  class="rounded-full border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft transition-colors group-hover:border-coral/40 group-hover:text-coral"
+                  class="rounded-full border border-line px-2.5 py-1 text-[11.5px] font-medium text-ink-soft transition-colors group-hover:border-coral/40 group-hover:text-coral"
                 >
                   撤销
                 </span>
@@ -239,7 +239,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                   :key="row.k"
                   class="flex items-start gap-3 border-b border-line/60 px-4 py-2.5 last:border-0"
                 >
-                  <dt class="w-24 shrink-0 pt-0.5 text-[11.5px] text-ink-faint">{{ row.k }}</dt>
+                  <dt class="w-24 shrink-0 pt-0.5 text-[12px] text-ink-faint">{{ row.k }}</dt>
                   <dd class="min-w-0 flex-1 break-all font-mono text-[12px] leading-relaxed text-ink-soft">
                     {{ row.v }}
                   </dd>
@@ -259,9 +259,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                     <span class="absolute -left-4 top-1.5 h-1.5 w-1.5 rounded-full bg-ink-faint" />
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="text-[12px] font-medium">{{ verdictMeta[h.verdict].label }}</span>
-                      <span class="num font-mono text-[10.5px] text-ink-faint">{{ when(h.created_at) }}</span>
+                      <span class="num font-mono text-[11.5px] text-ink-faint">{{ when(h.created_at) }}</span>
                     </div>
-                    <p v-if="h.reason" class="mt-0.5 text-[11.5px] text-ink-soft">{{ h.reason }}</p>
+                    <p v-if="h.reason" class="mt-0.5 text-[12px] text-ink-soft">{{ h.reason }}</p>
                   </li>
                 </ol>
               </div>
@@ -281,11 +281,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 <AppIcon :name="confirming ? 'x-circle' : 'rotate-ccw'" :size="14" />
                 {{ rollingBack === selected?.id ? '正在回滚…' : confirming ? '再点一次确认撤销' : '撤销这次变更' }}
               </button>
-              <p class="mt-2 text-center text-[11px] text-ink-faint">
+              <p class="mt-2 text-center text-[11.5px] text-ink-faint">
                 撤销本身也会作为一条事件记进账本。
               </p>
             </template>
-            <p v-else class="text-center text-[11.5px] text-ink-faint">
+            <p v-else class="text-center text-[12px] text-ink-faint">
               这条变更当前没有可撤销的句柄。
             </p>
           </div>

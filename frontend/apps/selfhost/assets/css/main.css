@@ -212,11 +212,11 @@
      排版
      --------------------------------------------------------------------- */
   .mono-label {
-    @apply font-mono text-[10px] uppercase leading-none tracking-[0.16em] text-ink-faint;
+    @apply font-mono text-[11px] uppercase leading-none tracking-[0.12em] text-ink-faint;
   }
 
   .eyebrow {
-    @apply font-mono text-[10px] uppercase leading-none tracking-[0.18em] text-ink-faint;
+    @apply font-mono text-[11px] uppercase leading-none tracking-[0.12em] text-ink-faint;
   }
 
   .num {
@@ -275,7 +275,7 @@
   }
 
   .kbd {
-    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line bg-panel px-1 font-mono text-[10px] text-ink-faint;
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line bg-panel px-1 font-mono text-[11px] text-ink-faint;
   }
 
   /* ---------------------------------------------------------------------
@@ -298,7 +298,7 @@
   }
 
   .nav-section {
-    @apply px-2.5 pb-1 pt-4 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-faint;
+    @apply px-2.5 pb-1 pt-4 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-faint;
   }
 
   /* ---------------------------------------------------------------------
@@ -317,7 +317,7 @@
   }
 
   .chip {
-    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-line bg-well px-2 py-0.5 text-[11px] font-medium text-ink-soft;
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-line bg-well px-2 py-0.5 text-[11.5px] font-medium text-ink-soft;
   }
 
   .chip-ok {

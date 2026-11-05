@@ -123,7 +123,7 @@ function toggle(row: RunRow) {
         <AppIcon name="alert" :size="14" class="mt-0.5" />
         <div class="min-w-0">
           <p class="font-medium">拉不到执行记录。</p>
-          <p class="mt-1 break-words text-[11.5px] text-coral/80">{{ error }}</p>
+          <p class="mt-1 break-words text-[12px] text-coral/80">{{ error }}</p>
         </div>
       </div>
     </div>
@@ -131,7 +131,7 @@ function toggle(row: RunRow) {
     <!-- 概览 -->
     <StatBand :columns="3" :stats="overview" />
 
-    <p class="text-[11.5px] text-ink-faint">
+    <p class="text-[12px] text-ink-faint">
       进行中与成功率按本次加载的 {{ items.length }} 条记录统计;引擎共记录 {{ total }} 次执行。
     </p>
 
@@ -139,7 +139,7 @@ function toggle(row: RunRow) {
     <div class="no-scrollbar flex items-center gap-1 overflow-x-auto pb-1">
       <button class="tab" :class="filter === 'all' ? 'tab-active' : ''" @click="filter = 'all'">
         全部
-        <span class="num font-mono text-[10px] opacity-60">{{ items.length }}</span>
+        <span class="num font-mono text-[11px] opacity-60">{{ items.length }}</span>
       </button>
       <button
         class="tab"
@@ -147,7 +147,7 @@ function toggle(row: RunRow) {
         @click="filter = 'running'"
       >
         进行中
-        <span class="num font-mono text-[10px] opacity-60">{{ runningCount }}</span>
+        <span class="num font-mono text-[11px] opacity-60">{{ runningCount }}</span>
       </button>
       <button
         class="tab"
@@ -155,7 +155,7 @@ function toggle(row: RunRow) {
         @click="filter = 'ended'"
       >
         已结束
-        <span class="num font-mono text-[10px] opacity-60">{{ endedRows.length }}</span>
+        <span class="num font-mono text-[11px] opacity-60">{{ endedRows.length }}</span>
       </button>
     </div>
 
@@ -214,7 +214,7 @@ function toggle(row: RunRow) {
                 </td>
 
                 <td class="whitespace-nowrap px-4 py-3">
-                  <span class="num font-mono text-[11.5px] text-ink-faint">{{ when(row.startedAt) }}</span>
+                  <span class="num font-mono text-[12px] text-ink-faint">{{ when(row.startedAt) }}</span>
                 </td>
 
                 <td class="max-w-[320px] px-4 py-3">
@@ -227,14 +227,14 @@ function toggle(row: RunRow) {
                     <div class="truncate text-[13px] font-medium hover:underline">
                       {{ row.issueTitle }}
                     </div>
-                    <div class="mt-0.5 font-mono text-[10.5px] text-ink-faint">
+                    <div class="mt-0.5 font-mono text-[11.5px] text-ink-faint">
                       #{{ row.issueNumber }}
                     </div>
                   </NuxtLink>
                 </td>
 
                 <td class="max-w-[200px] px-4 py-3">
-                  <span class="block truncate font-mono text-[11.5px] text-ink-soft">{{ row.repo }}</span>
+                  <span class="block truncate font-mono text-[12px] text-ink-soft">{{ row.repo }}</span>
                 </td>
 
                 <td class="whitespace-nowrap px-4 py-3">
@@ -243,7 +243,7 @@ function toggle(row: RunRow) {
 
                 <td class="whitespace-nowrap px-4 py-3 text-right">
                   <span
-                    class="num font-mono text-[11.5px]"
+                    class="num font-mono text-[12px]"
                     :class="row.durationMs === null ? 'text-ink-faint' : 'text-ink-soft'"
                   >
                     {{ duration(row.durationMs) }}
@@ -256,7 +256,7 @@ function toggle(row: RunRow) {
                   <div class="rounded-card border border-line-soft bg-panel p-4">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <span class="mono-label">这次执行的附加状态</span>
-                      <span class="font-mono text-[10.5px] text-ink-faint">{{ row.id }}</span>
+                      <span class="font-mono text-[11.5px] text-ink-faint">{{ row.id }}</span>
                     </div>
 
                     <p
@@ -272,17 +272,17 @@ function toggle(row: RunRow) {
                         :key="key"
                         class="grid grid-cols-[minmax(0,132px)_minmax(0,1fr)] gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)]"
                       >
-                        <dt class="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">
+                        <dt class="font-mono text-[11.5px] uppercase tracking-[0.12em] text-ink-faint">
                           {{ key }}
                         </dt>
-                        <dd class="whitespace-pre-wrap break-all font-mono text-[11.5px] leading-relaxed text-ink-soft">
+                        <dd class="whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed text-ink-soft">
                           {{ stateValue(value) }}
                         </dd>
                       </div>
                     </dl>
 
                     <div
-                      class="mt-4 flex flex-wrap gap-x-6 gap-y-1 border-t border-line/70 pt-3 font-mono text-[10.5px] text-ink-faint"
+                      class="mt-4 flex flex-wrap gap-x-6 gap-y-1 border-t border-line/70 pt-3 font-mono text-[11.5px] text-ink-faint"
                     >
                       <span>开始 {{ row.startedAt ?? '—' }}</span>
                       <span>结束 {{ row.endedAt ?? '—' }}</span>
@@ -297,7 +297,7 @@ function toggle(row: RunRow) {
       </div>
     </div>
 
-    <p v-if="items.length" class="text-[11.5px] text-ink-faint">
+    <p v-if="items.length" class="text-[12px] text-ink-faint">
       显示最近 {{ items.length }} 条,引擎共记录 {{ total }} 次执行。
     </p>
   </div>

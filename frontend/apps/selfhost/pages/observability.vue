@@ -71,7 +71,7 @@ function sortedLabels(row: MetricRow): Array<[string, string]> {
 
     <StatBand :columns="3" :stats="overview" />
 
-    <p class="text-[11.5px] leading-relaxed text-ink-faint">
+    <p class="text-[12px] leading-relaxed text-ink-faint">
       分组按指标名前缀;“变化”是同名指标里这一条减去上一条序列的差值,只有一条序列的指标没有可比对象。
     </p>
 
@@ -139,12 +139,12 @@ function sortedLabels(row: MetricRow): Array<[string, string]> {
             <div class="col-span-6 flex items-baseline sm:col-span-2 sm:justify-end">
               <span
                 v-if="row.delta !== null"
-                class="num text-[11.5px] text-ink-soft"
+                class="num text-[12px] text-ink-soft"
                 :title="'上一条同类序列的值是 ' + formatValue(row.previousValue ?? 0)"
               >
                 {{ formatDelta(row.delta) }}
               </span>
-              <span v-else-if="row.familySize > 1" class="text-[11.5px] text-ink-faint">—</span>
+              <span v-else-if="row.familySize > 1" class="text-[12px] text-ink-faint">—</span>
             </div>
           </div>
         </div>
