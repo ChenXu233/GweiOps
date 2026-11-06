@@ -1,20 +1,43 @@
 # engine/api/routes/settings_scopes.py
-"""插件声明的配置项 —— 看得到要填什么、填得进去、读回来不回显值。
+"""插件声明的配置项 —— 要填什么、填了没有、哪些能看见。
 
-配置不是部署那一刻定死的:值存在业务库,改了就生效,重启不丢。
-谁声明的字段谁负责解释;平台只负责存、读、以及告诉你还缺什么。
+**回显是字段自己的事**,不是接口一刀切:每个字段声明 `expose`(never / masked / always)
+与 `read_scope`(read / operate)。没声明的默认 never——没写的就不出去。
+
+值存在业务库,改了就生效,重启不丢。
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+import logging
 
-from engine.api.auth import by_of
-from engine.shared.config import config
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from engine.api.auth import actor_of, by_of
+from engine.shared.config import config, mask_value
 from engine.shared.settings_store import create_settings_store
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class ScopeFieldDTO(BaseModel):
+    """一个配置项。value 只在它自己允许回显、且调用方够得着的时候才出现。"""
+
+    name: str
+    required: bool = False
+    expose: str = "never"
+    read_scope: str = "read"
+    set: bool = False
+    value: str | None = None
+
+
+class ScopeDTO(BaseModel):
+    name: str
+    prefix: str = ""
+    fields: list[ScopeFieldDTO]
+    missing: list[str]
 
 
 class ScopeValuesDTO(BaseModel):
@@ -25,20 +48,44 @@ class ScopeValuesDTO(BaseModel):
     values: dict[str, str] = {}
 
 
+def _shown(spec, raw: str | None, caller_scope: str) -> str | None:
+    """这个字段现在该不该把值给出去。"""
+    if raw in (None, ""):
+        return None
+    if spec.expose == "never":
+        return None
+    if spec.read_scope == "operate" and caller_scope != "operate":
+        return None
+    return mask_value(str(raw)) if spec.expose == "masked" else str(raw)
+
+
 @router.get("/api/settings/scopes")
-async def list_scopes(request: Request) -> list[dict]:
-    """每个 scope:要填什么、填了没有、缺什么。值一律不回显。"""
-    out = []
+async def list_scopes(request: Request) -> list[ScopeDTO]:
+    actor = actor_of(request)
+    caller_scope = actor.scope if actor else "operate"
+    out: list[ScopeDTO] = []
     for scope in config.list_scopes():
+        values = config.get_scope_config(scope.name)
+        fields = []
+        for spec in config.field_specs(scope.name):
+            raw = values.get(spec.name)
+            fields.append(
+                ScopeFieldDTO(
+                    name=spec.name,
+                    required=spec.required,
+                    expose=spec.expose,
+                    read_scope=spec.read_scope,
+                    set=raw not in (None, ""),
+                    value=_shown(spec, raw, caller_scope),
+                )
+            )
         out.append(
-            {
-                "name": scope.name,
-                "prefix": scope.prefix,
-                "required": list(scope.required_keys),
-                "optional": list(scope.optional_keys),
-                "set": sorted(config.stored(scope.name)),
-                "missing": config.validate_scope(scope.name),
-            }
+            ScopeDTO(
+                name=scope.name,
+                prefix=scope.prefix,
+                fields=fields,
+                missing=config.validate_scope(scope.name),
+            )
         )
     return out
 
@@ -51,9 +98,14 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
     if not values:
         raise HTTPException(status_code=400, detail="没有要写入的值")
 
-    stored = await create_settings_store().put(
-        scope_name, values, by=by_of(request, "")
-    )
+    try:
+        config.validate_values(scope_name, values)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    stored = await create_settings_store().put(scope_name, values, by=by_of(request, ""))
     merged = config.all_stored()
     merged[scope_name] = stored
     config.apply_stored(merged)

@@ -7,7 +7,40 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from dotenv import dotenv_values
+from pydantic import ValidationError
 from pydantic_settings import BaseSettings
+
+
+EXPOSE_MODES = ("never", "masked", "always")
+READ_SCOPES = ("read", "operate")
+
+
+@dataclass(frozen=True)
+class FieldSpec:
+    """一个配置项对外的规则:要不要回显、回显成什么、谁能看。
+
+    默认 `never`:没声明过的东西不出去。想要回显就明写,别指望调用方猜。
+    """
+
+    name: str
+    required: bool = False
+    expose: str = "never"  # never | masked | always
+    read_scope: str = "read"  # read | operate
+
+    def __post_init__(self) -> None:
+        if self.expose not in EXPOSE_MODES:
+            raise ValueError(f"非法 expose: {self.expose!r}")
+        if self.read_scope not in READ_SCOPES:
+            raise ValueError(f"非法 read_scope: {self.read_scope!r}")
+
+
+def mask_value(value: str) -> str:
+    """掩码不是把值变短,是让人认得出"是不是这一把"。"""
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}…{value[-4:]}"
 
 
 @dataclass
@@ -20,6 +53,9 @@ class ScopeDefinition:
     required_keys: list[str] = field(default_factory=list)
     optional_keys: list[str] = field(default_factory=list)
     validator: Optional[Callable[["Settings"], bool]] = None
+    fields: dict[str, FieldSpec] = field(default_factory=dict)
+    # 给了模型就在写入时做形状校验:存进去之前拦住,而不是等运行期炸
+    model: Optional[type] = None
 
 
 class ConfigManager:
@@ -41,6 +77,9 @@ class ConfigManager:
         prefix: str,
         required: list[str] | None = None,
         optional: list[str] | None = None,
+        *,
+        expose: dict[str, str] | None = None,
+        read_scope: dict[str, str] | None = None,
     ) -> None:
         """注册一个配置 scope。重复注册同名 scope 会被覆盖。
 
@@ -50,13 +89,91 @@ class ConfigManager:
             required: 必需的配置项字段名列表（不含前缀），例如 ``["app_id", "private_key"]``
             optional: 可选的配置项字段名列表（不含前缀）
         """
-        scope = ScopeDefinition(
+        expose = expose or {}
+        read_scope = read_scope or {}
+        specs: dict[str, FieldSpec] = {}
+        for key in required or []:
+            specs[key] = FieldSpec(
+                key, required=True, expose=expose.get(key, "never"),
+                read_scope=read_scope.get(key, "read"),
+            )
+        for key in optional or []:
+            specs[key] = FieldSpec(
+                key, required=False, expose=expose.get(key, "never"),
+                read_scope=read_scope.get(key, "read"),
+            )
+
+        self._scopes[name] = ScopeDefinition(
             name=name,
             prefix=prefix,
             required_keys=required or [],
             optional_keys=optional or [],
+            fields=specs,
         )
-        self._scopes[name] = scope
+
+    def register_model_scope(
+        self, name: str, model: type, prefix: str = ""
+    ) -> None:
+        """用 pydantic 模型声明配置:字段、必填、回显规则全写在模型里。
+
+        ```
+        class BotSettings(BaseModel):
+            api_key: str = Field(..., json_schema_extra={"expose": "masked"})
+            base_url: str = Field("", json_schema_extra={"expose": "always"})
+        ```
+
+        写入时会用它验证:形状不对当场拒绝,不会存进去等运行期才炸。
+        """
+        specs: dict[str, FieldSpec] = {}
+        required: list[str] = []
+        optional: list[str] = []
+        for field_name, info in model.model_fields.items():
+            extra = info.json_schema_extra or {}
+            if not isinstance(extra, dict):
+                extra = {}
+            specs[field_name] = FieldSpec(
+                field_name,
+                required=info.is_required(),
+                expose=extra.get("expose", "never"),
+                read_scope=extra.get("read_scope", "read"),
+            )
+            (required if info.is_required() else optional).append(field_name)
+
+        self._scopes[name] = ScopeDefinition(
+            name=name,
+            prefix=prefix,
+            required_keys=required,
+            optional_keys=optional,
+            fields=specs,
+            model=model,
+        )
+
+    def field_specs(self, scope_name: str) -> list[FieldSpec]:
+        """这个 scope 对外要交代的全部字段:声明过的 + 库里多出来的。"""
+        scope = self._scopes.get(scope_name)
+        if scope is None:
+            raise KeyError(f"Unknown scope: {scope_name!r}")
+        specs = dict(scope.fields)
+        for key in self._stored.get(scope_name, {}):
+            specs.setdefault(key, FieldSpec(key))
+        return list(specs.values())
+
+    def validate_values(self, scope_name: str, values: dict[str, str]) -> None:
+        """写入前校验。没给模型就不校验形状——那是声明方的选择。
+
+        "还没填全"不算错误:缺什么由 validate_scope 单独报,不该拦住先填一半。
+        拦的只是形状——类型不对、值不合法这类存进去会炸的东西。
+        """
+        scope = self._scopes.get(scope_name)
+        if scope is None or scope.model is None:
+            return
+        merged = {**self.get_scope_config(scope_name), **values}
+        try:
+            scope.model(**merged)
+        except ValidationError as exc:
+            shape_errors = [e for e in exc.errors() if e.get("type") != "missing"]
+            if shape_errors:
+                raise
 
     def get_scope(self, name: str) -> Optional[ScopeDefinition]:
         """按名称获取已注册的 scope。"""
