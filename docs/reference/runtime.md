@@ -63,6 +63,15 @@
 - `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
 - 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
 
+## 事故
+
+一次事故 = 一个 `incident_id`(取工作流 id)+ 一行报告。告警工作流开始写一行 `open`,收尾改写同一行。
+
+- `status` 停在 `open` 说明那一场开了没收口——它卡住了,不是"什么都没发生"。
+- 报告形状:`summary` / `steps` / `counts` / `exhausted` / `source`(`agent` 或 `declarative`)。外部 harness 回来照同一形状交。
+- 变更与事故分开存:账本说哪几处被改了,事故说整场怎么了。两者用 `GET /api/changes?incident=` 串起来。
+- 后端与账本同一个开关:`file` 时报告落在账本文件同目录的 `incidents.jsonl`。
+
 ## 租户
 
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
@@ -108,6 +117,7 @@
 | POST | `/api/changes/{id}/rollback` | 撤销已执行的单元,并追加一行审计 |
 | POST | `/api/changes/{id}/approve` | 放行一个阻断的单元,执行后照样读窗口与验证 |
 | POST | `/api/changes/{id}/veto` | 不做这次变更,追加一行否决 |
+| GET | `/api/incidents`、`/api/incidents/{id}` | 事故列表 / 单场事故的经过与结论 |
 | GET | `/api/agent/exits` | 出口清单:沙箱里的 agent 能改什么、每个动作的参数名 |
 | POST | `/api/agent/exits/{name}` | 走一次出口;改世界的调用落成一个变更单元 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |

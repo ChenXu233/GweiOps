@@ -231,6 +231,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Incidents
+         * @description 最近的在前。status 停在 open 的那几行,就是开了没收口的事故。
+         */
+        get: operations["list_incidents_api_incidents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{incident_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Incident */
+        get: operations["get_incident_api_incidents__incident_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/issues": {
         parameters: {
             query?: never;
@@ -758,6 +795,83 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /**
+         * IncidentDTO
+         * @description 一次事故。status 停在 open 说明那一场开了没收口。
+         */
+        IncidentDTO: {
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Exhausted
+             * @default false
+             */
+            exhausted: boolean;
+            /**
+             * Finished At
+             * @default
+             */
+            finished_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Signal Source
+             * @default
+             */
+            signal_source: string;
+            /**
+             * Signal Title
+             * @default
+             */
+            signal_title: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Started At
+             * @default
+             */
+            started_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "closed";
+            /**
+             * Steps
+             * @default []
+             */
+            steps: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** IncidentListDTO */
+        IncidentListDTO: {
+            /** Items */
+            items: components["schemas"]["IncidentDTO"][];
+            /** Total */
+            total: number;
         };
         /** IssueDTO */
         IssueDTO: {
@@ -1377,6 +1491,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthDTO"];
+                };
+            };
+        };
+    };
+    list_incidents_api_incidents_get: {
+        parameters: {
+            query?: {
+                tenant?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentListDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_incident_api_incidents__incident_id__get: {
+        parameters: {
+            query?: {
+                tenant?: string | null;
+            };
+            header?: never;
+            path: {
+                incident_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
