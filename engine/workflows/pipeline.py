@@ -418,6 +418,58 @@ async def handle_incident_step(payload: dict) -> dict | None:
     return await _handle_incident_impl(payload)
 
 
+async def _open_incident_impl(payload: dict) -> dict:
+    from engine.incidents import create_incident_store
+
+    return await create_incident_store().open(
+        incident_id=DBOS.workflow_id,
+        tenant=payload.get("tenant_slug", ""),
+        signal=signal_from_payload(payload),
+    )
+
+
+async def _close_incident_impl(payload: dict, report: dict) -> dict:
+    from engine.incidents import create_incident_store
+
+    closed = await create_incident_store().close(DBOS.workflow_id, report=report)
+    return closed or {}
+
+
+@DBOS.step()
+async def open_incident_step(payload: dict) -> dict:
+    return await _open_incident_impl(payload)
+
+
+@DBOS.step()
+async def close_incident_step(payload: dict, report: dict) -> dict:
+    return await _close_incident_impl(payload, report)
+
+
+def declarative_report(intent: dict, applied: dict) -> dict:
+    """声明式路径没有 agent 的报告,就把"提了什么、成了什么"整理成同一份形状。"""
+    effects = list(applied.get("applied") or [])
+    counts: dict[str, int] = {}
+    for item in effects:
+        verdict = str(item.get("verdict") or "error")
+        counts[verdict] = counts.get(verdict, 0) + 1
+    return {
+        "source": "declarative",
+        "summary": str(intent.get("summary") or ""),
+        "steps": [
+            {
+                "tool": str(item.get("capability") or ""),
+                "result": {
+                    "verdict": item.get("verdict"),
+                    "reason": item.get("reason"),
+                },
+            }
+            for item in effects
+        ],
+        "counts": counts,
+        "exhausted": False,
+    }
+
+
 @DBOS.step()
 async def propose_alert_intent_step(payload: dict) -> dict:
     return await _propose_intent_impl(payload, {}, [])
@@ -430,12 +482,17 @@ async def alert_triage_workflow(payload: dict) -> dict:
     信号本身不携带动作。能做什么由 intent 提供者决定;没有提供者时
     effects 为空,工作流正常结束——不假装做了什么。
     """
+    # 开始就写一行:事故开着没收口,说明那一场卡住了——这本身就是信息。
+    await open_incident_step(payload)
+
     handled = await handle_incident_step(payload)
     if handled is not None:
+        await close_incident_step(payload, {**handled, "source": handled.get("source") or "agent"})
         return handled
 
     intent = await propose_alert_intent_step(payload)
     applied = await apply_effects_step(intent, payload)
+    await close_incident_step(payload, declarative_report(intent, applied))
 
     return {
         "signal": (payload.get("signal") or {}).get("subject", ""),

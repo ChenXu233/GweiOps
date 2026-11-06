@@ -441,6 +441,108 @@
         "title": "HealthDTO",
         "type": "object"
       },
+      "IncidentDTO": {
+        "additionalProperties": true,
+        "description": "一次事故。status 停在 open 说明那一场开了没收口。",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Counts",
+            "type": "object"
+          },
+          "exhausted": {
+            "default": false,
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "default": "",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "signal_source": {
+            "default": "",
+            "title": "Signal Source",
+            "type": "string"
+          },
+          "signal_title": {
+            "default": "",
+            "title": "Signal Title",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "default": "",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "IncidentDTO",
+        "type": "object"
+      },
+      "IncidentListDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "IncidentListDTO",
+        "type": "object"
+      },
       "IssueDTO": {
         "properties": {
           "canary": {
@@ -1671,6 +1773,118 @@
           }
         },
         "summary": "Health Check"
+      }
+    },
+    "/api/incidents": {
+      "get": {
+        "description": "最近的在前。status 停在 open 的那几行,就是开了没收口的事故。",
+        "operationId": "list_incidents_api_incidents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Incidents"
+      }
+    },
+    "/api/incidents/{incident_id}": {
+      "get": {
+        "operationId": "get_incident_api_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Incident"
       }
     },
     "/api/issues": {

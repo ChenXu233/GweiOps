@@ -7,6 +7,7 @@ from .patch import Patch
 from .pr import PullRequest
 from .vote import ApprovalVote
 from .change_event import ChangeEvent
+from .incident import Incident
 
 __all__ = [
     "Project",
@@ -17,4 +18,5 @@ __all__ = [
     "PullRequest",
     "ApprovalVote",
     "ChangeEvent",
+    "Incident",
 ]

@@ -270,3 +270,32 @@ class ChangeListDTO(BaseModel):
 class ChangeDetailDTO(BaseModel):
     latest: ChangeRowDTO
     history: list[ChangeRowDTO]
+
+
+# ---------------------------------------------------------------------------
+# 事故
+# ---------------------------------------------------------------------------
+
+
+class IncidentDTO(BaseModel):
+    """一次事故。status 停在 open 说明那一场开了没收口。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    tenant: str = ""
+    signal_source: str = ""
+    signal_title: str = ""
+    status: Literal["open", "closed"] = "open"
+    source: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    summary: str = ""
+    counts: dict[str, int] = {}
+    steps: list[dict[str, Any]] = []
+    exhausted: bool = False
+
+
+class IncidentListDTO(BaseModel):
+    items: list[IncidentDTO]
+    total: int
