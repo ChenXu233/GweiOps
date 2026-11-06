@@ -234,6 +234,15 @@ class Settings(BaseSettings):
     # token:tenant:actor:scope,逗号分隔;tenant 写 * 表示不限租户;空 = 不鉴权
     api_tokens: str = ""
 
+    # ---- Harness ----
+    # 在工作区里跑一条命令,把一次事故交给外部 agent;{workspace} 会被替换成真实路径。
+    # 边界由这条命令决定(docker run / ssh ...),平台不会替你在宿主机上直接跑。留空 = 不用。
+    harness_command: str = ""
+    harness_timeout_s: int = 1800
+    harness_workspace_root: str = "var/incidents"
+    harness_token: str = ""  # harness 用的控制台令牌,从 api_tokens 里发一个给它
+    platform_base_url: str = "http://127.0.0.1:8000"  # harness 访问出口用的地址
+
     # ---- 出口 ----
     # 一个租户每小时能通过出口改几次世界;0 表示不限。循环搬进沙箱后,平台只能数次数。
     agent_max_exits_per_hour: int = 20

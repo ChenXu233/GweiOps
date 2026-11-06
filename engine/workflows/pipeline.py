@@ -13,6 +13,7 @@
 """
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
@@ -413,6 +414,51 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
     )
 
 
+async def _run_harness_impl(payload: dict) -> dict | None:
+    """有外部 harness 就交给它;没有就返回 None,往下回落到进程内或声明式。
+
+    harness 在自己的工作区里跑,平台只负责交进去、收回来。它改世界仍然走出口,
+    所以变更与账本跟进程内 agent 一模一样。
+    """
+    command = (config.settings.harness_command or "").strip()
+    if not command:
+        return None
+
+    from engine.harness import build_task, run_harness
+
+    incident_id = DBOS.workflow_id
+    workspace = Path(config.settings.harness_workspace_root) / incident_id
+    exit_url = config.settings.platform_base_url.rstrip("/") + "/api/agent/exits"
+
+    result = await run_harness(
+        command=command,
+        workspace=workspace,
+        task=build_task(
+            incident_id=incident_id,
+            signal=signal_from_payload(payload),
+            exit_url=exit_url,
+            workspace=str(workspace),
+            report_path=str(workspace / "report.json"),
+        ),
+        extra_env={
+            "GWEI_EXIT_URL": exit_url,
+            "GWEI_TOKEN": config.settings.harness_token,
+            "GWEI_INCIDENT_ID": incident_id,
+            "GWEI_TENANT": payload.get("tenant_slug", ""),
+            "GWEI_BINDING": config.settings.default_binding,
+        },
+        timeout_s=config.settings.harness_timeout_s,
+    )
+    if result.stderr:
+        logger.info("harness %s: %s", incident_id, result.stderr[-400:])
+    return result.report
+
+
+@DBOS.step()
+async def run_harness_step(payload: dict) -> dict | None:
+    return await _run_harness_impl(payload)
+
+
 @DBOS.step()
 async def handle_incident_step(payload: dict) -> dict | None:
     return await _handle_incident_impl(payload)
@@ -484,6 +530,11 @@ async def alert_triage_workflow(payload: dict) -> dict:
     """
     # 开始就写一行:事故开着没收口,说明那一场卡住了——这本身就是信息。
     await open_incident_step(payload)
+
+    harnessed = await run_harness_step(payload)
+    if harnessed is not None:
+        await close_incident_step(payload, harnessed)
+        return harnessed
 
     handled = await handle_incident_step(payload)
     if handled is not None:
