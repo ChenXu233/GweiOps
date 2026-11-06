@@ -27,6 +27,8 @@ class SettingsStore(Protocol):
         self, scope: str, values: dict[str, str], by: str = "", tenant: str = ""
     ) -> dict[str, str]: ...
 
+    async def delete(self, scope: str, key: str, tenant: str = "") -> bool: ...
+
 
 class JsonlSettingsStore:
     """一个 JSON 文件装全部租户与 scope。只配演示与离线调试。"""
@@ -60,6 +62,20 @@ class JsonlSettingsStore:
             bucket[str(key)] = str(value)
         self._write(data)
         return dict(bucket)
+
+    async def delete(self, scope: str, key: str, tenant: str = "") -> bool:
+        data = self._read()
+        bucket_tenant = data.get(tenant or GLOBAL_TENANT, {})
+        bucket = bucket_tenant.get(scope)
+        if not bucket or str(key) not in bucket:
+            return False
+        bucket.pop(str(key))
+        if not bucket:
+            bucket_tenant.pop(scope, None)
+        if not bucket_tenant:
+            data.pop(tenant or GLOBAL_TENANT, None)
+        self._write(data)
+        return True
 
 
 class DbSettingsStore:
@@ -127,6 +143,22 @@ class DbSettingsStore:
             **{key: row.value for key, row in existing.items()},
             **{str(k): str(v) for k, v in values.items()},
         }
+
+    async def delete(self, scope: str, key: str, tenant: str = "") -> bool:
+        from sqlalchemy import delete as sql_delete
+
+        from engine.db.models.plugin_setting import PluginSetting
+
+        async with self._session_factory() as session:
+            result = await session.execute(
+                sql_delete(PluginSetting).where(
+                    PluginSetting.tenant == (tenant or GLOBAL_TENANT),
+                    PluginSetting.scope == scope,
+                    PluginSetting.key == str(key),
+                )
+            )
+            await session.commit()
+        return bool(result.rowcount)
 
 
 def create_settings_store() -> SettingsStore:

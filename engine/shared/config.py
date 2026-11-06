@@ -306,6 +306,18 @@ class ConfigManager:
     def stored(self, scope_name: str, tenant: str = "") -> dict[str, str]:
         return self._scope_stored(scope_name, tenant)
 
+    def forget(self, scope_name: str, key: str, tenant: str = "") -> None:
+        """从内存覆盖里删掉一个键。删了租户的那一份,读的时候自然落回公共值。"""
+        scopes = self._stored.get(tenant or "", {})
+        bucket = scopes.get(scope_name)
+        if not bucket or key not in bucket:
+            return
+        bucket.pop(key)
+        if not bucket:
+            scopes.pop(scope_name, None)
+        if not scopes:
+            self._stored.pop(tenant or "", None)
+
     def all_stored(self) -> dict[str, dict[str, dict[str, str]]]:
         return {
             tenant: {scope: dict(values) for scope, values in scopes.items()}

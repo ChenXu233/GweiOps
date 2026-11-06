@@ -119,3 +119,27 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
         "set": sorted(stored),
         "missing": config.validate_scope(scope_name, tenant),
     }
+
+
+@router.delete("/api/settings/scopes/{scope_name}/{key}")
+async def delete_value(scope_name: str, key: str, request: Request) -> dict:
+    """删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。"""
+    if config.get_scope(scope_name) is None:
+        raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
+    tenant = tenant_scope(request, None) or ""
+
+    removed = await create_settings_store().delete(scope_name, key, tenant=tenant)
+    if not removed:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{scope_name} 上没有这个键: {key}"
+            + (f"(租户 {tenant})" if tenant else "(公共)"),
+        )
+    config.forget(scope_name, key, tenant)
+
+    return {
+        "scope": scope_name,
+        "removed": key,
+        "set": sorted(config.stored(scope_name, tenant)),
+        "missing": config.validate_scope(scope_name, tenant),
+    }
