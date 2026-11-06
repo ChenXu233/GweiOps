@@ -289,3 +289,59 @@ def test_the_api_writes_into_the_callers_tenant(model_scope):
     )
     assert config.get_scope_config("demo-model", tenant="acme")["api_key"] == "k-acme-1234"
     assert "api_key" not in config.get_scope_config("demo-model")
+
+# ---------------------------------------------------------------------------
+# 删:删掉租户的那一份,读的时候落回公共值
+# ---------------------------------------------------------------------------
+
+
+def test_deleting_a_tenant_value_falls_back_to_the_public_one(store, scopes):
+    asyncio.run(store.put("demo-bot", {"api_key": "public"}))
+    asyncio.run(store.put("demo-bot", {"api_key": "acme"}, tenant="acme"))
+    config.apply_stored(asyncio.run(store.load()))
+    assert config.get_scope_config("demo-bot", tenant="acme")["api_key"] == "acme"
+
+    assert asyncio.run(store.delete("demo-bot", "api_key", tenant="acme")) is True
+    config.apply_stored(asyncio.run(store.load()))
+
+    assert config.get_scope_config("demo-bot", tenant="acme")["api_key"] == "public"
+
+
+def test_deleting_a_key_that_is_not_there_reports_false(store, scopes):
+    assert asyncio.run(store.delete("demo-bot", "nope")) is False
+
+
+def test_the_api_deletes_a_value_and_says_what_is_left(client):
+    client.put("/api/settings/scopes/demo-bot", json={"values": {"base_url": "https://x"}})
+    resp = client.delete("/api/settings/scopes/demo-bot/base_url")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["set"] == []
+    assert config.get_scope_config("demo-bot") == {}
+
+
+def test_the_api_says_404_for_a_missing_key_or_scope(client):
+    assert client.delete("/api/settings/scopes/demo-bot/nope").status_code == 404
+    assert client.delete("/api/settings/scopes/nope/key").status_code == 404
+
+
+def test_the_api_deletes_only_inside_the_callers_tenant(model_scope):
+    from engine.api.auth import load_tokens, make_middleware
+
+    app = FastAPI()
+    app.include_router(scopes_mod.router)
+    app.middleware(
+        "http"
+    )(make_middleware(load_tokens("t-a:acme:值班:operate,t-r:*:维护者:operate")))
+    client = TestClient(app)
+    headers_a = {"X-Gwei-Token": "t-a"}
+    headers_root = {"X-Gwei-Token": "t-r"}
+
+    client.put("/api/settings/scopes/demo-model", json={"values": {"base_url": "public"}}, headers=headers_root)
+    client.put("/api/settings/scopes/demo-model", json={"values": {"base_url": "acme"}}, headers=headers_a)
+    config.apply_stored(asyncio.run(create_settings_store().load()))
+
+    # acme 删自己的那一份,公共值不动
+    assert client.delete("/api/settings/scopes/demo-model/base_url", headers=headers_a).status_code == 200
+    config.apply_stored(asyncio.run(create_settings_store().load()))
+    assert config.get_scope_config("demo-model")["base_url"] == "public"
+    assert config.get_scope_config("demo-model", tenant="acme")["base_url"] == "public"

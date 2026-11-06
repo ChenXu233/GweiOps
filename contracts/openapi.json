@@ -2355,6 +2355,57 @@
         "summary": "Put Scope"
       }
     },
+    "/api/settings/scopes/{scope_name}/{key}": {
+      "delete": {
+        "description": "删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。",
+        "operationId": "delete_value_api_settings_scopes__scope_name___key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_name",
+            "required": true,
+            "schema": {
+              "title": "Scope Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Value Api Settings Scopes  Scope Name   Key  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Value"
+      }
+    },
     "/webhook/alertmanager": {
       "post": {
         "description": "监控信号入口。\n\nAlertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,\n不应该默认敞开。",

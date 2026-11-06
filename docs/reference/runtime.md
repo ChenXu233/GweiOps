@@ -124,6 +124,7 @@
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
+| DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键;删的是调用方租户那一份,读的时候落回公共值 |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
 | GET | `/api/metrics` | 指标快照 |
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |

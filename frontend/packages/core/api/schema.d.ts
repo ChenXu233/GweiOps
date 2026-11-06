@@ -469,6 +469,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/scopes/{scope_name}/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Value
+         * @description 删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。
+         */
+        delete: operations["delete_value_api_settings_scopes__scope_name___key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/alertmanager": {
         parameters: {
             query?: never;
@@ -1923,6 +1943,40 @@ export interface operations {
                 "application/json": components["schemas"]["ScopeValuesDTO"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_value_api_settings_scopes__scope_name___key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope_name: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
