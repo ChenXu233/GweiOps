@@ -14,6 +14,7 @@ from engine.api.routes.agent import router as agent_router
 from engine.api.routes.changes import router as changes_router
 from engine.api.routes.incidents import router as incidents_router
 from engine.api.routes.console import router as console_router
+from engine.api.routes.settings_scopes import router as settings_scopes_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
 from engine.shared.config import config
@@ -38,6 +39,16 @@ async def lifespan(app: FastAPI):
     registry.discover()
     await registry.launch()
 
+    # 存进库里的配置值:启动时装一次,之后写入时原地更新(所以取值仍然是同步的)
+    from engine.harness import build_env  # noqa: F401 — 导入即注册 harness-env scope
+    from engine.shared.settings_store import create_settings_store
+
+    try:
+        config.apply_stored(await create_settings_store().load())
+        logger.info("Stored settings loaded: %d scope(s)", len(config.all_stored()))
+    except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
+        logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
+
     # 插件自己声明的配置有缺项就说出来:声明了却没人填,比没声明更糟——
     # 那种沉默会在第一次真要调下游的时候才爆。
     for scope in config.list_scopes():
@@ -51,8 +62,10 @@ async def lifespan(app: FastAPI):
 
         await ensure_schema()
         from engine.incidents import ensure_schema as ensure_incident_schema
+        from engine.shared.settings_store import ensure_schema as ensure_settings_schema
 
         await ensure_incident_schema()
+        await ensure_settings_schema()
         logger.info("Change ledger + incidents ready (backend=db)")
 
     # Startup: 启动 DBOS 并注册工作流队列(按租户分区,公平性执行点)
@@ -84,6 +97,7 @@ app.include_router(console_router)
 app.include_router(changes_router)
 app.include_router(agent_router)
 app.include_router(incidents_router)
+app.include_router(settings_scopes_router)
 app.include_router(webhook_router)
 
 # 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。

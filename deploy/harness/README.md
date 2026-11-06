@@ -28,16 +28,19 @@ docker volume create gwei-dsh-home
 docker run --rm -it -v gwei-dsh-home:/data/dsh-home --entrypoint sh gwei-harness:local
 ```
 
-### 凭据从哪来
+### 凭据:由平台注入,不进卷
 
-两条路,选一条:
+凭据存在 GweiOps 的业务库里,每次起容器时以大写环境变量注入 —— 不需要第二步那个交互式配置,换机器也不用重配。
 
-1. **配在卷里**(上面第 3 步):dsh 自己管,平台不参与。换镜像也还在,但换机器要重配。
-2. **从平台的环境里透传**:把同名变量设在 GweiOps 的 `.env`,命令里加 `-e NAME`。平台把整个进程环境交给那条命令,容器里就能读到。
+```bash
+curl -X PUT http://<平台>/api/settings/scopes/harness-env \
+  -H "X-Gwei-Token: <operate 令牌>" -H "Content-Type: application/json" \
+  -d '{"values": {"deepseek_api_key": "…", "dsh_model": "…"}}'
+```
 
-第 2 条能不能生效取决于 dsh 认不认环境变量——这一点本仓库没有验证过,也不替它猜。凡是"某个下游怎么收凭据"的问题,答案在该下游自己的文档里,不在平台的配置里。
+存进去的 `deepseek_api_key` 会变成容器里的 `DEEPSEEK_API_KEY`,其余同理(键名大写)。这条命令里再加 `-e DEEPSEEK_API_KEY` 就能透进容器。
 
-平台这一侧只保证一件事:凭据不进仓库、不进日志、不进事故报告。
+容器认不认这个变量名,是 dsh 的事,平台不替它猜;平台只保证值从库里来、按大写注入、不进日志也不进报告。
 
 ## 接上平台
 

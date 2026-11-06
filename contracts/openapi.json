@@ -1102,6 +1102,22 @@
         "title": "RunRowDTO",
         "type": "object"
       },
+      "ScopeValuesDTO": {
+        "additionalProperties": true,
+        "description": "要写进去的一组键值。字段名由声明决定,这里不预设。",
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "title": "ScopeValuesDTO",
+        "type": "object"
+      },
       "SettingsDTO": {
         "properties": {
           "adminCount": {
@@ -2185,6 +2201,81 @@
           }
         },
         "summary": "Team Settings"
+      }
+    },
+    "/api/settings/scopes": {
+      "get": {
+        "description": "每个 scope:要填什么、填了没有、缺什么。值一律不回显。",
+        "operationId": "list_scopes_api_settings_scopes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Scopes Api Settings Scopes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scopes"
+      }
+    },
+    "/api/settings/scopes/{scope_name}": {
+      "put": {
+        "operationId": "put_scope_api_settings_scopes__scope_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_name",
+            "required": true,
+            "schema": {
+              "title": "Scope Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeValuesDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Scope Api Settings Scopes  Scope Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Scope"
       }
     },
     "/webhook/alertmanager": {

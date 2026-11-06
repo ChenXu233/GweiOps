@@ -28,6 +28,8 @@ class ConfigManager:
     def __init__(self) -> None:
         self._scopes: dict[str, ScopeDefinition] = {}
         self._settings: Optional[Settings] = None
+        # 存进业务库的那一份。启动时加载一次,写入时原地更新,所以取值仍然是同步的。
+        self._stored: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Scope 注册
@@ -122,7 +124,8 @@ class ConfigManager:
         # 否则查找自定义 scope，按 prefix 取值
         scope = self._scopes.get(scope_name)
         if scope is not None:
-            data: dict[str, Any] = {}
+            # 库里存的全部键都算数:有的 scope(比如 harness-env)本来就不预设字段名
+            data: dict[str, Any] = dict(self._stored.get(scope_name, {}))
             for field_name in scope.required_keys + scope.optional_keys:
                 val = self._scope_value(scope, field_name)
                 if val is not None:
@@ -167,8 +170,25 @@ class ConfigManager:
         except Exception:  # noqa: BLE001 - 读不到就是没有,不因此起不来
             return {}
 
+    def apply_stored(self, stored: dict[str, dict[str, str]]) -> None:
+        """装上从库里读出来的那一份覆盖。"""
+        self._stored = {scope: dict(values) for scope, values in stored.items()}
+
+    def stored(self, scope_name: str) -> dict[str, str]:
+        return dict(self._stored.get(scope_name, {}))
+
+    def all_stored(self) -> dict[str, dict[str, str]]:
+        return {scope: dict(values) for scope, values in self._stored.items()}
+
     def _scope_value(self, scope: ScopeDefinition, field_name: str) -> Any:
-        """一个 scope 字段的值:Settings 优先,其次进程环境,最后 .env。"""
+        """一个 scope 字段的值:库里存的 → Settings → 进程环境 → .env。
+
+        库排在最前面:人在页面上填过的值,不该被某次部署的环境变量悄悄盖掉。
+        """
+        stored = self._stored.get(scope.name, {})
+        if field_name in stored:
+            return stored[field_name]
+
         settings_key = self._resolve_settings_key(scope, field_name)
         value = getattr(self.settings, settings_key, None)
         if value is not None and value != "":

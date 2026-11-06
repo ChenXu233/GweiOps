@@ -120,6 +120,8 @@ missing = config.validate_scope("adapter-github-app")    # ["private_key"]
 - 命名:scope 为 `{类型}-{平台}-{功能}`,字段名 snake_case;环境变量为 `{PREFIX}{FIELD_NAME}`。
 - 取值按序:`Settings` 里有同名字段就用它 → 进程环境变量 → `.env`。**插件声明的字段不需要先写进 `Settings`**,声明了就是可配的——声明了却读不出来,等于没这套机制。
 - 缺项在启动时以 warning 点名(写的就是你该去设的那个环境变量名):声明了却没人填,比没声明更糟,那种沉默会拖到第一次真要调下游时才爆。
+- **值可以存进业务库**:`PUT /api/settings/scopes/{scope}` 写一次,重启不丢,改完立即生效。库里存的值排在 `Settings` 与环境变量之前——人在页面上填过的东西,不该被某次部署的环境变量悄悄盖掉。
+- 接口只回显"哪些键设过了、还缺什么",永不回显值。
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`。
