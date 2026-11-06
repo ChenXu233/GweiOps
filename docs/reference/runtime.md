@@ -63,6 +63,17 @@
 - `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
 - 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
 
+## Harness
+
+外部 agent 在**自己的沙箱**里处理一次事故,平台只负责交进去、收回来。
+
+- `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成这一场的工作区(`HARNESS_WORKSPACE_ROOT/<incident_id>`)。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
+- 边界由那条命令决定:`docker run --rm -v {workspace}:/w …` 或 `ssh box …`。平台不会替你在宿主机上直接起进程。
+- 交进去:工作区里的 `task.md`(信号、出口地址、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_WORKSPACE`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
+- 收回来:工作区里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
+- 它改世界仍然只能走[出口](#出口),所以变更、账本、可撤销性和进程内 agent 完全一样。
+- `dsh` 这类 harness 自带一次任务一次退出的入口(`dsh --profile headless "<task>"`);平台不认识它,只认那条命令。
+
 ## 事故
 
 一次事故 = 一个 `incident_id`(取工作流 id)+ 一行报告。告警工作流开始写一行 `open`,收尾改写同一行。
