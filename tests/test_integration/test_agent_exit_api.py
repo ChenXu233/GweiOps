@@ -225,3 +225,28 @@ def test_reads_do_not_consume_the_budget(env):
     )
     resp = env.client.post("/api/agent/exits/issue.read", json={}, headers=_h())
     assert resp.status_code == 200
+
+def test_the_incident_id_travels_with_the_call(env):
+    env.client.post(
+        "/api/agent/exits/compose.scale",
+        json={"args": {"service": "web", "replicas": 2}, "incident_id": "inc-7"},
+        headers=_h(),
+    )
+    assert _rows(env.ledger)[0]["incident_id"] == "inc-7"
+
+
+def test_the_same_call_id_in_another_incident_is_another_change(env):
+    """call_id 只在一次事故里有意义:换一次事故,同样的编号就是另一件事。"""
+    payload = {"args": {"service": "web", "replicas": 2}, "call_id": "c-1"}
+    env.client.post(
+        "/api/agent/exits/compose.scale",
+        json={**payload, "incident_id": "inc-1"},
+        headers=_h(),
+    )
+    env.client.post(
+        "/api/agent/exits/compose.scale",
+        json={**payload, "incident_id": "inc-2"},
+        headers=_h(),
+    )
+    assert env.provider.executed == 2
+    assert len(_rows(env.ledger)) == 2

@@ -125,6 +125,7 @@ async def run_tool(
     index: int = 0,
     summary: str = "",
     actor: str = "",
+    incident_id: str = "",
     policy: Any = None,
 ) -> ToolResult:
     """走一次出口。改世界的过闸门,只读的直接调。
@@ -166,6 +167,7 @@ async def run_tool(
         effect=decl.to_effect(args),
         tenant=tenant,
         binding=binding,
+        incident_id=incident_id,
         idempotency_key=f"{idem_base}:tool:{index}" if idem_base else "",
     )
     try:

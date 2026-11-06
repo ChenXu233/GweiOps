@@ -88,6 +88,8 @@ class ChangeUnit:
     )
     tenant: str = ""
     binding: str = ""
+    # 同一次事故里做的变更共用它。空 = 不属于任何一次(人工单发)。
+    incident_id: str = ""
     idempotency_key: str = ""  # 这次效果的身份;重放时据此复用既有结论
     handle: str | None = None
     window: Window | None = None
@@ -118,6 +120,7 @@ class ChangeUnit:
             or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             tenant=data.get("tenant", ""),
             binding=data.get("binding", ""),
+            incident_id=data.get("incident_id", ""),
             idempotency_key=data.get("idempotency_key", ""),
             handle=data.get("handle"),
             window=_window_from_dict(data.get("window")),

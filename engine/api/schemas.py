@@ -249,6 +249,7 @@ class ChangeRowDTO(BaseModel):
     reason: str = ""
     binding: str = ""
     tenant: str = ""
+    incident_id: str = ""  # 同一次事故的变更共用它;空 = 不属于任何一次
     handle: str | None = None
     idempotency_key: str = ""
     intent: ChangeIntentDTO = ChangeIntentDTO()

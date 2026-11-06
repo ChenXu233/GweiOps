@@ -81,6 +81,7 @@ async def list_changes(
     request: Request,
     verdict: str | None = None,
     binding: str | None = None,
+    incident: str | None = None,
     tenant: str | None = None,
     limit: int = 100,
 ) -> ChangeListDTO:
@@ -90,7 +91,7 @@ async def list_changes(
     total 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。
     """
     tenant = tenant_scope(request, tenant)
-    filtering = bool(verdict or binding)
+    filtering = bool(verdict or binding or incident)
     rows = await _ledger().latest(
         tenant=tenant, limit=None if filtering else max(0, limit)
     )
@@ -98,6 +99,8 @@ async def list_changes(
         rows = [row for row in rows if row.get("verdict") == verdict]
     if binding:
         rows = [row for row in rows if row.get("binding") == binding]
+    if incident:
+        rows = [row for row in rows if row.get("incident_id") == incident]
     return ChangeListDTO(items=_rows_with_undo(rows[: max(0, limit)]), total=len(rows))
 
 

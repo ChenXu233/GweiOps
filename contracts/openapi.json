@@ -242,6 +242,11 @@
             "title": "Idempotency Key",
             "type": "string"
           },
+          "incident_id": {
+            "default": "",
+            "title": "Incident Id",
+            "type": "string"
+          },
           "intent": {
             "$ref": "#/components/schemas/ChangeIntentDTO",
             "default": {
@@ -384,6 +389,11 @@
           "call_id": {
             "default": "",
             "title": "Call Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "default": "",
+            "title": "Incident Id",
             "type": "string"
           },
           "summary": {
@@ -1218,6 +1228,22 @@
                 }
               ],
               "title": "Binding"
+            }
+          },
+          {
+            "in": "query",
+            "name": "incident",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Incident"
             }
           },
           {

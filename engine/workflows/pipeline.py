@@ -282,7 +282,9 @@ async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict
     }
 
 
-async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> dict:
+async def _apply_effects_impl(
+    intent: dict, payload: dict, idem_base: str, incident_id: str = ""
+) -> dict:
     """把 intent 里的候选效果逐个落成变更单元:解析提供者 → 执行 → 验证 → 记账。"""
     from engine.change_unit.intent import parse_intent
 
@@ -331,6 +333,7 @@ async def _apply_effects_impl(intent: dict, payload: dict, idem_base: str) -> di
             effect=decl.to_effect(args),
             tenant=tenant,
             binding=binding,
+            incident_id=incident_id,
             idempotency_key=f"{idem_base}:effect:{index}",
         )
         outcome = await apply_change_unit(unit, provider, ledger)
@@ -385,7 +388,9 @@ async def propose_intent_step(payload: dict, analysis: dict, patches: list) -> d
 @DBOS.step()
 async def apply_effects_step(intent: dict, payload: dict) -> dict:
     """效果执行以 workflow_id 作为幂等基座:重放只复用账本结论。"""
-    return await _apply_effects_impl(intent, payload, f"{DBOS.workflow_id}:effects")
+    return await _apply_effects_impl(
+        intent, payload, f"{DBOS.workflow_id}:effects", incident_id=DBOS.workflow_id
+    )
 
 
 async def _handle_incident_impl(payload: dict) -> dict | None:
@@ -400,6 +405,7 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
         "incident.handle",
         {
             "signal": signal,
+            "incident_id": DBOS.workflow_id,
             "tenant": payload.get("tenant_slug", ""),
             "binding": config.settings.default_binding,
             "idem_base": f"{DBOS.workflow_id}:incident",

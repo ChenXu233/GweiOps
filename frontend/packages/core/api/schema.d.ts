@@ -636,6 +636,11 @@ export interface components {
              */
             idempotency_key: string;
             /**
+             * Incident Id
+             * @default
+             */
+            incident_id: string;
+            /**
              * @default {
              *       "summary": ""
              *     }
@@ -724,6 +729,11 @@ export interface components {
              * @default
              */
             call_id: string;
+            /**
+             * Incident Id
+             * @default
+             */
+            incident_id: string;
             /**
              * Summary
              * @default
@@ -1104,6 +1114,7 @@ export interface operations {
             query?: {
                 verdict?: string | null;
                 binding?: string | null;
+                incident?: string | null;
                 tenant?: string | null;
                 limit?: number;
             };

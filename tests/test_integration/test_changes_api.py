@@ -288,3 +288,17 @@ def test_every_history_row_carries_its_own_answer(client, ledger):
     asyncio.run(ledger.append(_unit("rolled_back")))
     body = client.get("/api/changes/u1").json()
     assert [row["undoable"] for row in body["history"]] == [True, False]
+
+def test_filter_by_incident(client, ledger):
+    """一次事故做的所有变更,可以一次捞出来 —— 早上看的是事故,不是十二行账。"""
+    first = _unit("kept", unit_id="a")
+    first.incident_id = "inc-1"
+    second = _unit("kept", unit_id="b")
+    second.incident_id = "inc-1"
+    lonely = _unit("kept", unit_id="c")
+    for unit in (first, second, lonely):
+        asyncio.run(ledger.append(unit))
+
+    body = client.get("/api/changes?incident=inc-1").json()
+    assert body["total"] == 2
+    assert {row["id"] for row in body["items"]} == {"a", "b"}
