@@ -14,7 +14,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from engine.api.auth import actor_of, by_of
+from engine.api.auth import actor_of, by_of, tenant_scope
 from engine.shared.config import config, mask_value
 from engine.shared.settings_store import create_settings_store
 
@@ -63,11 +63,12 @@ def _shown(spec, raw: str | None, caller_scope: str) -> str | None:
 async def list_scopes(request: Request) -> list[ScopeDTO]:
     actor = actor_of(request)
     caller_scope = actor.scope if actor else "operate"
+    tenant = tenant_scope(request, None) or ""
     out: list[ScopeDTO] = []
     for scope in config.list_scopes():
-        values = config.get_scope_config(scope.name)
+        values = config.get_scope_config(scope.name, tenant)
         fields = []
-        for spec in config.field_specs(scope.name):
+        for spec in config.field_specs(scope.name, tenant):
             raw = values.get(spec.name)
             fields.append(
                 ScopeFieldDTO(
@@ -84,7 +85,7 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
                 name=scope.name,
                 prefix=scope.prefix,
                 fields=fields,
-                missing=config.validate_scope(scope.name),
+                missing=config.validate_scope(scope.name, tenant),
             )
         )
     return out
@@ -98,20 +99,23 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
     if not values:
         raise HTTPException(status_code=400, detail="没有要写入的值")
 
+    tenant = tenant_scope(request, None) or ""
     try:
-        config.validate_values(scope_name, values)
+        config.validate_values(scope_name, values, tenant)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    stored = await create_settings_store().put(scope_name, values, by=by_of(request, ""))
+    stored = await create_settings_store().put(
+        scope_name, values, by=by_of(request, ""), tenant=tenant
+    )
     merged = config.all_stored()
-    merged[scope_name] = stored
+    merged.setdefault(tenant, {})[scope_name] = stored
     config.apply_stored(merged)
 
     return {
         "scope": scope_name,
         "set": sorted(stored),
-        "missing": config.validate_scope(scope_name),
+        "missing": config.validate_scope(scope_name, tenant),
     }

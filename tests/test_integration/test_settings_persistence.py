@@ -46,7 +46,9 @@ def test_a_value_survives_a_restart(store):
     asyncio.run(store.put("harness-env", {"deepseek_api_key": "sk-1"}))
     # 换一个实例读,证明它是落在文件里而不是内存里
     again = create_settings_store()
-    assert asyncio.run(again.load()) == {"harness-env": {"deepseek_api_key": "sk-1"}}
+    assert asyncio.run(again.load()) == {
+        "": {"harness-env": {"deepseek_api_key": "sk-1"}}
+    }
 
 
 def test_stored_beats_the_environment(monkeypatch, scopes):
@@ -238,3 +240,52 @@ def test_half_filled_is_not_an_error(client_model):
     )
     assert resp.status_code == 200, resp.text
     assert "DEMO_MODEL_API_KEY" in resp.json()["missing"]
+
+# ---------------------------------------------------------------------------
+# 租户:先读公共,再读自己的
+# ---------------------------------------------------------------------------
+
+
+def test_a_tenant_value_overrides_the_public_one(store, scopes):
+    asyncio.run(store.put("demo-bot", {"api_key": "public"}))
+    asyncio.run(store.put("demo-bot", {"api_key": "acme"}, tenant="acme"))
+    config.apply_stored(asyncio.run(store.load()))
+
+    assert config.get_scope_config("demo-bot")["api_key"] == "public"
+    assert config.get_scope_config("demo-bot", tenant="acme")["api_key"] == "acme"
+    # 没设过的租户落回公共值,不是落空
+    assert config.get_scope_config("demo-bot", tenant="other")["api_key"] == "public"
+
+
+def test_a_tenant_only_value_does_not_leak(store, scopes):
+    asyncio.run(store.put("demo-bot", {"api_key": "acme-only"}, tenant="acme"))
+    config.apply_stored(asyncio.run(store.load()))
+
+    assert config.get_scope_config("demo-bot", tenant="other") == {}
+    assert config.validate_scope("demo-bot", tenant="other") == ["DEMO_BOT_API_KEY"]
+
+
+def test_the_harness_env_is_per_tenant(store, scopes):
+    asyncio.run(store.put("harness-env", {"deepseek_api_key": "public"}))
+    asyncio.run(store.put("harness-env", {"deepseek_api_key": "acme"}, tenant="acme"))
+    config.apply_stored(asyncio.run(store.load()))
+
+    assert build_env(tenant="acme")["DEEPSEEK_API_KEY"] == "acme"
+    assert build_env()["DEEPSEEK_API_KEY"] == "public"
+
+
+def test_the_api_writes_into_the_callers_tenant(model_scope):
+    from engine.api.auth import load_tokens, make_middleware
+
+    app = FastAPI()
+    app.include_router(scopes_mod.router)
+    app.middleware("http")(make_middleware(load_tokens("t-a:acme:值班:operate")))
+    client = TestClient(app)
+
+    client.put(
+        "/api/settings/scopes/demo-model",
+        json={"values": {"api_key": "k-acme-1234"}},
+        headers={"X-Gwei-Token": "t-a"},
+    )
+    assert config.get_scope_config("demo-model", tenant="acme")["api_key"] == "k-acme-1234"
+    assert "api_key" not in config.get_scope_config("demo-model")

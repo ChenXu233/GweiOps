@@ -447,6 +447,7 @@ async def _run_harness_impl(payload: dict) -> dict | None:
             "GWEI_TENANT": payload.get("tenant_slug", ""),
             "GWEI_BINDING": config.settings.default_binding,
         },
+        tenant=payload.get("tenant_slug", ""),
         timeout_s=config.settings.harness_timeout_s,
     )
     if result.stderr:
