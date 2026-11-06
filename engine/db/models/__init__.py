@@ -8,6 +8,7 @@ from .pr import PullRequest
 from .vote import ApprovalVote
 from .change_event import ChangeEvent
 from .incident import Incident
+from .plugin_setting import PluginSetting
 
 __all__ = [
     "Project",
@@ -19,4 +20,5 @@ __all__ = [
     "ApprovalVote",
     "ChangeEvent",
     "Incident",
+    "PluginSetting",
 ]

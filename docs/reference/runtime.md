@@ -70,6 +70,7 @@
 - `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成这一场的工作区(`HARNESS_WORKSPACE_ROOT/<incident_id>`)。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
 - 边界由那条命令决定:`docker run --rm -v {workspace}:/w …` 或 `ssh box …`。平台不会替你在宿主机上直接起进程。
 - 交进去:工作区里的 `task.md`(信号、出口地址、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_WORKSPACE`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
+- **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式作为容器环境变量传进去,不需要进容器手配,也不落在卷里。
 - 收回来:工作区里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
 - 它改世界仍然只能走[出口](#出口),所以变更、账本、可撤销性和进程内 agent 完全一样。
 - `dsh` 这类 harness 自带一次任务一次退出的入口(`dsh --profile headless "<task>"`);平台不认识它,只认那条命令。可直接用的那条命令与对应镜像见 [deploy/harness](../../deploy/harness/README.md)。
@@ -121,6 +122,8 @@
 | GET | `/api/repos` | 仓库列表 |
 | GET | `/api/runs` | 执行记录(一次 AgentSession 一次执行,含起止与耗时) |
 | GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
+| PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
 | GET | `/api/metrics` | 指标快照 |
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |

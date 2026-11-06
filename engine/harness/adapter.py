@@ -96,6 +96,21 @@ def _fallback_report(result: HarnessResult) -> dict[str, Any]:
     }
 
 
+def build_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """交给那条命令的环境变量。
+
+    库里存的 harness-env 每个键都以大写注入;调用方再给一份覆盖。
+    凭据由平台注入,不由部署方进容器手配。
+    """
+    from engine.shared.config import config
+
+    stored = {
+        str(key).upper(): str(value)
+        for key, value in config.get_scope_config("harness-env").items()
+    }
+    return {**stored, **(extra or {})}
+
+
 async def run_harness(
     *,
     command: str,
@@ -115,7 +130,7 @@ async def run_harness(
     report_path = root / REPORT_NAME
 
     resolved = command.replace("{workspace}", str(root))
-    env = {**os.environ, **(extra_env or {})}
+    env = {**os.environ, **build_env(extra_env)}
     env.update(
         {
             "GWEI_WORKSPACE": str(root),
@@ -167,4 +182,4 @@ async def run_harness(
     return result
 
 
-__all__ = ["HarnessResult", "run_harness", "build_task", "REPORT_NAME"]
+__all__ = ["HarnessResult", "run_harness", "build_task", "build_env", "REPORT_NAME"]

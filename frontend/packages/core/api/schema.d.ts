@@ -435,6 +435,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Scopes
+         * @description 每个 scope:要填什么、填了没有、缺什么。值一律不回显。
+         */
+        get: operations["list_scopes_api_settings_scopes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/scopes/{scope_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Scope */
+        put: operations["put_scope_api_settings_scopes__scope_name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhook/alertmanager": {
         parameters: {
             query?: never;
@@ -1115,6 +1152,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * ScopeValuesDTO
+         * @description 要写进去的一组键值。字段名由声明决定,这里不预设。
+         */
+        ScopeValuesDTO: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: string;
+            };
+        } & {
+            [key: string]: unknown;
+        };
         /** SettingsDTO */
         SettingsDTO: {
             /** Admincount */
@@ -1792,6 +1844,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsDTO"];
+                };
+            };
+        };
+    };
+    list_scopes_api_settings_scopes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    put_scope_api_settings_scopes__scope_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scope_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScopeValuesDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
