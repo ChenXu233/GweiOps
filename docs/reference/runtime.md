@@ -59,6 +59,7 @@
 - **每次改世界的调用都是一个变更单元**:读窗口、判定、执行、验证、记账,和人工操作走同一条闸门。只读调用不落账。
 - 参数 `call_id` 带上时,同一次调用重发只复用账本里的结论,不二次外呼;不带就当两次调用,老实做两次。
 - 参数 `binding` 缺省取 `default_binding`。绑错目标不是结论,是配置错误:拒绝执行,不留账本行。
+- 参数 `incident_id` 把这次事故的所有变更串在一起,早上可以用 `GET /api/changes?incident=` 一次捞出来。`call_id` 只在同一次事故里有意义:换一次事故,同样的编号就是另一件事。
 - `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
 - 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
 
@@ -102,7 +103,7 @@
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
 | GET | `/api/metrics` | 指标快照 |
-| GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding 过滤) |
+| GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |
 | GET | `/api/changes/{id}` | 单个单元的全部事件(执行与撤销) |
 | POST | `/api/changes/{id}/rollback` | 撤销已执行的单元,并追加一行审计 |
 | POST | `/api/changes/{id}/approve` | 放行一个阻断的单元,执行后照样读窗口与验证 |

@@ -105,6 +105,7 @@ class OperatorAgent(PluginBase):
         tenant = str(params.get("tenant") or "")
         binding = str(params.get("binding") or "")
         idem_base = str(params.get("idem_base") or "")
+        incident_id = str(params.get("incident_id") or idem_base.split(":")[0])
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -167,6 +168,7 @@ class OperatorAgent(PluginBase):
                     idem_base=idem_base,
                     index=used,
                     summary=str(signal.get("title") or ""),
+                    incident_id=incident_id,
                 )
                 used += 1
                 steps.append(

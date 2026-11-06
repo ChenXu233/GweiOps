@@ -35,6 +35,7 @@ class ExitCallDTO(BaseModel):
 
     args: dict[str, Any] = {}
     call_id: str = ""  # 带上的话,重发同一次调用只复用结论,不二次外呼
+    incident_id: str = ""  # 这一次事故的编号;同一次事故的变更共用它
     binding: str = ""
     tenant: str = ""
     summary: str = ""
@@ -89,9 +90,12 @@ async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
         ledger=create_ledger(),
         tenant=tenant,
         binding=binding,
-        idem_base=f"{actor}:{call.call_id}" if call.call_id else "",
+        idem_base=(
+            f"{actor}:{call.incident_id}:{call.call_id}" if call.call_id else ""
+        ),
         summary=call.summary,
         actor=actor,
+        incident_id=call.incident_id,
     )
     logger.info(
         "exit %s by %s [%s/%s] -> %s",
