@@ -1,9 +1,12 @@
 # engine/shared/config.py
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings
 
 
@@ -116,15 +119,12 @@ class ConfigManager:
         if scope_name in presets:
             return presets[scope_name](self.settings)
 
-        # 否则查找自定义 scope，使用 prefix 映射获取配置
+        # 否则查找自定义 scope，按 prefix 取值
         scope = self._scopes.get(scope_name)
         if scope is not None:
-            s = self.settings
             data: dict[str, Any] = {}
-            all_keys = scope.required_keys + scope.optional_keys
-            for field_name in all_keys:
-                settings_key = self._resolve_settings_key(scope, field_name)
-                val = getattr(s, settings_key, None)
+            for field_name in scope.required_keys + scope.optional_keys:
+                val = self._scope_value(scope, field_name)
                 if val is not None:
                     data[field_name] = val
             return data
@@ -151,6 +151,33 @@ class ConfigManager:
         if scope.prefix:
             return self._field_to_env_key(scope.prefix, field_name)
         return field_name
+
+    def _dotenv_values(self) -> dict[str, str]:
+        """读 .env 里那些 Settings 没声明的键。
+
+        Settings 只会把**已声明**的字段收进模型,插件自己声明的新 scope 拿不到值。
+        这里把同一份文件再读一遍,让"插件声明了什么,平台就读得出来什么"。
+        """
+        raw = self.settings.model_config.get("env_file") or ".env"
+        path = Path(raw) if isinstance(raw, str) else Path(".env")
+        if not path.exists():
+            return {}
+        try:
+            return {k: v for k, v in dotenv_values(path).items() if v is not None}
+        except Exception:  # noqa: BLE001 - 读不到就是没有,不因此起不来
+            return {}
+
+    def _scope_value(self, scope: ScopeDefinition, field_name: str) -> Any:
+        """一个 scope 字段的值:Settings 优先,其次进程环境,最后 .env。"""
+        settings_key = self._resolve_settings_key(scope, field_name)
+        value = getattr(self.settings, settings_key, None)
+        if value is not None and value != "":
+            return value
+
+        env_key = f"{scope.prefix}{field_name}".upper()
+        if env_key in os.environ:
+            return os.environ[env_key]
+        return self._dotenv_values().get(env_key)
 
     # ------------------------------------------------------------------
     # 校验
@@ -189,14 +216,11 @@ class ConfigManager:
         if scope is None:
             raise KeyError(f"Unknown scope: {scope_name!r}")
 
-        s = self.settings
         missing = []
         for field_name in scope.required_keys:
-            settings_key = self._resolve_settings_key(scope, field_name)
-            val = getattr(s, settings_key, None)
-            if val is None or val == "":
-                # 返回环境变量风格的名称（大写）
-                env_name = self._field_to_env_key(scope.prefix or scope.name, field_name).upper()
+            if self._scope_value(scope, field_name) in (None, ""):
+                # 返回环境变量风格的名称（大写），人照着它去补
+                env_name = f"{scope.prefix}{field_name}".upper()
                 missing.append(env_name)
         return missing
 

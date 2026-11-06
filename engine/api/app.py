@@ -38,6 +38,13 @@ async def lifespan(app: FastAPI):
     registry.discover()
     await registry.launch()
 
+    # 插件自己声明的配置有缺项就说出来:声明了却没人填,比没声明更糟——
+    # 那种沉默会在第一次真要调下游的时候才爆。
+    for scope in config.list_scopes():
+        missing = config.validate_scope(scope.name)
+        if missing:
+            logger.warning("插件配置缺项 %s: %s", scope.name, ", ".join(missing))
+
     # Startup: 账本表(仓库没有迁移工具,checkfirst 建一次)
     if config.settings.change_ledger_backend != "file":
         from engine.db.change_ledger import ensure_schema
