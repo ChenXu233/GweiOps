@@ -1102,6 +1102,85 @@
         "title": "RunRowDTO",
         "type": "object"
       },
+      "ScopeDTO": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeFieldDTO"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "default": "",
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields",
+          "missing"
+        ],
+        "title": "ScopeDTO",
+        "type": "object"
+      },
+      "ScopeFieldDTO": {
+        "description": "一个配置项。value 只在它自己允许回显、且调用方够得着的时候才出现。",
+        "properties": {
+          "expose": {
+            "default": "never",
+            "title": "Expose",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "read_scope": {
+            "default": "read",
+            "title": "Read Scope",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "set": {
+            "default": false,
+            "title": "Set",
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ScopeFieldDTO",
+        "type": "object"
+      },
       "ScopeValuesDTO": {
         "additionalProperties": true,
         "description": "要写进去的一组键值。字段名由声明决定,这里不预设。",
@@ -2205,7 +2284,6 @@
     },
     "/api/settings/scopes": {
       "get": {
-        "description": "每个 scope:要填什么、填了没有、缺什么。值一律不回显。",
         "operationId": "list_scopes_api_settings_scopes_get",
         "responses": {
           "200": {
@@ -2213,8 +2291,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/ScopeDTO"
                   },
                   "title": "Response List Scopes Api Settings Scopes Get",
                   "type": "array"

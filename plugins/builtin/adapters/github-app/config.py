@@ -1,4 +1,6 @@
 # plugins/builtin/adapters/github-app/config.py
+from pydantic import BaseModel, Field
+
 from engine.shared.config import config
 
 
@@ -14,39 +16,46 @@ def normalize_pem(raw: str) -> str:
     return raw.replace("\\n", "\n")
 
 
+class GitHubAppSettings(BaseModel):
+    """配置形状由这里定:哪些必填、哪些能回显、回显成什么样。
+
+    app_id 不是秘密,原样给出去;私钥与 webhook 密钥永不回显——
+    页面上只需要知道"设过了",不需要看到值。
+    """
+
+    app_id: str = Field(..., json_schema_extra={"expose": "always"})
+    private_key: str = Field(..., json_schema_extra={"expose": "never"})
+    webhook_secret: str = Field("", json_schema_extra={"expose": "never"})
+    installation_id: int = 0
+
+
 class GitHubAppConfig:
     """GitHub App Adapter 配置（内部 Scope）。"""
 
     SCOPE_NAME = "adapter-github-app"
     SCOPE_PREFIX = "GITHUB_APP_"
-    REQUIRED_FIELDS = ["app_id", "private_key"]
-    OPTIONAL_FIELDS = ["webhook_secret", "installation_id"]
 
     def __init__(self):
-        # 注册 Scope
-        config.register_scope(
-            name=self.SCOPE_NAME,
-            prefix=self.SCOPE_PREFIX,
-            required=self.REQUIRED_FIELDS,
-            optional=self.OPTIONAL_FIELDS,
-        )
-        self._config = config.get_scope_config(self.SCOPE_NAME)
+        config.register_model_scope(self.SCOPE_NAME, GitHubAppSettings, prefix=self.SCOPE_PREFIX)
+        raw = config.get_scope_config(self.SCOPE_NAME)
+        # 空串按"没填"处理,让模型的默认值说话(installation_id 尤其需要)
+        self._settings = GitHubAppSettings(**{k: v for k, v in raw.items() if v != ""})
 
     @property
     def app_id(self) -> str:
-        return self._config.get("app_id", "")
+        return str(self._settings.app_id)
 
     @property
     def private_key(self) -> str:
-        return normalize_pem(self._config.get("private_key", ""))
+        return normalize_pem(self._settings.private_key)
 
     @property
     def webhook_secret(self) -> str:
-        return self._config.get("webhook_secret", "")
+        return self._settings.webhook_secret
 
     @property
     def installation_id(self) -> int:
-        return self._config.get("installation_id", 0)
+        return int(self._settings.installation_id)
 
     def validate(self) -> list[str]:
         """验证配置是否完整。"""

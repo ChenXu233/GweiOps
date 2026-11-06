@@ -442,10 +442,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Scopes
-         * @description 每个 scope:要填什么、填了没有、缺什么。值一律不回显。
-         */
+        /** List Scopes */
         get: operations["list_scopes_api_settings_scopes_get"];
         put?: never;
         post?: never;
@@ -1151,6 +1148,50 @@ export interface components {
             };
             /** Status */
             status: string;
+        };
+        /** ScopeDTO */
+        ScopeDTO: {
+            /** Fields */
+            fields: components["schemas"]["ScopeFieldDTO"][];
+            /** Missing */
+            missing: string[];
+            /** Name */
+            name: string;
+            /**
+             * Prefix
+             * @default
+             */
+            prefix: string;
+        };
+        /**
+         * ScopeFieldDTO
+         * @description 一个配置项。value 只在它自己允许回显、且调用方够得着的时候才出现。
+         */
+        ScopeFieldDTO: {
+            /**
+             * Expose
+             * @default never
+             */
+            expose: string;
+            /** Name */
+            name: string;
+            /**
+             * Read Scope
+             * @default read
+             */
+            read_scope: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Set
+             * @default false
+             */
+            set: boolean;
+            /** Value */
+            value?: string | null;
         };
         /**
          * ScopeValuesDTO
@@ -1863,9 +1904,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["ScopeDTO"][];
                 };
             };
         };

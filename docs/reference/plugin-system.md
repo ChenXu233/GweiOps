@@ -117,11 +117,25 @@ scopes = config.get_scope_config("adapter-github-app")   # {"app_id": ..., ...}
 missing = config.validate_scope("adapter-github-app")    # ["private_key"]
 ```
 
+回显规则写在字段上,用 pydantic 模型声明最省事 —— 字段、必填、能不能见,一处说清:
+
+```python
+from pydantic import BaseModel, Field
+
+class GitHubAppSettings(BaseModel):
+    app_id: str = Field(..., json_schema_extra={"expose": "always"})
+    private_key: str = Field(..., json_schema_extra={"expose": "never"})
+    owner_token: str = Field("", json_schema_extra={"expose": "always", "read_scope": "operate"})
+
+config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GITHUB_APP_")
+```
+
 - 命名:scope 为 `{类型}-{平台}-{功能}`,字段名 snake_case;环境变量为 `{PREFIX}{FIELD_NAME}`。
 - 取值按序:`Settings` 里有同名字段就用它 → 进程环境变量 → `.env`。**插件声明的字段不需要先写进 `Settings`**,声明了就是可配的——声明了却读不出来,等于没这套机制。
 - 缺项在启动时以 warning 点名(写的就是你该去设的那个环境变量名):声明了却没人填,比没声明更糟,那种沉默会拖到第一次真要调下游时才爆。
 - **值可以存进业务库**:`PUT /api/settings/scopes/{scope}` 写一次,重启不丢,改完立即生效。库里存的值排在 `Settings` 与环境变量之前——人在页面上填过的东西,不该被某次部署的环境变量悄悄盖掉。
-- 接口只回显"哪些键设过了、还缺什么",永不回显值。
+- **回显是字段自己的事,不是接口一刀切**:`expose` 取 `never`(默认)、`masked`(给出 `sk-a…3456` 这种认得出的形状)、`always`;`read_scope` 取 `read`(默认)或 `operate`(只有运维令牌看得到值)。没声明的字段不出去——没写的就不给,比默认全给安全。
+- 用模型声明时,写入前顺手做形状校验:类型不对拒(422),"还没填全"不算错(缺什么由 `missing` 单独报,不该拦住先填一半)。
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`。
