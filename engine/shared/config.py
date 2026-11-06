@@ -148,17 +148,19 @@ class ConfigManager:
             model=model,
         )
 
-    def field_specs(self, scope_name: str) -> list[FieldSpec]:
+    def field_specs(self, scope_name: str, tenant: str = "") -> list[FieldSpec]:
         """这个 scope 对外要交代的全部字段:声明过的 + 库里多出来的。"""
         scope = self._scopes.get(scope_name)
         if scope is None:
             raise KeyError(f"Unknown scope: {scope_name!r}")
         specs = dict(scope.fields)
-        for key in self._stored.get(scope_name, {}):
+        for key in self._scope_stored(scope_name, tenant):
             specs.setdefault(key, FieldSpec(key))
         return list(specs.values())
 
-    def validate_values(self, scope_name: str, values: dict[str, str]) -> None:
+    def validate_values(
+        self, scope_name: str, values: dict[str, str], tenant: str = ""
+    ) -> None:
         """写入前校验。没给模型就不校验形状——那是声明方的选择。
 
         "还没填全"不算错误:缺什么由 validate_scope 单独报,不该拦住先填一半。
@@ -167,7 +169,7 @@ class ConfigManager:
         scope = self._scopes.get(scope_name)
         if scope is None or scope.model is None:
             return
-        merged = {**self.get_scope_config(scope_name), **values}
+        merged = {**self.get_scope_config(scope_name, tenant), **values}
         try:
             scope.model(**merged)
         except ValidationError as exc:
@@ -202,7 +204,7 @@ class ConfigManager:
     # Scope 配置分发
     # ------------------------------------------------------------------
 
-    def get_scope_config(self, scope_name: str) -> dict[str, Any]:
+    def get_scope_config(self, scope_name: str, tenant: str = "") -> dict[str, Any]:
         """返回某个 scope 对应的配置字典。
 
         预置的 scope 映射：
@@ -242,9 +244,9 @@ class ConfigManager:
         scope = self._scopes.get(scope_name)
         if scope is not None:
             # 库里存的全部键都算数:有的 scope(比如 harness-env)本来就不预设字段名
-            data: dict[str, Any] = dict(self._stored.get(scope_name, {}))
+            data: dict[str, Any] = self._scope_stored(scope_name, tenant)
             for field_name in scope.required_keys + scope.optional_keys:
-                val = self._scope_value(scope, field_name)
+                val = self._scope_value(scope, field_name, tenant)
                 if val is not None:
                     data[field_name] = val
             return data
@@ -287,22 +289,38 @@ class ConfigManager:
         except Exception:  # noqa: BLE001 - 读不到就是没有,不因此起不来
             return {}
 
-    def apply_stored(self, stored: dict[str, dict[str, str]]) -> None:
-        """装上从库里读出来的那一份覆盖。"""
-        self._stored = {scope: dict(values) for scope, values in stored.items()}
+    def apply_stored(self, stored: dict[str, dict[str, dict[str, str]]]) -> None:
+        """装上从库里读出来的那一份覆盖:{租户: {scope: {键: 值}}}。"""
+        self._stored = {
+            tenant: {scope: dict(values) for scope, values in scopes.items()}
+            for tenant, scopes in stored.items()
+        }
 
-    def stored(self, scope_name: str) -> dict[str, str]:
-        return dict(self._stored.get(scope_name, {}))
+    def _scope_stored(self, scope_name: str, tenant: str = "") -> dict[str, str]:
+        """公共值打底,租户值覆盖。租户为空就是只看公共那一份。"""
+        merged = dict(self._stored.get("", {}).get(scope_name, {}))
+        if tenant:
+            merged.update(self._stored.get(tenant, {}).get(scope_name, {}))
+        return merged
 
-    def all_stored(self) -> dict[str, dict[str, str]]:
-        return {scope: dict(values) for scope, values in self._stored.items()}
+    def stored(self, scope_name: str, tenant: str = "") -> dict[str, str]:
+        return self._scope_stored(scope_name, tenant)
 
-    def _scope_value(self, scope: ScopeDefinition, field_name: str) -> Any:
+    def all_stored(self) -> dict[str, dict[str, dict[str, str]]]:
+        return {
+            tenant: {scope: dict(values) for scope, values in scopes.items()}
+            for tenant, scopes in self._stored.items()
+        }
+
+    def _scope_value(
+        self, scope: ScopeDefinition, field_name: str, tenant: str = ""
+    ) -> Any:
         """一个 scope 字段的值:库里存的 → Settings → 进程环境 → .env。
 
         库排在最前面:人在页面上填过的值,不该被某次部署的环境变量悄悄盖掉。
+        租户有值就用租户的,没有就落回公共值。
         """
-        stored = self._stored.get(scope.name, {})
+        stored = self._scope_stored(scope.name, tenant)
         if field_name in stored:
             return stored[field_name]
 
@@ -320,7 +338,7 @@ class ConfigManager:
     # 校验
     # ------------------------------------------------------------------
 
-    def validate_scope(self, scope_name: str) -> list[str]:
+    def validate_scope(self, scope_name: str, tenant: str = "") -> list[str]:
         """验证 Scope 配置是否完整。返回缺失的必需配置项列表。
 
         Returns:
@@ -355,7 +373,7 @@ class ConfigManager:
 
         missing = []
         for field_name in scope.required_keys:
-            if self._scope_value(scope, field_name) in (None, ""):
+            if self._scope_value(scope, field_name, tenant) in (None, ""):
                 # 返回环境变量风格的名称（大写），人照着它去补
                 env_name = f"{scope.prefix}{field_name}".upper()
                 missing.append(env_name)
