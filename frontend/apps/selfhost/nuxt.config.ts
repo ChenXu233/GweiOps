@@ -74,6 +74,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // engineUrl 仅服务端(代理)使用;浏览器一律走同源 /api
     engineUrl: process.env.NUXT_ENGINE_URL || 'http://localhost:8000',
+    // 控制台令牌只在服务端使用:代理替浏览器带上,浏览器永远拿不到它
+    engineToken: process.env.NUXT_ENGINE_TOKEN || '',
     public: {
       useMock: process.env.NUXT_PUBLIC_USE_MOCK === 'true',
       // 部署档位:selfhost(默认,单租户)| saas(多租户完整形态)

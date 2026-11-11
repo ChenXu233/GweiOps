@@ -19,12 +19,23 @@ services:
     build:
       context: .
       dockerfile: engine/Dockerfile
+      args:
+        # harness 要在引擎里执行 docker run(见 HARNESS_COMMAND)
+        INSTALL_DOCKER_CLI: "1"
     container_name: gwei-engine-dev
+    # dev: 要读宿主 docker.sock、写共享工作区卷,非 root 用户没有这个权限。
+    # 生产镜像仍然以 gwei 用户运行;harness 由宿主机/别的机器执行,不靠容器内 docker。
+    user: "0:0"
     ports:
       - "8000:8000"
     volumes:
       - ./engine:/app/engine
       - ./plugins:/app/plugins
+      # dev 专用:让引擎能替事故起一个 harness 容器。
+      # 生产不该这么跑——把 harness 放在宿主机或另一台机器上,引擎只发命令。
+      - /var/run/docker.sock:/var/run/docker.sock
+      # harness 工作区:引擎与 harness 容器挂同一个卷,路径两边一致
+      - harness-workspace:/workspaces
     command: ["--reload", "--reload-dir", "/app/engine", "--reload-dir", "/app/plugins"]
     environment:
       DATABASE_URL: "postgresql+asyncpg://gwei:gwei@postgres:5432/gwei"
@@ -34,6 +45,12 @@ services:
       POSTGRES_USER: gwei
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      # harness:工作区在共享卷里,事故交给容器时用同一路径
+      HARNESS_WORKSPACE_ROOT: /workspaces
+      PLATFORM_BASE_URL: http://engine:8000
+      # 控制台令牌(dev):web 代理用 operate,harness 用自己那一份。
+      # 放在 compose 而不是 .env,是因为 pytest 也会读 .env——开着鉴权会把本地测试全打成 401。
+      API_TOKENS: "console-operate-token-2026:default:console:operate,harness-dev-token-2026:default:harness:operate"
 
   web:
     image: node:22-alpine
@@ -43,11 +60,25 @@ services:
       sh -c "
         corepack enable &&
         pnpm install --frozen-lockfile &&
-        pnpm dev:selfhost
+        pnpm --filter @gwei/selfhost exec nuxt dev --host 0.0.0.0
       "
     ports:
       - "3000:3000"
     volumes:
       - ./frontend:/app
     environment:
-      NUXT_PUBLIC_USE_MOCK: "true"
+      # 默认走真实引擎;要看 fixture 就临时改成 "true"
+      NUXT_PUBLIC_USE_MOCK: "false"
+      # 容器里的 localhost 不是引擎;同网络下按服务名找到 engine
+      NUXT_ENGINE_URL: "http://engine:8000"
+      # 控制台令牌只给服务端代理用,浏览器拿不到。
+      # 用 operate 是因为设置页要能写;selfhost 单租户下谁能打开页面谁就能改配置。
+      NUXT_ENGINE_TOKEN: "console-operate-token-2026"
+      # 容器里没有终端可答交互式提示(pnpm 重建 node_modules 会问 Y/n)
+      CI: "true"
+
+volumes:
+  # harness 工作区:引擎写 task.md、harness 写 report.json,两边看成同一个目录。
+  # 用命名卷而不是宿主目录,是因为容器内看不到宿主的盘符路径。
+  harness-workspace:
+    name: gwei-harness-workspace
