@@ -29,6 +29,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
+# 可选:docker CLI。只有 dev 把引擎容器当作 harness 启动器时才需要(要挂宿主的 docker.sock);
+# 生产镜像不装,构建参数默认 0。
+ARG INSTALL_DOCKER_CLI=0
+RUN if [ "$INSTALL_DOCKER_CLI" = "1" ]; then \
+        curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz -o /tmp/docker.tgz \
+        && tar -xzf /tmp/docker.tgz -C /tmp \
+        && install -m 0755 /tmp/docker/docker /usr/local/bin/docker \
+        && rm -rf /tmp/docker /tmp/docker.tgz; \
+    fi
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
@@ -37,7 +47,7 @@ COPY engine/ ./engine/
 COPY plugins/ ./plugins/
 
 # Ensure entrypoint is executable
-RUN chmod +x entrypoint.sh
+RUN chmod +x engine/entrypoint.sh
 
 # Create non-root user
 RUN groupadd -r gwei && useradd -r -g gwei -d /app -s /bin/false gwei \
@@ -49,4 +59,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8000/api/health || exit 1
 
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["./engine/entrypoint.sh"]
