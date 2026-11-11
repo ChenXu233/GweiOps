@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, BigInteger, DateTime, ForeignKey
+from sqlalchemy import String, Integer, BigInteger, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from engine.db.base import Base
@@ -14,8 +14,10 @@ class PullRequest(Base):
     github_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     url: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="OPEN")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status: Mapped[str] = mapped_column(String(50), default="OPEN", server_default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now()
+    )
 
     patch: Mapped["Patch"] = relationship(back_populates="pull_requests")
     votes: Mapped[list["ApprovalVote"]] = relationship(back_populates="pr")
