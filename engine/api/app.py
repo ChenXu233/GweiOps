@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from dbos import DBOS, DBOSConfig
 from fastapi import FastAPI
 
-from engine.api.auth import load_tokens, make_middleware
+from engine.api.auth import load_tokens, make_middleware, set_auth_required
+from engine.api.routes.auth import router as auth_router
 from engine.api.routes.health import router as health_router
 from engine.api.routes.plugins import router as plugins_router
 from engine.api.routes.agent import router as agent_router
@@ -65,6 +66,17 @@ async def lifespan(app: FastAPI):
         if missing:
             logger.warning("插件配置缺项 %s: %s", scope.name, ", ".join(missing))
 
+    # 鉴权:配了机器令牌或者库里已经有人,就要求身份。首启初始化之后由
+    # /api/auth/setup 自己把它翻过来,不用重启。
+    from engine.auth import store as auth_store
+
+    try:
+        has_users = await auth_store.users_exist()
+    except Exception:  # noqa: BLE001 - 表还没建好时按"没有用户"处理,setup 会再处理
+        logger.warning("读不到用户表,鉴权先按令牌配置决定", exc_info=True)
+        has_users = False
+    set_auth_required(bool(API_TOKENS) or has_users)
+
     # Startup: 账本表(仓库没有迁移工具,checkfirst 建一次)
     if config.settings.change_ledger_backend != "file":
         from engine.db.change_ledger import ensure_schema
@@ -99,6 +111,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(plugins_router)
 app.include_router(console_router)
 app.include_router(changes_router)
