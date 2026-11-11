@@ -33,6 +33,8 @@ class ScopeFieldDTO(BaseModel):
     value: str | None = None
     # 这个字段该填什么,给人看的一句话(来自模型字段的 description)
     description: str = ""
+    # 值带换行(私钥):页面用多行输入,不然粘贴时换行会被吃掉
+    multiline: bool = False
 
 
 class ScopeDTO(BaseModel):
@@ -79,6 +81,7 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
                     expose=spec.expose,
                     read_scope=spec.read_scope,
                     set=raw not in (None, ""),
+                    multiline=spec.multiline,
                     value=_shown(spec, raw, caller_scope),
                     description=spec.description,
                 )

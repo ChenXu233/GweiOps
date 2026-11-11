@@ -57,6 +57,16 @@ def test_a_report_is_picked_up(tmp_path):
     assert (tmp_path / "inc-1" / "task.md").exists()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 上 chmod 不表达组/其他位的权限")
+def test_the_workspace_is_writable_by_the_harness_container(tmp_path):
+    """两端 uid 不同(引擎 gwei / 镜像里的 node),工作区必须对它开放写权限。"""
+    workspace = tmp_path / "inc-perm"
+    asyncio.run(run_harness(command=_writes({"summary": "ok"}), workspace=workspace, task="t"))
+
+    mode = workspace.stat().st_mode & 0o777
+    assert mode & 0o002, f"其他用户不可写:{oct(mode)}"
+
+
 def test_the_exit_url_and_report_path_reach_the_command(tmp_path):
     # 嵌套引号在 cmd.exe 里不可靠,脚本落成文件再调用
     script = tmp_path / "echo_env.py"

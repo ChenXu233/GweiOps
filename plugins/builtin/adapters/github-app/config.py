@@ -30,8 +30,8 @@ class GitHubAppSettings(BaseModel):
     )
     private_key: str = Field(
         ...,
-        description="App 私钥(PEM);.env 里换行写成 \\n",
-        json_schema_extra={"expose": "never"},
+        description="App 私钥(PEM),整段贴进来;.env 里换行写成 \\n",
+        json_schema_extra={"expose": "never", "multiline": True},
     )
     webhook_secret: str = Field(
         "",

@@ -10,6 +10,8 @@ interface ScopeField {
   set: boolean
   value: string | null
   description: string
+  /** 值带换行(私钥):用多行输入,单行输入会在粘贴时把换行吃掉 */
+  multiline: boolean
 }
 interface Scope {
   name: string
@@ -214,12 +216,28 @@ const sections = computed(() => {
           </div>
 
           <div class="mt-3 grid gap-2 sm:grid-cols-2">
-            <label v-for="f in s.fields" :key="f.name" class="block">
+            <label
+              v-for="f in s.fields"
+              :key="f.name"
+              class="block"
+              :class="f.multiline ? 'sm:col-span-2' : ''"
+            >
               <span class="mb-1 flex items-center gap-1.5 text-[11.5px] text-ink-soft">
                 {{ f.name }}
                 <span v-if="f.required" class="text-coral">*</span>
               </span>
+              <textarea
+                v-if="f.multiline"
+                :value="draftValue(s.name, f.name)"
+                @input="setDraft(s.name, f.name, ($event.target as HTMLTextAreaElement).value)"
+                :placeholder="f.set ? '已设置，留空不修改' : '未设置'"
+                rows="6"
+                class="w-full resize-y rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] leading-relaxed outline-none focus:border-line-strong"
+                autocomplete="off"
+                spellcheck="false"
+              />
               <input
+                v-else
                 :value="draftValue(s.name, f.name)"
                 @input="setDraft(s.name, f.name, ($event.target as HTMLInputElement).value)"
                 :type="f.expose === 'never' ? 'password' : 'text'"

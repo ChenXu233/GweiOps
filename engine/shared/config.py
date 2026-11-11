@@ -28,6 +28,8 @@ class FieldSpec:
     read_scope: str = "read"  # read | operate
     # 给人看的一句话:页面上的提示、校验失败时的"应该怎么填"都取它。
     description: str = ""
+    # 值可能很长且带换行(私钥、证书):页面要给多行输入,单行输入会把换行吃掉。
+    multiline: bool = False
 
     def __post_init__(self) -> None:
         if self.expose not in EXPOSE_MODES:
@@ -139,6 +141,7 @@ class ConfigManager:
                 expose=extra.get("expose", "never"),
                 read_scope=extra.get("read_scope", "read"),
                 description=info.description or "",
+                multiline=bool(extra.get("multiline", False)),
             )
             (required if info.is_required() else optional).append(field_name)
 

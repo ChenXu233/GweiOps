@@ -136,6 +136,13 @@ async def run_harness(
     """
     root = Path(workspace)
     root.mkdir(parents=True, exist_ok=True)
+    # 工作区两边都要写:引擎写 task.md,harness 容器写 report.json。
+    # 两个容器里的 uid 不一样(引擎 gwei / 镜像里的 node),又改不动对方镜像,
+    # 所以把这一场的目录放开写权限 —— 只放开这一层,不碰工作区以外。
+    try:
+        os.chmod(root, 0o777)
+    except OSError:  # 卷可能挂在只读的地方;那种情况报错留给下面那次写
+        pass
     (root / "task.md").write_text(task, encoding="utf-8")
     report_path = root / REPORT_NAME
 
