@@ -53,7 +53,10 @@ class GitHubAppConfig:
 
     def __init__(self):
         config.register_model_scope(self.SCOPE_NAME, GitHubAppSettings, prefix=self.SCOPE_PREFIX)
-        raw = config.get_scope_config(self.SCOPE_NAME)
+        # 这个适配器是共享的(tenant 为空,一套 App 服务所有租户),配置只有一份。
+        # 控制台把值写在调用方租户上(通常是 default),所以这里按默认租户读;
+        # 读不到再落回公共值与 .env。不这样读,页面上填的东西插件永远看不见。
+        raw = config.get_scope_config(self.SCOPE_NAME, config.settings.default_tenant_slug)
         # 空串按"没填"处理,让模型的默认值说话(installation_id 尤其需要)
         self._settings = GitHubAppSettings(**{k: v for k, v in raw.items() if v != ""})
 
@@ -74,5 +77,9 @@ class GitHubAppConfig:
         return int(self._settings.installation_id)
 
     def validate(self) -> list[str]:
-        """验证配置是否完整。"""
-        return config.validate_scope(self.SCOPE_NAME)
+        """验证配置是否完整。
+
+        要按同一个租户的口径验:值是从默认租户读的,校验却看公共值,
+        就会出现"值明明有、启动却说缺项"这种自相矛盾的日志。
+        """
+        return config.validate_scope(self.SCOPE_NAME, config.settings.default_tenant_slug)

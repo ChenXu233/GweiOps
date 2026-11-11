@@ -81,6 +81,20 @@ class GitHubAppAdapter(PluginBase):
         self.client = GitHubAppClient(self.config)
         self.webhook_handler = WebhookHandler(self.config)
 
+    async def _ensure_ready(self) -> bool:
+        """配置可能是在进程起来之后才填的。
+
+        启动时没配好,on_startup 会失败并被隔离成 client=None;人在页面上填完
+        之后不该还要重启一次才生效,所以每次用到客户端之前再看一眼。
+        """
+        if self.client is not None:
+            return True
+        try:
+            await self.on_startup()
+        except Exception:  # noqa: BLE001 - 还是没配好就照常报错,别在这里炸
+            return False
+        return self.client is not None
+
     async def on_shutdown(self):
         """关闭时释放资源。"""
         self.client = None
@@ -145,7 +159,7 @@ class GitHubAppAdapter(PluginBase):
         认得出来的"没碰到 GitHub"要抛 EffectNotApplied —— 账本据此记 failed(可重试);
         其余异常原样抛出,账本记 unknown(要人去核)。
         """
-        if self.client is None:
+        if not await self._ensure_ready():
             # 没配好就是没发出去:这条该是可重试的 failed,不是要人去核的 unknown。
             raise EffectNotApplied("GitHub App 客户端还没建起来(app_id / private_key / installation_id)")
 
@@ -213,6 +227,7 @@ class GitHubAppAdapter(PluginBase):
         }
 
     async def undo(self, task: str, args: Dict[str, Any], handle: str) -> Dict[str, Any]:
+        await self._ensure_ready()
         if task == "delete_comment":
             await self.client.delete_comment(args["repo"], int(handle))
             return {"deleted": handle}
@@ -231,7 +246,7 @@ class GitHubAppAdapter(PluginBase):
         return await self.execute_task(task, {"handle": handle})
 
     async def window(self, effect: Effect, handle: str | None) -> Window:
-        if self.client is None:
+        if not await self._ensure_ready():
             return Window(source="client 未就绪")
         if effect.capability == "pr.open":
             if not handle:
@@ -247,6 +262,7 @@ class GitHubAppAdapter(PluginBase):
         return Window(unbounded=True, source="comment_present")
 
     async def verify(self, effect: Effect, handle: str) -> tuple[bool, Dict[str, Any]]:
+        await self._ensure_ready()
         if effect.capability == "pr.open":
             pull = await self.client.get_pull(effect.args["repo"], int(handle))
             state = (pull or {}).get("state")
