@@ -15,10 +15,12 @@ from engine.change_unit import (
     Policy,
     TrackRecord,
     VERDICT_BLOCKED,
+    VERDICT_FAILED,
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_PENDING,
     VERDICT_ROLLED_BACK,
+    VERDICT_UNKNOWN,
     VERDICT_VETOED,
     Window,
     apply,
@@ -120,6 +122,24 @@ def test_blocked_and_vetoed_stay_out_of_the_denominator():
     assert record.failures == 0
     assert record.blocked == 4
     assert record.vetoed == 2
+
+
+def test_failed_stays_out_of_the_denominator_but_is_counted():
+    """确定没动,对手上这个动作安不安全没有信息量;但它本身是个人要看的信号。"""
+    rows = [_row(VERDICT_FAILED)] * 3 + [_row(VERDICT_KEPT)]
+    record = summarize(rows, binding=BINDING, capability=CAPABILITY)
+    assert record.attempts == 1
+    assert record.failures == 0
+    assert record.failed == 3
+
+
+def test_unknown_counts_as_an_attempt_and_a_failure():
+    """动没动都不知道,比已知撤不回来更说不清:进分母,也进失败数。"""
+    rows = [_row(VERDICT_UNKNOWN), _row(VERDICT_KEPT)]
+    record = summarize(rows, binding=BINDING, capability=CAPABILITY)
+    assert record.attempts == 2
+    assert record.failures == 1
+    assert record.unknown == 1
 
 
 def test_pending_rows_are_not_counted():

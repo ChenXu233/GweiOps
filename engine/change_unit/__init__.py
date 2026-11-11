@@ -1,6 +1,7 @@
 # engine/change_unit/__init__.py
 """变更单元 —— 平台唯一的状态对象。"""
 
+from .errors import EffectNotApplied
 from .model import (
     ChangeUnit,
     Effect,
@@ -8,10 +9,12 @@ from .model import (
     UNDO_RETAINED,
     UNDO_SYMMETRIC,
     VERDICT_BLOCKED,
+    VERDICT_FAILED,
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_PENDING,
     VERDICT_ROLLED_BACK,
+    VERDICT_UNKNOWN,
     VERDICT_VETOED,
 )
 from .policy import (
@@ -56,9 +59,12 @@ __all__ = [
     "UNDO_RETAINED",
     "UNDO_SYMMETRIC",
     "VERDICT_BLOCKED",
+    "VERDICT_FAILED",
     "VERDICT_IRREVERSIBLE",
     "VERDICT_KEPT",
     "VERDICT_PENDING",
     "VERDICT_ROLLED_BACK",
+    "VERDICT_UNKNOWN",
     "VERDICT_VETOED",
+    "EffectNotApplied",
 ]

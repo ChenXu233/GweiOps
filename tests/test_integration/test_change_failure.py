@@ -11,11 +11,14 @@ import pytest
 from engine.change_unit import (
     ChangeUnit,
     Effect,
+    EffectNotApplied,
     JsonlLedger,
     VERDICT_BLOCKED,
+    VERDICT_FAILED,
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_ROLLED_BACK,
+    VERDICT_UNKNOWN,
     Window,
     apply,
     rollback,
@@ -41,9 +44,11 @@ class FailingProvider:
         undo: bool = False,
         verify_ok: bool = True,
         result=None,
+        not_applied: bool = False,
     ) -> None:
         self.raise_window_pre = window_pre
         self.raise_execute = execute
+        self.not_applied = not_applied
         self.raise_window_post = window_post
         self.raise_verify = verify
         self.raise_undo = undo
@@ -61,6 +66,11 @@ class FailingProvider:
 
     async def execute(self, task, args):
         self.executed += 1
+        if self.not_applied:
+            try:
+                raise KeyError("repo")
+            except KeyError as cause:
+                raise EffectNotApplied("RequestFailed: 404 Not Found") from cause
         if self.raise_execute:
             raise RuntimeError("daemon 没响应")
         if self.result is not None:
@@ -109,17 +119,18 @@ def test_pre_window_error_blocks_without_touching_the_world(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 执行报错:不知道动没动,但一定不能当没动
+# 执行报错:分成「确定没动」与「不知道动没动」两种,不能混成一句不可逆
 # ---------------------------------------------------------------------------
 
 
-def test_execute_error_is_irreversible_and_leaves_a_row(tmp_path):
+def test_execute_error_is_unknown_and_leaves_a_row(tmp_path):
+    """说不清的报错一律 unknown:请求可能已经到了对面,得人去核。"""
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(execute=True)
     unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
 
-    assert unit.verdict == VERDICT_IRREVERSIBLE
-    assert "结果未确认" in unit.reason
+    assert unit.verdict == VERDICT_UNKNOWN
+    assert "不知道动没动" in unit.reason
     assert unit.facts["error"]["stage"] == "execute"
     assert len(_latest(ledger)) == 1
 
@@ -132,8 +143,22 @@ def test_execute_error_is_not_retried_into_a_second_effect(tmp_path):
     again = asyncio.run(apply(_unit(idempotency_key="dup-1"), provider, ledger, at=NOON))
 
     assert provider.executed == 1
-    assert again.verdict == VERDICT_IRREVERSIBLE
+    assert again.verdict == VERDICT_UNKNOWN
     assert again.reason.startswith("重放")
+
+
+def test_provider_saying_not_applied_is_failed(tmp_path):
+    """提供者认得出没碰到下游:记 failed,可重试,不占待审清单。"""
+    ledger = JsonlLedger(tmp_path / "ledger.jsonl")
+    provider = FailingProvider(not_applied=True)
+    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+
+    assert unit.verdict == VERDICT_FAILED
+    assert "确定没动" in unit.reason
+    # 原始错因还在:换掉的只是结论,不是证据
+    assert unit.facts["error"]["type"] == "KeyError"
+    assert unit.facts["error"]["stage"] == "execute"
+    assert _latest(ledger)[0]["verdict"] == VERDICT_FAILED
 
 
 def test_non_object_result_cannot_yield_a_handle(tmp_path):

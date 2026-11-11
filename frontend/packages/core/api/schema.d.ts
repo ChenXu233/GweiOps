@@ -767,7 +767,7 @@ export interface components {
              * @default pending
              * @enum {string}
              */
-            verdict: "pending" | "kept" | "rolled_back" | "blocked" | "vetoed" | "irreversible";
+            verdict: "pending" | "kept" | "rolled_back" | "blocked" | "vetoed" | "failed" | "unknown" | "irreversible";
             /** Window */
             window?: {
                 [key: string]: unknown;

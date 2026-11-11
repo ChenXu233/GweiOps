@@ -60,6 +60,8 @@ function describeOutcome(action: ApprovalAction, outcome: ApprovalOutcome): stri
   if (action === 'veto') return '已否决:这条不会执行,否决本身也写进了账本。'
   const verdict = outcome.latest.verdict
   if (verdict === 'irreversible') return '已放行。这条没有回滚能力,引擎如实记成不可逆。'
+  if (verdict === 'failed') return '已放行,但这次调用没碰到下游,什么都没发生。可以重试。'
+  if (verdict === 'unknown') return '已放行,但没拿到结果:不知道下游动没动,得去核一次。'
   if (verdict === 'rolled_back') return '已放行,但验证没过,引擎把它回滚了。'
   return '已放行。引擎照常读了窗口、照常验了结果。'
 }

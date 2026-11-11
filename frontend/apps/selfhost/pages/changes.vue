@@ -15,12 +15,25 @@ const verdictMeta: Record<ChangeVerdict, { label: string; cls: string }> = {
   kept: { label: '已执行 · 可撤', cls: 'chip-lime' },
   blocked: { label: '阻断等人', cls: 'chip-warn' },
   rolled_back: { label: '已回滚', cls: '' },
+  // 确定没碰到下游:没有可撤的东西,也不用等人。标签说清"可以重试"。
+  failed: { label: '没生效 · 可重试', cls: '' },
+  // 不知道动没动:要人去下游核一次,所以和阻断一样抢眼。
+  unknown: { label: '未知 · 待核', cls: 'chip-warn' },
   irreversible: { label: '不可逆', cls: 'chip-bad' },
   vetoed: { label: '被否决', cls: '' },
   pending: { label: '进行中', cls: 'chip-info' },
 }
 
-const order: ChangeVerdict[] = ['kept', 'blocked', 'rolled_back', 'irreversible', 'vetoed', 'pending']
+const order: ChangeVerdict[] = [
+  'kept',
+  'blocked',
+  'unknown',
+  'failed',
+  'rolled_back',
+  'irreversible',
+  'vetoed',
+  'pending',
+]
 
 const counts = computed(() => {
   const c: Record<string, number> = {}

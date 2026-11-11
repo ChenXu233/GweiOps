@@ -3,11 +3,41 @@
 
 from typing import Any, Dict
 
-from engine.change_unit import Effect, Window
+from engine.change_unit import Effect, EffectNotApplied, Window
 from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 from .config import GitHubAppConfig
 from .client import GitHubAppClient
 from .handlers import WebhookHandler
+
+
+def _brief(exc: BaseException, limit: int = 200) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _not_applied(exc: BaseException) -> bool:
+    """这次调用确定没在 GitHub 上留下东西吗。
+
+    分三种,都是从 githubkit / httpx 侧能认出来的:
+
+    - 请求根本没构造出来:缺 auth-app extra、JWT 签不出来、URL 拼错(RequestError)
+    - 发出去被明确拒绝:4xx(RequestFailed) —— 服务端说"不做",就什么都没做
+    - 参数在本地就不合法:仓库名不是 owner/repo、issue 编号不是数字(ValueError)
+
+    5xx、超时、连接中断都说不清:服务端可能已经执行了,只是回程丢了。
+    那些不能算 failed —— 那会让人以为重试一次就安全。
+    """
+    try:
+        from githubkit.exception import RequestError, RequestFailed
+    except ImportError:  # pragma: no cover - githubkit 是硬依赖
+        return False
+
+    if isinstance(exc, RequestFailed):
+        status = getattr(getattr(exc, "response", None), "status_code", 0) or 0
+        return 400 <= status < 500
+    if isinstance(exc, RequestError):
+        return True
+    return isinstance(exc, ValueError)
 
 
 class GitHubAppAdapter(PluginBase):
@@ -110,11 +140,24 @@ class GitHubAppAdapter(PluginBase):
     # -- 变更单元:效果提供者 --------------------------------------
 
     async def execute(self, task: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """执行效果:返回句柄(评论 ID),撤销靠它定位。"""
+        """执行效果:返回句柄(评论 ID),撤销靠它定位。
+
+        认得出来的"没碰到 GitHub"要抛 EffectNotApplied —— 账本据此记 failed(可重试);
+        其余异常原样抛出,账本记 unknown(要人去核)。
+        """
+        if self.client is None:
+            # 没配好就是没发出去:这条该是可重试的 failed,不是要人去核的 unknown。
+            raise EffectNotApplied("GitHub App 客户端还没建起来(app_id / private_key / installation_id)")
+
         if task == "create_comment":
-            result = await self.client.create_comment(
-                args["repo"], int(args["issue_number"]), args["body"]
-            )
+            try:
+                result = await self.client.create_comment(
+                    args["repo"], int(args["issue_number"]), args["body"]
+                )
+            except Exception as exc:
+                if _not_applied(exc):
+                    raise EffectNotApplied(_brief(exc)) from exc
+                raise
             return {"handle": str(result["id"]), "url": result.get("html_url", "")}
         return await self.execute_task(task, args)
 

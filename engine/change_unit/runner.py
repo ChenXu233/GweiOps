@@ -12,15 +12,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from .errors import EffectNotApplied
 from .ledger import Ledger
 from .model import (
     ChangeUnit,
     Effect,
     Window,
     VERDICT_BLOCKED,
+    VERDICT_FAILED,
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_ROLLED_BACK,
+    VERDICT_UNKNOWN,
     VERDICT_VETOED,
 )
 from .policy import EXECUTE, DEFAULT_HUMAN_RESPONSE_S, Policy
@@ -34,6 +37,8 @@ HUMAN_RESPONSE_S = DEFAULT_HUMAN_RESPONSE_S
 class EffectProvider(Protocol):
     binding: str
 
+    # 抛 EffectNotApplied 表示确定没碰到下游(单元记 failed);抛别的异常一律按
+    # unknown 处理 —— 请求可能已经到了对面,只有提供者知道是不是。
     async def execute(self, task: str, args: dict[str, Any]) -> dict[str, Any]: ...
 
     async def undo(self, task: str, args: dict[str, Any], handle: str) -> dict[str, Any]: ...
@@ -158,7 +163,7 @@ async def _run(
     except Exception as exc:
         # 读不到就不能判:阻断的代价是人看一眼,放行的代价是夜里动了撤不回来的东西。
         unit.verdict = VERDICT_BLOCKED
-        unit.reason = f"读窗口时下游报错,按不可逆处理: {_brief(exc)}"
+        unit.reason = f"读窗口时下游报错,判不了可逆性,不执行: {_brief(exc)}"
         _merge(unit, _error_facts("window.pre", exc))
         await _record(ledger, unit)
         return unit
@@ -189,10 +194,20 @@ async def _run(
 
     try:
         result = await provider.execute(effect.task, effect.args)
+    except EffectNotApplied as exc:
+        # 提供者认得出这次调用没碰到下游(构造请求就失败了,或下游明确拒绝)。
+        # 那不是"不知道",是可以照原样重试的失败:不必等人,也不该占着待审清单。
+        cause = exc.__cause__ or exc
+        unit.verdict = VERDICT_FAILED
+        unit.reason = f"下游确定没动,可以重试: {_brief(cause)}"
+        _merge(unit, _error_facts("execute", cause))
+        await _record(ledger, unit)
+        return unit
     except Exception as exc:
-        # 请求已经发出去了。当没发生是掩盖,当成功是撒谎:没有句柄就兑不了撤销。
-        unit.verdict = VERDICT_IRREVERSIBLE
-        unit.reason = f"执行时下游报错,结果未确认: {_brief(exc)}"
+        # 请求可能已经发出去了。当没发生是掩盖,当成功是撒谎:没有句柄就没有撤销,
+        # 而连动没动都不知道的时候,唯一诚实的结论是 unknown。
+        unit.verdict = VERDICT_UNKNOWN
+        unit.reason = f"执行时下游报错,不知道动没动: {_brief(exc)}"
         _merge(unit, _error_facts("execute", exc))
         await _record(ledger, unit)
         return unit
