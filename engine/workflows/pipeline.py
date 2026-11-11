@@ -555,7 +555,7 @@ async def alert_triage_workflow(payload: dict) -> dict:
 
 @DBOS.workflow()
 async def issue_triage_workflow(payload: dict) -> dict:
-    """Issue 感知工作流：分析 → 落库 → Hook 观察点 → 事件链 → 回评。"""
+    """Issue 感知工作流：分析 → 落库 → Hook 观察点 → 起草意图 → 效果落成变更单元。"""
     analysis: dict[str, Any] = await analyze_issue_step(payload)
     record = await persist_triage_step(payload, analysis, status="TRIAGED")
 
@@ -577,7 +577,7 @@ async def issue_triage_workflow(payload: dict) -> dict:
 
 @DBOS.workflow()
 async def fix_suggestion_workflow(payload: dict) -> dict:
-    """@gwei 修复建议工作流：落库 → 补丁建议 → Hook → 格式化 → 回评（不自动建 PR）。"""
+    """@gwei 修复建议工作流：落库 → 补丁建议 → Hook → 起草意图 → 效果落成变更单元（不自动建 PR）。"""
     analysis = await analyze_issue_step(payload)
     record = await persist_triage_step(payload, analysis, status="FIX_REQUESTED")
 
