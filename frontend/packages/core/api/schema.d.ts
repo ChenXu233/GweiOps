@@ -1198,6 +1198,11 @@ export interface components {
              * @default never
              */
             expose: string;
+            /**
+             * Multiline
+             * @default false
+             */
+            multiline: boolean;
             /** Name */
             name: string;
             /**

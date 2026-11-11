@@ -38,7 +38,9 @@ ENV HOST=0.0.0.0 \
     PORT=3000 \
     NODE_ENV=production
 
+# 用 127.0.0.1 而不是 localhost:alpine 的 wget 先解析 ::1,而 nitro 只监听 IPv4,
+# 于是健康检查一直在自己身上报 connection refused
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost:3000/ || exit 1
+    CMD wget -qO- http://127.0.0.1:3000/ || exit 1
 
 CMD ["node", ".output/server/index.mjs"]

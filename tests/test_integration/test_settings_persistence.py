@@ -161,7 +161,7 @@ class DemoBotSettings(BaseModel):
     owner_token: str = Field(
         "", json_schema_extra={"expose": "always", "read_scope": "operate"}
     )
-    private_key: str = Field("", json_schema_extra={"expose": "never"})
+    private_key: str = Field("", json_schema_extra={"expose": "never", "multiline": True})
     retries: int = 3
 
 
@@ -215,6 +215,9 @@ def test_a_never_field_is_only_reported_as_set(client_model):
     fields = _fields(client_model)
     assert fields["private_key"]["set"] is True
     assert fields["private_key"]["value"] is None
+    # 私钥这类值带换行:接口要把它标出来,页面才知道该给多行输入
+    assert fields["private_key"]["multiline"] is True
+    assert fields["base_url"]["multiline"] is False
 
 
 def test_an_operate_field_is_hidden_from_a_read_token(client_model, read_client):
