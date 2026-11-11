@@ -80,7 +80,9 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
                     required=spec.required,
                     expose=spec.expose,
                     read_scope=spec.read_scope,
-                    set=raw not in (None, ""),
+                    # 空串、None、0 都算"还没填":installation_id 这类整数字段默认就是 0,
+                    # 用 not in (None, "") 会把默认值说成"已设置",页面上留空就成了陷阱
+                    set=bool(raw),
                     multiline=spec.multiline,
                     value=_shown(spec, raw, caller_scope),
                     description=spec.description,
