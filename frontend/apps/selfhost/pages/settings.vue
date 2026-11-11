@@ -1,9 +1,80 @@
 <script setup lang="ts">
 import { useSettings } from '@gwei/core/composables/useSettings'
 import { useTheme } from '@gwei/core/composables/useTheme'
+import { SettingsScopesApi } from '@gwei/core/api/client'
+
+interface ScopeField {
+  name: string
+  required: boolean
+  expose: string
+  set: boolean
+  value: string | null
+  description: string
+}
+interface Scope {
+  name: string
+  prefix: string
+  fields: ScopeField[]
+  missing: string[]
+}
 
 const { data, loading, error } = useSettings()
 const { mode, set } = useTheme()
+
+// 接入层配置:字段、必填、回显规则都由引擎声明,这里不预设任何密钥名。
+const scopes = ref<Scope[]>([])
+const saving = ref<string | null>(null)
+const scopeErrorText = ref('')
+const drafts = reactive<Record<string, Record<string, string>>>({})
+const savedScope = ref<string | null>(null)
+
+// 草稿只在用户输入时写;渲染期不创建/修改状态。
+function setDraft(scope: string, field: string, value: string) {
+  if (!drafts[scope]) drafts[scope] = {}
+  drafts[scope][field] = value
+}
+
+function draftValue(scope: string, field: string): string {
+  return drafts[scope]?.[field] ?? ''
+}
+
+// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 这种前缀。
+function friendly(raw: string): string {
+  return raw.replace(/^API error:\s*\d{3}\s*/, '').trim()
+}
+
+async function loadScopes() {
+  try {
+    scopes.value = (await SettingsScopesApi.list()) as unknown as Scope[]
+  } catch (e) {
+    scopeErrorText.value = friendly(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// 只在浏览器里拉数据:渲染期不发起同源请求,SSR 不依赖它。
+onMounted(loadScopes)
+
+async function onSave(name: string) {
+  const values = Object.fromEntries(
+    Object.entries(drafts[name] || {}).filter(([, v]) => v !== ''),
+  )
+  if (!Object.keys(values).length) return
+  saving.value = name
+  scopeErrorText.value = ''
+  try {
+    await SettingsScopesApi.put(name, values)
+    drafts[name] = {}
+    savedScope.value = name
+    await loadScopes()
+    setTimeout(() => {
+      if (savedScope.value === name) savedScope.value = null
+    }, 2000)
+  } catch (e) {
+    scopeErrorText.value = friendly(e instanceof Error ? e.message : String(e))
+  } finally {
+    saving.value = null
+  }
+}
 
 const themes = [
   { key: 'light' as const, icon: 'sun', label: '亮色', hint: '纸面底色，白天看' },
@@ -120,6 +191,76 @@ const sections = computed(() => {
           </div>
         </section>
       </div>
+
+      <!-- 接入与密钥:哪些字段、能不能回显,由引擎的声明决定 -->
+      <section class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="shield-check" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">接入与密钥</h2>
+          <span class="eyebrow ml-auto">INTEGRATIONS</span>
+        </div>
+
+        <div
+          v-for="s in scopes"
+          :key="s.name"
+          class="border-b border-line/60 px-5 py-4 last:border-0"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-[12.5px] font-medium">{{ s.name }}</span>
+            <span v-if="s.prefix" class="chip">{{ s.prefix }}</span>
+            <span v-if="s.missing.length" class="ml-auto text-[11.5px] text-ink-faint">
+              缺 {{ s.missing.join('、') }}
+            </span>
+          </div>
+
+          <div class="mt-3 grid gap-2 sm:grid-cols-2">
+            <label v-for="f in s.fields" :key="f.name" class="block">
+              <span class="mb-1 flex items-center gap-1.5 text-[11.5px] text-ink-soft">
+                {{ f.name }}
+                <span v-if="f.required" class="text-coral">*</span>
+              </span>
+              <input
+                :value="draftValue(s.name, f.name)"
+                @input="setDraft(s.name, f.name, ($event.target as HTMLInputElement).value)"
+                :type="f.expose === 'never' ? 'password' : 'text'"
+                :placeholder="f.set ? '已设置，留空不修改' : '未设置'"
+                class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong"
+                autocomplete="off"
+              >
+              <span
+                v-if="f.description"
+                class="mt-1 block text-[11px] text-ink-faint"
+              >{{ f.description }}</span>
+              <span
+                v-if="f.set && f.expose !== 'never' && f.value"
+                class="mt-1 block truncate text-[11px] text-ink-faint"
+              >当前：{{ f.value }}</span>
+            </label>
+          </div>
+
+          <div class="mt-3 flex items-center gap-2">
+            <button
+              class="btn-solid h-8 px-3 text-[12px]"
+              :disabled="saving === s.name"
+              @click="onSave(s.name)"
+            >
+              {{ saving === s.name ? '保存中…' : '保存' }}
+            </button>
+            <span v-if="savedScope === s.name" class="text-[11.5px] text-ink-faint">已保存</span>
+          </div>
+        </div>
+
+        <div
+          v-if="scopeErrorText"
+          class="mx-5 my-3 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral"
+        >
+          {{ scopeErrorText }}
+        </div>
+
+        <div v-if="!scopes.length" class="px-5 py-6 text-[12.5px] text-ink-faint">
+          还没有接入层声明任何配置项。
+        </div>
+      </section>
     </template>
   </div>
 </template>

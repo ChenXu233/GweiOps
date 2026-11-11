@@ -122,7 +122,11 @@ def test_listing_shows_what_is_set_and_what_is_missing(client):
 
 
 def test_a_secret_is_never_echoed_by_default(client):
-    client.put("/api/settings/scopes/harness-env", json={"values": {"deepseek_api_key": "sk-x"}})
+    client.put(
+        "/api/settings/scopes/harness-env",
+        # 形状要合法:harness-env 的声明对已知键有约束,写错会 422(见下面的校验测试)
+        json={"values": {"deepseek_api_key": "sk-12345678"}},
+    )
     rows = {row["name"]: row for row in client.get("/api/settings/scopes").json()}
     fields = {f["name"]: f for f in rows["harness-env"]["fields"]}
 
@@ -231,6 +235,11 @@ def test_a_wrong_shape_is_refused_before_it_is_stored(client_model):
         "/api/settings/scopes/demo-model", json={"values": {"retries": "abc"}}
     )
     assert resp.status_code == 422
+    # 拒绝的理由要能直接读:字段名 + 该填什么,不是 pydantic 的英文原文
+    detail = resp.json()["detail"]
+    assert "retries" in detail
+    assert "需要是整数" in detail
+    assert "ValidationError" not in detail
 
 
 def test_half_filled_is_not_an_error(client_model):

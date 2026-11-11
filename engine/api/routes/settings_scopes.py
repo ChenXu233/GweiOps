@@ -31,6 +31,8 @@ class ScopeFieldDTO(BaseModel):
     read_scope: str = "read"
     set: bool = False
     value: str | None = None
+    # 这个字段该填什么,给人看的一句话(来自模型字段的 description)
+    description: str = ""
 
 
 class ScopeDTO(BaseModel):
@@ -78,6 +80,7 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
                     read_scope=spec.read_scope,
                     set=raw not in (None, ""),
                     value=_shown(spec, raw, caller_scope),
+                    description=spec.description,
                 )
             )
         out.append(
@@ -89,6 +92,45 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
             )
         )
     return out
+
+
+# 校验失败时给人看的话:字段名 + 应该怎么填。pydantic 的英文原文留给日志,不甩给用户。
+_REASON_TEXT = {
+    "string_pattern_mismatch": "格式不对",
+    "string_too_short": "太短了",
+    "string_too_long": "太长了",
+    "string_type": "需要是文本",
+    "int_parsing": "需要是整数",
+    "int_type": "需要是整数",
+    "int_from_float": "需要是整数",
+    "float_parsing": "需要是数字",
+    "float_type": "需要是数字",
+    "bool_parsing": "需要是 true 或 false",
+    "literal_error": "只能填给定选项",
+    "url_parsing": "不是合法网址",
+    "missing": "必填",
+}
+
+# 这几类错误直接拿字段说明当答案,比"格式不对"有用得多。
+_HINT_FIRST = {"string_pattern_mismatch", "url_parsing", "literal_error"}
+
+
+def _explain(exc: ValidationError, scope_name: str, tenant: str) -> str:
+    hints = {spec.name: spec.description for spec in config.field_specs(scope_name, tenant)}
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = [str(x) for x in (err.get("loc") or []) if x != "__root__"]
+        field = ".".join(loc) or "配置"
+        hint = hints.get(field, "")
+        kind = str(err.get("type") or "")
+        if kind in _HINT_FIRST and hint:
+            reason = hint
+        else:
+            reason = _REASON_TEXT.get(kind) or "填的值不合法"
+            if hint:
+                reason = f"{reason}（{hint}）"
+        parts.append(f"{field}：{reason}")
+    return "；".join(parts) or "配置不合法"
 
 
 @router.put("/api/settings/scopes/{scope_name}")
@@ -103,7 +145,10 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
     try:
         config.validate_values(scope_name, values, tenant)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.info("settings scope %s rejected: %s", scope_name, exc)
+        raise HTTPException(
+            status_code=422, detail=_explain(exc, scope_name, tenant)
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

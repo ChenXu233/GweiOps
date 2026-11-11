@@ -57,6 +57,16 @@ export const SettingsApi = {
   get: () => api.get('/api/settings'),
 }
 
+// 插件/接入层声明的配置项——回显规则由每个字段自己声明,前端不猜。
+export const SettingsScopesApi = {
+  list: () => api.get('/api/settings/scopes'),
+  put: (scope: string, values: Record<string, string>) =>
+    api.put('/api/settings/scopes/{scope_name}', {
+      path: { scope_name: scope },
+      body: { values },
+    }),
+}
+
 export const HealthApi = {
   get: () => api.get('/api/health'),
 }

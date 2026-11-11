@@ -11,7 +11,7 @@
 import type { paths } from './schema'
 
 type Paths = paths
-type Method = 'get' | 'post'
+type Method = 'get' | 'post' | 'put'
 
 /** 哪些路径支持某个方法。 */
 type RoutesWith<M extends Method> = {
@@ -71,7 +71,21 @@ function withQuery(url: string, query?: CallOptions<string>['query']): string {
 async function send<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(BASE + url, init)
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`)
+    // 引擎的 422 会把"哪个字段、为什么不合法"写在 detail 里;只报状态码等于把原因丢掉。
+    let detail = res.statusText
+    try {
+      const body = (await res.clone().json()) as {
+        detail?: unknown
+        data?: { detail?: unknown }
+      }
+      // 直连引擎时是 detail;经 Nitro 代理转发时被包在 data 里
+      const raw = body?.detail ?? body?.data?.detail
+      if (typeof raw === 'string' && raw) detail = raw
+      else if (raw) detail = JSON.stringify(raw)
+    } catch {
+      // 不是 JSON 就保留 statusText
+    }
+    throw new Error(`API error: ${res.status} ${detail}`)
   }
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
@@ -90,6 +104,19 @@ export const api = {
     const url = withQuery(fillPath(path, options?.path as never), options?.query)
     return send<ResponseOf<P, 'post'>>(url, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options?.signal,
+    })
+  },
+
+  put<P extends RoutesWith<'put'>>(
+    path: P,
+    options?: PostOptions<P>,
+  ): Promise<ResponseOf<P, 'put'>> {
+    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    return send<ResponseOf<P, 'put'>>(url, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: options?.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options?.signal,

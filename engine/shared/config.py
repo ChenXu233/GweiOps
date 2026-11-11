@@ -26,6 +26,8 @@ class FieldSpec:
     required: bool = False
     expose: str = "never"  # never | masked | always
     read_scope: str = "read"  # read | operate
+    # 给人看的一句话:页面上的提示、校验失败时的"应该怎么填"都取它。
+    description: str = ""
 
     def __post_init__(self) -> None:
         if self.expose not in EXPOSE_MODES:
@@ -136,6 +138,7 @@ class ConfigManager:
                 required=info.is_required(),
                 expose=extra.get("expose", "never"),
                 read_scope=extra.get("read_scope", "read"),
+                description=info.description or "",
             )
             (required if info.is_required() else optional).append(field_name)
 

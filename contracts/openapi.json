@@ -1139,6 +1139,11 @@
       "ScopeFieldDTO": {
         "description": "一个配置项。value 只在它自己允许回显、且调用方够得着的时候才出现。",
         "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "expose": {
             "default": "never",
             "title": "Expose",
