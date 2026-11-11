@@ -84,12 +84,18 @@ def _read_report(workspace: Path) -> dict[str, Any] | None:
 
 
 def _fallback_report(result: HarnessResult) -> dict[str, Any]:
-    """没交报告也要有个交代:退出码、最后几行输出,原样带回来。"""
+    """没交报告也要有个交代:退出码、最后几行输出,原样带回来。
+
+    stderr 也要带上——dsh 这类启动器把失败原因(message、缺哪个变量)写在 stderr,
+    只看 stdout 等于把「为什么没跑起来」丢掉。
+    """
     tail = (result.stdout or "").strip().splitlines()[-8:]
+    err_tail = (result.stderr or "").strip().splitlines()[-8:]
+    lines = tail + (["[stderr]"] + err_tail if err_tail else [])
     reason = "超时" if result.timed_out else f"退出码 {result.exit_code}"
     return {
         "source": "harness",
-        "summary": f"harness 没有交报告({reason})" + ("\n" + "\n".join(tail) if tail else ""),
+        "summary": f"harness 没有交报告({reason})" + ("\n" + "\n".join(lines) if lines else ""),
         "steps": [],
         "counts": {},
         "exhausted": result.timed_out,
