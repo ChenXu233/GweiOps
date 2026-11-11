@@ -1,6 +1,7 @@
 {
   "name": "gwei-frontend",
   "private": true,
+  "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev:selfhost": "pnpm --filter @gwei/selfhost dev",
     "build:selfhost": "pnpm --filter @gwei/selfhost build",

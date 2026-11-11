@@ -79,4 +79,6 @@ volumes:
 # ---------------------------------------------------------------------------
 networks:
   gwei-network:
+    # 固定名字:harness 容器(由引擎用 docker run 拉起)要靠它接进同一张网
+    name: gwei-network
     driver: bridge
