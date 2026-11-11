@@ -9,6 +9,7 @@ from .vote import ApprovalVote
 from .change_event import ChangeEvent
 from .incident import Incident
 from .plugin_setting import PluginSetting
+from .rbac import AuditLog, Role, User, UserRole, UserSession
 
 __all__ = [
     "Project",
@@ -21,4 +22,9 @@ __all__ = [
     "ChangeEvent",
     "Incident",
     "PluginSetting",
+    "Role",
+    "User",
+    "UserRole",
+    "UserSession",
+    "AuditLog",
 ]
