@@ -19,6 +19,20 @@ def client():
     from engine.api.app import app
     from engine.plugin_manager import registry
 
+    # 自足建表:不依赖其他门控测试先跑过 create_all——测试顺序不是契约。
+    if os.environ.get("GWEI_TEST_DATABASE_URL"):
+        import sqlalchemy as sa
+
+        import engine.db.models  # noqa: F401 — 注册全部模型
+        from engine.db.base import Base
+
+        sync_engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
+        with sync_engine.connect() as conn:
+            conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+        Base.metadata.create_all(sync_engine)
+        sync_engine.dispose()
+
     if not registry.names():
         registry.discover()
     return TestClient(app)

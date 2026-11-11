@@ -3,7 +3,7 @@
 
 数据口径(诚实优先,未实现的指标返回零值而非编造):
 - pendingReview / issues:OPEN 状态的 issue(标签 bug→medium,critical→critical);
-- overnightFixed:近 24h 的 AgentSession;
+- overnightFixed:近 24h 结论为 kept(执行并验证通过)的变更单元;失败与未确认不算;
 - successRate:dbos.workflow_status 的 SUCCESS 占比(工作流真实执行数据);
 - activeAgents:注册表内已加载插件数;
 - 金丝雀/MTTR/记忆条目:链路未实现,返回零值/空列表。
@@ -16,6 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import func, select
 
+from engine.change_unit import create_ledger
 from engine.db import async_session_factory
 from engine.api.schemas import (
     CanaryStatusDTO,
@@ -44,6 +45,17 @@ def _severity(labels: list[str] | None) -> str:
     if "bug" in labels:
         return "medium"
     return "low"
+
+
+def _not_before(value: object, cutoff: datetime) -> bool:
+    """账本里的时间是 ISO 字符串;解析不了就不算进这个窗口。"""
+    try:
+        moment = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment >= cutoff
 
 
 def _issue_dto(
@@ -123,13 +135,14 @@ async def dashboard() -> DashboardDTO:
             await session.execute(select(func.count()).select_from(Issue).where(Issue.status == "OPEN"))
         ).scalar_one()
         day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
-        overnight = (
-            await session.execute(
-                select(func.count())
-                .select_from(AgentSession)
-                .where(AgentSession.started_at >= day_ago)
-            )
-        ).scalar_one()
+
+    # 「昨夜自动修复」是界面上向用户承诺的定语:完成并验证。只算 kept 的变更单元——
+    # 执行报错、未被确认的单元(irreversible)不算修好了,只做过分析的会话更不算。
+    overnight = sum(
+        1
+        for row in await create_ledger().latest()
+        if row.get("verdict") == "kept" and _not_before(row.get("created_at"), day_ago)
+    )
 
     try:
         from dbos import DBOS
