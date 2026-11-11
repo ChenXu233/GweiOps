@@ -195,7 +195,9 @@ class GitHubAppClient:
             if e.response.status_code == 404:
                 return None
             raise
-        return response.parsed_data.object.sha
+        # githubkit 把 object 改成了 object_(和 Python 关键字撞名),按字典取更稳
+        data = response.parsed_data.model_dump()
+        return (data.get("object") or data.get("object_") or {}).get("sha")
 
     async def create_branch(self, repo: str, branch: str, from_sha: str) -> None:
         owner, repo_name = self._parse_repo(repo)

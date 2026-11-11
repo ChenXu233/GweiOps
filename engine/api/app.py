@@ -35,24 +35,33 @@ dbos = DBOS(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理 - startup 初始化插件注册表与 DBOS,shutdown 逆序关闭。"""
-    # Startup: 发现并启动全部插件(失败隔离,单插件故障不阻止引擎启动)
-    registry.discover()
-    await registry.launch()
+    # 顺序有讲究:库里的配置必须先装好,插件 on_startup 才读得到自己的凭据。
+    # 反过来(先 launch 再装配置)是一个真 bug:插件看到的是空配置,启动失败被隔离,
+    # 之后页面上填的值永远不生效,而失败只留一行日志。
+    from engine.harness import build_env  # noqa: F401 — 导入即注册 harness-env scope
+    from engine.shared.settings_store import create_settings_store, ensure_schema as ensure_settings_schema
+
+    if config.settings.change_ledger_backend != "file":
+        try:
+            await ensure_settings_schema()
+        except Exception:  # noqa: BLE001 - 建不出来就退回环境变量,不因此起不来
+            logger.warning("建不出配置表,这次只用环境变量", exc_info=True)
 
     # 存进库里的配置值:启动时装一次,之后写入时原地更新(所以取值仍然是同步的)
-    from engine.harness import build_env  # noqa: F401 — 导入即注册 harness-env scope
-    from engine.shared.settings_store import create_settings_store
-
     try:
         config.apply_stored(await create_settings_store().load())
         logger.info("Stored settings loaded: %d scope(s)", len(config.all_stored()))
     except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
         logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
 
+    # Startup: 发现并启动全部插件(失败隔离,单插件故障不阻止引擎启动)
+    registry.discover()
+    await registry.launch()
+
     # 插件自己声明的配置有缺项就说出来:声明了却没人填,比没声明更糟——
     # 那种沉默会在第一次真要调下游的时候才爆。
     for scope in config.list_scopes():
-        missing = config.validate_scope(scope.name)
+        missing = config.validate_scope(scope.name, config.settings.default_tenant_slug)
         if missing:
             logger.warning("插件配置缺项 %s: %s", scope.name, ", ".join(missing))
 
@@ -62,10 +71,8 @@ async def lifespan(app: FastAPI):
 
         await ensure_schema()
         from engine.incidents import ensure_schema as ensure_incident_schema
-        from engine.shared.settings_store import ensure_schema as ensure_settings_schema
 
         await ensure_incident_schema()
-        await ensure_settings_schema()
         logger.info("Change ledger + incidents ready (backend=db)")
 
     # Startup: 启动 DBOS 并注册工作流队列(按租户分区,公平性执行点)

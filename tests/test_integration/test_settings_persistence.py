@@ -357,3 +357,40 @@ def test_the_api_deletes_only_inside_the_callers_tenant(model_scope):
     config.apply_stored(asyncio.run(create_settings_store().load()))
     assert config.get_scope_config("demo-model")["base_url"] == "public"
     assert config.get_scope_config("demo-model", tenant="acme")["base_url"] == "public"
+
+
+# ---------------------------------------------------------------------------
+# 插件读配置:租户口径必须和写入时一致
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_config_reads_the_tenant_the_console_writes_to():
+    """控制台把值写在调用方租户(通常是 default),插件必须按同一个租户读。
+
+    这条曾经是真 bug:启动顺序反了、而且读的是公共值,
+    于是页面上填好的 App 凭据永远不生效,只留一行"缺项"日志。
+    """
+    import importlib
+
+    cfg_mod = importlib.import_module("plugins.builtin.adapters.github-app.config")
+
+    config.apply_stored(
+        {
+            "default": {
+                "adapter-github-app": {
+                    "app_id": "123",
+                    "private_key": "-----BEGIN-----\nabc\n-----END-----",
+                    "installation_id": "456",
+                }
+            }
+        }
+    )
+    try:
+        cfg = cfg_mod.GitHubAppConfig()
+        assert cfg.app_id == "123"
+        assert cfg.installation_id == 456
+        assert "\n" in cfg.private_key
+        # 有值就不能再报缺项:校验和读取必须是同一个口径
+        assert cfg.validate() == []
+    finally:
+        config.apply_stored({})
