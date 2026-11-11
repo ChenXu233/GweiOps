@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,8 +37,10 @@ class Issue(Base):
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(_vector_type, nullable=True)
-    status: Mapped[str] = mapped_column(String(50), default="OPEN")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    status: Mapped[str] = mapped_column(String(50), default="OPEN", server_default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now()
+    )
 
     project: Mapped["Project"] = relationship(back_populates="issues")
     sessions: Mapped[list["AgentSession"]] = relationship(back_populates="issue")
