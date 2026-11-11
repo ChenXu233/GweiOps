@@ -177,3 +177,102 @@ class GitHubAppClient:
             owner=owner, repo=repo_name, issue_number=issue_number
         )
         return [comment.model_dump() for comment in response.parsed_data]
+
+    # -- PR:VCS 操作在平台这一侧做 ----------------------------------
+    #
+    # 容器里不放 git 凭据。agent 改的是工作区里的文件,平台用 App 安装令牌
+    # 把这些改动变成一个提交、一条分支、一个 PR —— 这样"开一个 PR"才是一个
+    # 可撤销、可验证的变更单元,而不是容器里一次看不见的 push。
+
+    async def get_branch_sha(self, repo: str, branch: str) -> str | None:
+        """分支头的 sha;分支不存在返回 None。"""
+        owner, repo_name = self._parse_repo(repo)
+        try:
+            response = await self.github.rest.git.async_get_ref(
+                owner, repo_name, f"heads/{branch}"
+            )
+        except RequestFailed as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+        return response.parsed_data.object.sha
+
+    async def create_branch(self, repo: str, branch: str, from_sha: str) -> None:
+        owner, repo_name = self._parse_repo(repo)
+        await self.github.rest.git.async_create_ref(
+            owner, repo_name, data={"ref": f"refs/heads/{branch}", "sha": from_sha}
+        )
+
+    async def delete_branch(self, repo: str, branch: str) -> None:
+        owner, repo_name = self._parse_repo(repo)
+        await self.github.rest.git.async_delete_ref(owner, repo_name, f"heads/{branch}")
+
+    async def commit_files(
+        self, repo: str, branch: str, files: list[dict[str, Any]], message: str
+    ) -> str:
+        """在分支上追加一个提交,返回提交 sha。
+
+        files 每项是 {path, content};删文件写 {path, delete: true}。
+        一次提交改多个文件,所以走 Git Data API:blob → tree → commit → 移动分支头。
+        """
+        owner, repo_name = self._parse_repo(repo)
+        head = await self.get_branch_sha(repo, branch)
+        if head is None:
+            raise ValueError(f"分支不存在:{branch}")
+        parent = await self.github.rest.git.async_get_commit(owner, repo_name, head)
+
+        entries: list[dict[str, Any]] = []
+        for item in files:
+            path = str(item.get("path") or "")
+            if not path:
+                raise ValueError("files 里有一项没有 path")
+            if item.get("delete"):
+                # sha 为 None 表示从这个 tree 里删掉这条路径
+                entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+                continue
+            blob = await self.github.rest.git.async_create_blob(
+                owner, repo_name, data={"content": item.get("content", ""), "encoding": "utf-8"}
+            )
+            entries.append(
+                {"path": path, "mode": "100644", "type": "blob", "sha": blob.parsed_data.sha}
+            )
+
+        tree = await self.github.rest.git.async_create_tree(
+            owner, repo_name, data={"tree": entries, "base_tree": parent.parsed_data.tree.sha}
+        )
+        commit = await self.github.rest.git.async_create_commit(
+            owner,
+            repo_name,
+            data={"message": message, "tree": tree.parsed_data.sha, "parents": [head]},
+        )
+        await self.github.rest.git.async_update_ref(
+            owner, repo_name, f"heads/{branch}", data={"sha": commit.parsed_data.sha}
+        )
+        return commit.parsed_data.sha
+
+    async def open_pull(
+        self, repo: str, head: str, base: str, title: str, body: str = ""
+    ) -> dict[str, Any]:
+        owner, repo_name = self._parse_repo(repo)
+        response = await self.github.rest.pulls.async_create(
+            owner, repo_name,
+            data={"title": title, "head": head, "base": base, "body": body},
+        )
+        return response.parsed_data.model_dump()
+
+    async def get_pull(self, repo: str, number: int) -> dict[str, Any] | None:
+        """按编号取 PR;不存在返回 None(撤销后用它验证)。"""
+        owner, repo_name = self._parse_repo(repo)
+        try:
+            response = await self.github.rest.pulls.async_get(owner, repo_name, number)
+        except RequestFailed as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+        return response.parsed_data.model_dump()
+
+    async def close_pull(self, repo: str, number: int) -> None:
+        owner, repo_name = self._parse_repo(repo)
+        await self.github.rest.pulls.async_update(
+            owner, repo_name, number, data={"state": "closed"}
+        )
