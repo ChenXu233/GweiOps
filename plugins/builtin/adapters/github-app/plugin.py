@@ -159,20 +159,98 @@ class GitHubAppAdapter(PluginBase):
                     raise EffectNotApplied(_brief(exc)) from exc
                 raise
             return {"handle": str(result["id"]), "url": result.get("html_url", "")}
+
+        if task == "open_pull":
+            try:
+                return await self._open_pull(args)
+            except Exception as exc:
+                if _not_applied(exc):
+                    raise EffectNotApplied(_brief(exc)) from exc
+                raise
+
         return await self.execute_task(task, args)
+
+    async def _open_pull(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """把工作区里的改动变成一个 PR:建分支 → 提交 → 发起合并请求。
+
+        分支名由调用方给(head)。分支不存在就从 base 的头建出来,这样"开 PR"
+        是一步到位的效果,而不是让 agent 先建分支再开 PR 两次外呼。
+        """
+        repo = args["repo"]
+        base = args.get("base") or "main"
+        head = args.get("head") or ""
+        if not head:
+            raise ValueError("开 PR 需要 head 分支名")
+
+        if await self.client.get_branch_sha(repo, head) is None:
+            base_sha = await self.client.get_branch_sha(repo, base)
+            if base_sha is None:
+                raise ValueError(f"基线分支不存在:{base}")
+            await self.client.create_branch(repo, head, base_sha)
+
+        files = args.get("files") or []
+        if files:
+            await self.client.commit_files(
+                repo,
+                head,
+                files,
+                args.get("message") or args.get("title") or "gwei: 代码改动",
+            )
+
+        pull = await self.client.open_pull(
+            repo,
+            head=head,
+            base=base,
+            title=args.get("title") or head,
+            body=args.get("body") or "",
+        )
+        return {
+            "handle": str(pull["number"]),
+            "url": pull.get("html_url", ""),
+            "branch": head,
+            "base": base,
+            "head_sha": (pull.get("head") or {}).get("sha", ""),
+        }
 
     async def undo(self, task: str, args: Dict[str, Any], handle: str) -> Dict[str, Any]:
         if task == "delete_comment":
             await self.client.delete_comment(args["repo"], int(handle))
             return {"deleted": handle}
+        if task == "close_pull":
+            await self.client.close_pull(args["repo"], int(handle))
+            # 分支也收掉,但删不掉不算撤销失败:PR 关了,改动就已经不在合并路径上。
+            # 删不掉通常是分支保护,这种事要如实说出来,不能悄悄咽掉。
+            warning = ""
+            branch = args.get("head")
+            if branch:
+                try:
+                    await self.client.delete_branch(args["repo"], branch)
+                except Exception as exc:
+                    warning = _brief(exc)
+            return {"closed": handle, "branch_deleted": not warning, "warning": warning}
         return await self.execute_task(task, {"handle": handle})
 
     async def window(self, effect: Effect, handle: str | None) -> Window:
         if self.client is None:
             return Window(source="client 未就绪")
+        if effect.capability == "pr.open":
+            if not handle:
+                # 还没开:开出来之后随时能关,窗口是"一直"
+                return Window(unbounded=True, source="pull_open")
+            pull = await self.client.get_pull(effect.args["repo"], int(handle))
+            if pull is None:
+                return Window(source="PR 已不存在")
+            if pull.get("merged"):
+                # 合并之后再关就是撤不回来了(revert 是另一次变更)
+                return Window(source="已经合并")
+            return Window(unbounded=True, source="pull_open")
         return Window(unbounded=True, source="comment_present")
 
     async def verify(self, effect: Effect, handle: str) -> tuple[bool, Dict[str, Any]]:
+        if effect.capability == "pr.open":
+            pull = await self.client.get_pull(effect.args["repo"], int(handle))
+            state = (pull or {}).get("state")
+            return state == "open", {"pull": int(handle), "state": state}
         data = await self.client.get_comment(effect.args["repo"], int(handle))
         return data is not None, {"comment_id": int(handle), "found": data is not None}
 
