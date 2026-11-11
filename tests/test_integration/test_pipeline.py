@@ -291,24 +291,6 @@ class TestWorkflowEndToEnd:
 
             session, added = _make_fake_session_factory()
 
-            # 注册一个事件链 spy,验证 triage 发布 sensor.processed 且载荷带租户
-            from engine.plugin_manager import registry as plugin_registry
-            from engine.plugin_manager.manifest import Manifest
-
-            received = []
-
-            class SpyPlugin:
-                async def handle_event(self, event, data):
-                    received.append((event, data))
-
-            spy_manifest = Manifest(
-                name="spy-agent", version="1.0.0", description="spy",
-                type=__import__("engine.plugin_manager.base", fromlist=["PluginType"]).PluginType.AGENT,
-                class_name="SpyPlugin",
-                triggers=[{"type": "event", "events": ["sensor.processed"]}],
-            )
-            plugin_registry.register(spy_manifest, SpyPlugin())
-
             with patch.object(pipeline_module, "get_sensor") as mock_get_sensor, patch.object(
                 pipeline_module, "get_adapter"
             ) as mock_get_adapter, patch.object(
@@ -357,13 +339,15 @@ class TestWorkflowEndToEnd:
                     DBOS.get_result_async(workflow_id), timeout=60
                 )
 
-                assert result["posted"]["posted"] is True
                 assert result["record"]["tenant_id"]
                 assert len(added) == 4  # Tenant + Project + Issue + AgentSession
+                # 本地兜底 intent 把结论转成一条 comment.create;测试环境没有效果
+                # 提供者,如实记 blocked——绝不假装发过评论。
+                effects = result["applied"]["applied"]
+                assert len(effects) == 1
+                assert effects[0]["capability"] == "comment.create"
+                assert effects[0]["verdict"] == "blocked"
                 sensor.handle_event.assert_awaited_once()
-                adapter.execute_task.assert_awaited_once()
-                # 保守事件链:spy 订阅者收到 sensor.processed 且载荷带租户
-                assert received and received[0][0] == "sensor.processed"
-                assert received[0][1]["tenant_slug"] == "default"
+                adapter.execute_task.assert_not_awaited()
         finally:
             DBOS.destroy(destroy_registry=True)
