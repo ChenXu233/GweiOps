@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 BLOCKED = "blocked"
 ROLLED_BACK = "rolled_back"
-NOT_APPLIED = ("blocked", "vetoed", "pending")
+# failed 也在这里:确定没动过,没有可撤的东西。unknown 不在——它可能动过,
+# 只是拿不到句柄,那种情况由下面的"没有句柄"拦下并说清楚。
+NOT_APPLIED = ("blocked", "vetoed", "pending", "failed")
 
 
 def _ledger():

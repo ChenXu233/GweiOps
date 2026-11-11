@@ -18,7 +18,10 @@ from pydantic import BaseModel, ConfigDict
 Severity = Literal["critical", "medium", "low"]
 IssueStatus = Literal["pending_review", "canary", "approved", "completed", "rolled_back"]
 TimelineStatus = Literal["done", "active", "pending"]
-Verdict = Literal["pending", "kept", "rolled_back", "blocked", "vetoed", "irreversible"]
+# failed = 确定没动(可重试);unknown = 不知道动没动(要人核);irreversible = 确实动了且撤不回来。
+Verdict = Literal[
+    "pending", "kept", "rolled_back", "blocked", "vetoed", "failed", "unknown", "irreversible"
+]
 
 
 class HealthDTO(BaseModel):

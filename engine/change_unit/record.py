@@ -10,6 +10,12 @@
 
 分母只算真正动过外部世界的单元。阻断和否决没有碰过下游,把它们算成失败,
 等于因为"正确地拦住了"而永久怀疑这个能力。
+
+failed 同样不进分母:它说的是"这次确定没碰到下游",对手上这个动作安不安全
+没有任何信息量。但它是另一回事,所以单独计数——一个能力反复 failed 说明
+配置或凭据坏了,那是给人看的信号,不是阻断的依据。
+
+unknown 进分母,也进失败数:动没动都不知道,比已知撤不回来更说不清。
 """
 
 from __future__ import annotations
@@ -19,16 +25,19 @@ from typing import Any, Iterable
 
 from .model import (
     VERDICT_BLOCKED,
+    VERDICT_FAILED,
     VERDICT_IRREVERSIBLE,
     VERDICT_KEPT,
     VERDICT_ROLLED_BACK,
+    VERDICT_UNKNOWN,
     VERDICT_VETOED,
 )
 
 # 履历看最近多少次。太久以前的失败不该永远拖住一个能力,但也别只看最后一次。
 DEFAULT_LOOKBACK = 50
 
-_EXECUTED = (VERDICT_KEPT, VERDICT_ROLLED_BACK, VERDICT_IRREVERSIBLE)
+# 动过外部世界的结论。unknown 也算:不知道动没动,不能当成没动。
+_EXECUTED = (VERDICT_KEPT, VERDICT_ROLLED_BACK, VERDICT_IRREVERSIBLE, VERDICT_UNKNOWN)
 
 
 @dataclass(frozen=True)
@@ -42,8 +51,10 @@ class TrackRecord:
     kept: int = 0
     rolled_back: int = 0
     irreversible: int = 0
+    unknown: int = 0  # 动没动不知道,进分母也进失败数
     blocked: int = 0  # 只是给人看的,不进分母
     vetoed: int = 0
+    failed: int = 0  # 确定没动,不进分母;反复 failed 说明凭据或配置坏了
     last_verdict: str = ""
     last_reason: str = ""
 
@@ -53,7 +64,7 @@ class TrackRecord:
 
         撤不回来比撤回来更糟,但不混成一类:账本里它们是两种结论。
         """
-        return self.rolled_back + self.irreversible
+        return self.rolled_back + self.irreversible + self.unknown
 
     @property
     def failure_rate(self) -> float:
@@ -102,8 +113,10 @@ def summarize(
         VERDICT_KEPT: 0,
         VERDICT_ROLLED_BACK: 0,
         VERDICT_IRREVERSIBLE: 0,
+        VERDICT_UNKNOWN: 0,
         VERDICT_BLOCKED: 0,
         VERDICT_VETOED: 0,
+        VERDICT_FAILED: 0,
     }
     for row in picked:
         verdict = row.get("verdict") or ""
@@ -120,8 +133,10 @@ def summarize(
         kept=counts[VERDICT_KEPT],
         rolled_back=counts[VERDICT_ROLLED_BACK],
         irreversible=counts[VERDICT_IRREVERSIBLE],
+        unknown=counts[VERDICT_UNKNOWN],
         blocked=counts[VERDICT_BLOCKED],
         vetoed=counts[VERDICT_VETOED],
+        failed=counts[VERDICT_FAILED],
         last_verdict=(last or {}).get("verdict", ""),
         last_reason=(last or {}).get("reason", ""),
     )

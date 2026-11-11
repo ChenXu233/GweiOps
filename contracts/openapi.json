@@ -286,6 +286,8 @@
               "rolled_back",
               "blocked",
               "vetoed",
+              "failed",
+              "unknown",
               "irreversible"
             ],
             "title": "Verdict",
