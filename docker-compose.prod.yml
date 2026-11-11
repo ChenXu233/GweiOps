@@ -1,6 +1,10 @@
 # =============================================================================
 # Gwei — 生产环境覆盖
-# 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 这一份按"单机自用 / dogfood"写的:镜像在本机构建,不依赖外部 registry;
+# 引擎要替事故起 harness 容器,所以挂了宿主 docker.sock。多机部署时把 harness
+# 挪到目标机上,用 HARNESS_COMMAND 指过去,这一行就可以删。
 # =============================================================================
 
 services:
@@ -13,10 +17,8 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 2G
-        reservations:
-          cpus: "1"
           memory: 1G
+    restart: unless-stopped
 
   redis:
     container_name: gwei-redis
@@ -25,16 +27,25 @@ services:
       resources:
         limits:
           cpus: "1"
-          memory: 512M
-        reservations:
-          cpus: "0.5"
           memory: 256M
+    restart: unless-stopped
 
   engine:
-    image: ghcr.io/chenxu233/gweiops:${GWEI_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
+      args:
+        # 引擎要用 docker CLI 起 harness 容器;纯 API 部署可以设 0
+        INSTALL_DOCKER_CLI: "1"
+        # 国内构建时在 .env 里给这两个,省掉 apt / pip 的超时
+        APT_MIRROR: ${APT_MIRROR:-}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+        DOCKER_CLI_URL: ${DOCKER_CLI_URL:-https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz}
+    image: gweiops:local
     container_name: gwei-engine
+    # 只给宿主机回环:外面一律经 web 的 /api 代理进来
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: "postgresql+asyncpg://gwei:${POSTGRES_PASSWORD}@postgres:5432/gwei"
       REDIS_URL: "redis://redis:6379/0"
@@ -43,36 +54,19 @@ services:
       POSTGRES_USER: gwei
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 4G
-        reservations:
-          cpus: "2"
-          memory: 2G
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  web:
-    image: ghcr.io/chenxu233/gwei-web:${GWEI_VERSION:-latest}
-    container_name: gwei-web
-    ports:
-      - "3000:3000"
-    environment:
-      NUXT_PUBLIC_API_BASE: "/api"
-      NUXT_PUBLIC_USE_MOCK: "false"
-      NUXT_PUBLIC_DEPLOYMENT_MODE: "selfhost"
+      # 控制台令牌:token:tenant:actor:scope。没配 = 谁都能改,别这样放到公网
+      API_TOKENS: ${API_TOKENS:?必须设置 API_TOKENS}
+      PLATFORM_BASE_URL: "http://engine:8000"
+      HARNESS_WORKSPACE_ROOT: /workspaces
+      ALERTMANAGER_WEBHOOK_TOKEN: ${ALERTMANAGER_WEBHOOK_TOKEN:-}
+    volumes:
+      # 引擎在容器里,但它要替事故起 harness 容器:这两行是 dogfood 的代价。
+      # 只读挂 docker.sock 做不到(要创建容器),所以这里给的是完整 docker 权限。
+      - /var/run/docker.sock:/var/run/docker.sock
+      - harness-workspace:/workspaces
+    group_add:
+      # 宿主 docker 组 GID;在 .env 里写 DOCKER_GID=$(stat -c %g /var/run/docker.sock)
+      - "${DOCKER_GID:-999}"
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -84,9 +78,44 @@ services:
         limits:
           cpus: "2"
           memory: 1G
-        reservations:
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: gwei-web:local
+    container_name: gwei-web
+    ports:
+      # 先只绑回环;域名指向这台机器之后由 caddy 反代到这个地址
+      - "127.0.0.1:3000:3000"
+    environment:
+      NUXT_PUBLIC_API_BASE: "/api"
+      NUXT_PUBLIC_USE_MOCK: "false"
+      NUXT_PUBLIC_DEPLOYMENT_MODE: "selfhost"
+      # 服务端代理替浏览器带令牌;浏览器永远拿不到它
+      NUXT_ENGINE_URL: "http://engine:8000"
+      NUXT_ENGINE_TOKEN: ${CONSOLE_TOKEN:?必须设置 CONSOLE_TOKEN}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
           cpus: "1"
-          memory: 512M
+          memory: 768M
     depends_on:
       engine:
         condition: service_healthy
+
+volumes:
+  harness-workspace:
+    name: gwei-harness-workspace
