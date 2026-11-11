@@ -23,10 +23,26 @@ class GitHubAppSettings(BaseModel):
     页面上只需要知道"设过了",不需要看到值。
     """
 
-    app_id: str = Field(..., json_schema_extra={"expose": "always"})
-    private_key: str = Field(..., json_schema_extra={"expose": "never"})
-    webhook_secret: str = Field("", json_schema_extra={"expose": "never"})
-    installation_id: int = 0
+    app_id: str = Field(
+        ...,
+        description="GitHub App 的数字 ID,在 App 设置页能看到",
+        json_schema_extra={"expose": "always"},
+    )
+    private_key: str = Field(
+        ...,
+        description="App 私钥(PEM);.env 里换行写成 \\n",
+        json_schema_extra={"expose": "never"},
+    )
+    webhook_secret: str = Field(
+        "",
+        description="Webhook 密钥,用于校验投递签名",
+        json_schema_extra={"expose": "never"},
+    )
+    installation_id: int = Field(
+        0,
+        description="安装 ID,取安装页 URL 末尾的数字",
+        json_schema_extra={"expose": "never"},
+    )
 
 
 class GitHubAppConfig:

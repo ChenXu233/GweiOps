@@ -1189,6 +1189,11 @@ export interface components {
          */
         ScopeFieldDTO: {
             /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
              * Expose
              * @default never
              */

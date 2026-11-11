@@ -33,7 +33,8 @@ def main() -> int:
     spec = build()
     payload = json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(payload, encoding="utf-8")
+    # 固定 LF:Windows 上文本模式会把换行写成 CRLF,整份契约看起来全变了。
+    OUT.write_text(payload, encoding="utf-8", newline="\n")
 
     schemas = spec.get("components", {}).get("schemas", {})
     print(
