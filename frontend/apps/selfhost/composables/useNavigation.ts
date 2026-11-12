@@ -43,6 +43,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { to: '/runs', label: '执行记录', icon: 'runs', hint: '每次执行会话的来龙去脉' },
       { to: '/observability', label: '指标观测', icon: 'observability', hint: '引擎与插件上报的实时指标' },
+      { to: '/team', label: '成员与角色', icon: 'users', hint: '谁在用、能做什么、做过什么' },
       { to: '/settings', label: '设置', icon: 'settings', hint: '租户、通知与外观' },
     ],
   },

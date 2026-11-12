@@ -15,6 +15,7 @@ from engine.api.routes.agent import router as agent_router
 from engine.api.routes.changes import router as changes_router
 from engine.api.routes.incidents import router as incidents_router
 from engine.api.routes.console import router as console_router
+from engine.api.routes.rbac import router as rbac_router
 from engine.api.routes.settings_scopes import router as settings_scopes_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
@@ -118,6 +119,7 @@ app.include_router(changes_router)
 app.include_router(agent_router)
 app.include_router(incidents_router)
 app.include_router(settings_scopes_router)
+app.include_router(rbac_router)
 app.include_router(webhook_router)
 
 # 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。

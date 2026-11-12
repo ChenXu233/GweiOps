@@ -164,6 +164,18 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
     merged.setdefault(tenant, {})[scope_name] = stored
     config.apply_stored(merged)
 
+    from engine.auth import audit
+
+    identity = request.state.identity if hasattr(request.state, "identity") else None
+    await audit.record(
+        "settings.write",
+        identity=identity,
+        target=scope_name,
+        # 只记键名,不记值:配的是密钥,审计不该把它抄一遍
+        detail={"keys": sorted(stored), "tenant": tenant},
+        ip=request.client.host if request.client else "",
+    )
+
     return {
         "scope": scope_name,
         "set": sorted(stored),

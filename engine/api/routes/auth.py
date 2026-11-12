@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _ip(request: Request) -> str:
+    return request.client.host if request.client else ""
+
+
 class LoginDTO(BaseModel):
     email: str = Field(..., min_length=3, max_length=255)
     password: str = Field(..., min_length=1, max_length=1024)
@@ -94,6 +98,9 @@ async def setup(payload: SetupDTO, request: Request, response: Response) -> dict
     from engine.api.auth import set_auth_required
 
     set_auth_required(True)
+    from engine.auth import audit
+
+    await audit.record("auth.setup", identity=identity, target=payload.email, ip=_ip(request))
     logger.info("bootstrap: first admin created (%s)", payload.email)
     return {"user": _identity_dto(identity)}
 
@@ -111,14 +118,22 @@ async def login(payload: LoginDTO, request: Request, response: Response) -> dict
         user_agent=request.headers.get("user-agent", ""),
     )
     _set_session_cookie(response, request, token)
+    from engine.auth import audit
+
+    await audit.record("auth.login", identity=identity, target=user.email, ip=_ip(request))
     return {"user": _identity_dto(identity)}
 
 
 @router.post("/api/auth/logout")
 async def logout(request: Request, response: Response) -> dict:
     token = request.cookies.get(SESSION_COOKIE, "")
+    identity: Identity | None = getattr(request.state, "identity", None)
     await auth_store.end_session(token)
     response.delete_cookie(SESSION_COOKIE, path="/")
+    if identity is not None:
+        from engine.auth import audit
+
+        await audit.record("auth.logout", identity=identity, ip=_ip(request))
     return {"ok": True}
 
 
@@ -148,6 +163,9 @@ async def change_password(
         user_agent=request.headers.get("user-agent", ""),
     )
     _set_session_cookie(response, request, token)
+    from engine.auth import audit
+
+    await audit.record("auth.password", identity=identity, ip=_ip(request))
     return {"ok": True, "note": "其他设备上的登录已失效"}
 
 
