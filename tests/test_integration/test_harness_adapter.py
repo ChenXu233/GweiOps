@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from engine.harness import build_task, run_harness
+from engine.harness import ENV_FILE_NAME, build_task, run_harness
+from engine.harness.adapter import _write_env_file
 from engine.shared.config import config
 from engine.workflows import pipeline
 
@@ -86,6 +87,46 @@ def test_the_exit_url_and_report_path_reach_the_command(tmp_path):
         )
     )
     assert result.report["summary"] == "http://gw/api/agent/exits|inc-2"
+
+
+def test_the_env_the_harness_needs_is_on_disk(tmp_path):
+    """命令里逐个 -e 点名太容易漏;--env-file 一次带进去,谁能用谁用。"""
+    script = tmp_path / "read_env.py"
+    script.write_text(
+        "import os, json\n"
+        "open(os.environ['GWEI_REPORT'], 'w', encoding='utf-8').write(\n"
+        "    json.dumps({'summary': os.environ.get('SOME_TOKEN', 'missing')})\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    workspace = tmp_path / "inc-env"
+    env_file = workspace / ENV_FILE_NAME
+
+    result = asyncio.run(
+        run_harness(
+            command=(
+                f'"{sys.executable}" "{script}" '
+                f'--env-file "{env_file}"'
+            ),
+            workspace=workspace,
+            task="x",
+            extra_env={"SOME_TOKEN": "abc123"},
+        )
+    )
+
+    assert env_file.exists()
+    # 值带换行就写不进去:那种东西不该塞进 env 文件里假装成功
+    content = env_file.read_text(encoding="utf-8")
+    assert "SOME_TOKEN=abc123" in content
+    assert "GWEI_" not in content.replace("SOME_TOKEN", "")
+
+
+def test_a_multiline_value_is_left_out_of_the_env_file(tmp_path):
+    path = _write_env_file(tmp_path, {"ok": "1", "pem": "-----BEGIN\nabc\n-----END"})
+
+    text = path.read_text(encoding="utf-8")
+    assert "ok=1" in text
+    assert "pem" not in text
 
 
 def test_a_silent_harness_still_gets_a_report(tmp_path):

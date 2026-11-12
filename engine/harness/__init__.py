@@ -8,7 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from engine.shared.config import config
 
 from . import workspace
-from .adapter import REPORT_NAME, HarnessResult, build_env, build_task, run_harness
+from .adapter import (
+    ENV_FILE_NAME,
+    REPORT_NAME,
+    HarnessResult,
+    build_env,
+    build_task,
+    run_harness,
+)
 from .workspace import WorkspaceError, collect, prepare, repo_of, workspace_of
 
 # 形状写在类型里:写入时 validate_values 会拿模型验一遍,坏值当场 422,不等到起容器才炸。
@@ -59,6 +66,7 @@ class HarnessEnvSettings(BaseModel):
 config.register_model_scope("harness-env", HarnessEnvSettings, prefix="HARNESS_ENV_")
 
 __all__ = [
+    "ENV_FILE_NAME",
     "REPORT_NAME",
     "HarnessResult",
     "WorkspaceError",
