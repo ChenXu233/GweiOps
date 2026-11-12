@@ -168,7 +168,7 @@ effects:
 
 效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
 
-能拉代码的适配器还可以实现 `workspace_source(repo)`,返回 `{url, token, branch}`:工作流把一场交给 harness 之前用它拉一份代码进工作区。它不是能力、不进出口菜单——凭据只在平台这一侧用一次,容器里拿不到。没有这个方法的部署,harness 的工作区里就没有代码。
+能拉代码的适配器还可以实现 `workspace_source(repo)`,返回 `{tarball_url, token, branch}`:工作流把一场交给 harness 之前用它取一份代码进工作区。地址要指向能下载整棵树的端点(对 GitHub 是 API 的 tarball),不走 git 协议——有些网络里 `github.com` 连不上,API 还在。它不是能力、不进出口菜单——凭据只在平台这一侧用一次,容器里拿不到。没有这个方法的部署,harness 的工作区里就没有代码。
 
 `execute` 抛什么,决定这次失败怎么记账:认得出没碰到下游(构造请求就失败、下游明确拒绝 4xx)时抛 `engine.change_unit.EffectNotApplied`,单元记 `failed`(可重试);抛别的异常一律记 `unknown`(请求可能已经到了对面,要人去核)。分不清的时候不要猜着抛 `EffectNotApplied` —— 把 `unknown` 说成 `failed`,等于教人放心重试一次可能已经生效的操作。
 

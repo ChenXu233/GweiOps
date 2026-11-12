@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import os
 import re
 import shutil
@@ -93,28 +92,64 @@ async def _git(*args: str, cwd: Path | None = None, timeout_s: int = 300) -> str
     return (out or b"").decode("utf-8", "replace")
 
 
-async def clone(*, url: str, token: str, branch: str, dest: Path) -> Checkout:
-    """拉一份浅克隆。令牌只在这一次命令行里。"""
-    if dest.exists():
-        # 重跑就重来:上一次留下了什么(半拉下来的 .git)不值得猜。
-        shutil.rmtree(dest, ignore_errors=True)
-    dest.parent.mkdir(parents=True, exist_ok=True)
+async def download(url: str, token: str, dest: Path, timeout_s: int = 300) -> Path:
+    """把仓库快照下载成一个 tar.gz。
 
-    args: list[str] = []
+    走 API 的 tarball 端点,不走 `git clone`:github.com 在有些网络里连不上
+    (GnuTLS recv error、直接超时),api.github.com 通常还行。这条路本来就要一个
+    令牌,顺带就不用把凭据塞进命令行。
+    """
+    import httpx
+
+    headers = {"Accept": "application/vnd.github.v3.raw"}
     if token:
-        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-        # 走 -c 而不是写进 URL:URL 会留在 .git/config 和 ps 里,-c 只活在这次进程。
-        args += ["-c", f"http.extraheader=Authorization: Basic {basic}"]
-    args += ["clone", "--depth", "1", "--no-tags"]
-    if branch:
-        args += ["--branch", branch]
-    args += [url, str(dest)]
-    await _git(*args)
+        headers["Authorization"] = f"Bearer {token}"
 
-    sha = (await _git("-C", str(dest), "rev-parse", "HEAD")).strip()
-    # 远端地址留成干净的那种:这个副本是平台的,不该记住任何凭据。
-    await _git("-C", str(dest), "remote", "set-url", "origin", url)
-    return Checkout(repo_path=dest, branch=branch, commit=sha)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout_s) as client:
+        async with client.stream("GET", url, headers=headers) as response:
+            if response.status_code >= 400:
+                body = (await response.aread()).decode("utf-8", "replace")[:300]
+                raise WorkspaceError(f"下载仓库快照失败(HTTP {response.status_code}):{body}")
+            with dest.open("wb") as handle:
+                async for chunk in response.aiter_bytes():
+                    handle.write(chunk)
+    return dest
+
+
+def extract(archive: Path, dest: Path) -> None:
+    """解开 tar.gz,去掉 GitHub 自动加的那层顶层目录。
+
+    只认相对路径:快照来自网络,解包前不该相信里面的路径。
+    """
+    import tarfile
+
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    with tarfile.open(archive, "r:gz") as tar:
+        for member in tar.getmembers():
+            parts = member.name.split("/", 1)
+            if len(parts) < 2 or not parts[1]:
+                continue
+            member.name = parts[1]
+            tar.extract(member, dest, filter="data")
+
+
+async def commit_snapshot(repo_dir: Path) -> str:
+    """把快照变成一个提交,好让"改了什么"有得比。
+
+    没有历史是故意的:agent 拿到的就是当前这一份代码,历史在 GitHub 上。
+    """
+    await _git("init", "-q", "-b", "main", cwd=repo_dir)
+    await _git("add", "-A", cwd=repo_dir)
+    await _git(
+        "-c", "user.email=gwei@localhost", "-c", "user.name=gwei",
+        "commit", "-q", "--allow-empty", "-m", "base",
+        cwd=repo_dir,
+    )
+    return (await _git("rev-parse", "HEAD", cwd=repo_dir)).strip()
 
 
 def open_up(root: Path) -> None:
@@ -168,16 +203,24 @@ def materialize(checkout: Checkout, workspace: Path) -> None:
 async def prepare(
     *, source: dict[str, Any], root: str | Path, incident_id: str
 ) -> Checkout:
-    """开工前的一步:拉代码、铺进工作区。
+    """开工前的一步:取一份代码、铺进工作区。
 
-    source 由适配器给(地址、令牌、基线分支);平台不认识 GitHub,只认这三个字段。
+    source 由适配器给(快照地址、令牌、基线分支);平台不认识 GitHub,只认这三个字段。
+    快照下来先变成一个本地提交,之后"改了什么"就有得比。
     """
 
-    checkout = await clone(
-        url=str(source.get("url") or ""),
-        token=str(source.get("token") or ""),
-        branch=str(source.get("branch") or ""),
-        dest=repo_of(root, incident_id),
+    repo_dir = repo_of(root, incident_id)
+    archive = repo_dir.parent / f"{safe_id(incident_id)}.tar.gz"
+
+    await download(str(source.get("tarball_url") or ""), str(source.get("token") or ""), archive)
+    try:
+        extract(archive, repo_dir)
+    finally:
+        archive.unlink(missing_ok=True)
+
+    commit = await commit_snapshot(repo_dir)
+    checkout = Checkout(
+        repo_path=repo_dir, branch=str(source.get("branch") or ""), commit=commit
     )
     materialize(checkout, workspace_of(root, incident_id))
     return checkout
@@ -290,8 +333,10 @@ __all__ = [
     "MAX_FILES",
     "WorkspaceError",
     "changed_paths",
-    "clone",
     "collect",
+    "commit_snapshot",
+    "download",
+    "extract",
     "materialize",
     "open_up",
     "prepare",
