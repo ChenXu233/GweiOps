@@ -234,7 +234,7 @@ class GitHubAppAdapter(PluginBase):
         }
 
     async def workspace_source(self, repo: str) -> Dict[str, Any]:
-        """拉代码要的三样东西:地址、令牌、基线分支。
+        """拉代码要的三样东西:快照地址、令牌、基线分支。
 
         凭据只交出去这一次,用在哪、怎么用由平台决定;容器永远拿不到。
         """
@@ -242,10 +242,12 @@ class GitHubAppAdapter(PluginBase):
             raise RuntimeError(
                 "GitHub App 客户端还没建起来(app_id / private_key / installation_id)"
             )
+        branch = await self.client.default_branch(repo)
         return {
-            "url": f"https://github.com/{repo}.git",
+            # 走 API 的 tarball 端点,不走 github.com 的 git 协议:后者在有些网络里连不上
+            "tarball_url": f"https://api.github.com/repos/{repo}/tarball/{branch}",
             "token": await self.client.installation_token(),
-            "branch": await self.client.default_branch(repo),
+            "branch": branch,
         }
 
     async def undo(self, task: str, args: Dict[str, Any], handle: str) -> Dict[str, Any]:

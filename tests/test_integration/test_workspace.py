@@ -61,6 +61,58 @@ def _collect(repo, work, paths=None):
     return asyncio.run(ws.collect(repo.repo_path, work, paths))
 
 
+def test_a_snapshot_becomes_a_diff(tmp_path):
+    """仓库快照 → 本地提交 → 铺进工作区 → 读出改动。
+
+    这条路是为了绕开 github.com:有些网络里 git 协议连不上,api.github.com 还行。
+    """
+    import tarfile
+
+    src = tmp_path / "src" / "GweiOps-abc123"
+    (src / "sub").mkdir(parents=True)
+    (src / "app.py").write_text("v1\n", encoding="utf-8", newline="\n")
+    (src / "sub" / "x.py").write_text("x\n", encoding="utf-8", newline="\n")
+    archive = tmp_path / "snap.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(src, arcname="GweiOps-abc123")
+
+    repo_dir = tmp_path / ws.REPO_DIR / "inc-9"
+    ws.extract(archive, repo_dir)
+    sha = asyncio.run(ws.commit_snapshot(repo_dir))
+    checkout = ws.Checkout(repo_path=repo_dir, branch="main", commit=sha)
+
+    work = tmp_path / "inc-9"
+    ws.materialize(checkout, work)
+
+    # 顶层那层 GitHub 自己加的目录已经被剥掉,.git 也没带进工作区
+    assert (work / "app.py").read_text(encoding="utf-8") == "v1\n"
+    assert (work / "sub" / "x.py").exists()
+    assert not (work / ".git").exists()
+
+    (work / "app.py").write_text("v2\n", encoding="utf-8", newline="\n")
+    files = asyncio.run(ws.collect(repo_dir, work))
+
+    assert files == [{"path": "app.py", "content": "v2\n"}]
+
+
+def test_a_clean_snapshot_has_no_diff(tmp_path):
+    import tarfile
+
+    src = tmp_path / "src" / "r-1"
+    src.mkdir(parents=True)
+    (src / "a.txt").write_text("a\n", encoding="utf-8", newline="\n")
+    archive = tmp_path / "s.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(src, arcname="r-1")
+
+    repo_dir = tmp_path / ws.REPO_DIR / "inc-10"
+    ws.extract(archive, repo_dir)
+    asyncio.run(ws.commit_snapshot(repo_dir))
+
+    with pytest.raises(ws.WorkspaceError, match="没有改动"):
+        asyncio.run(ws.collect(repo_dir, repo_dir, None))
+
+
 def test_the_workspace_gets_the_files_but_not_the_repository(repo, work):
     assert (work / "app.py").read_text(encoding="utf-8") == "print('v1')\n"
     assert not (work / ".git").exists(), "容器里的那份不该带 .git,凭据和提交都不在那"
