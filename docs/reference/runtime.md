@@ -138,7 +138,7 @@
 | GET | `/api/agent/exits` | 出口清单:沙箱里的 agent 能改什么、每个动作的参数名 |
 | POST | `/api/agent/exits/{name}` | 走一次出口;改世界的调用落成一个变更单元 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
-| POST | `/webhook/github` | GitHub Webhook(issue 事件) |
+| POST | `/webhook/github` | GitHub Webhook(issue 事件);需 `GITHUB_APP_WEBHOOK_SECRET`,未配置返回 503 |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
 | POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |
 
