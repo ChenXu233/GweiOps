@@ -22,6 +22,10 @@ from pathlib import Path
 from typing import Any
 
 REPORT_NAME = "report.json"
+# harness 要用到的环境变量也落一份在盘上:命令里逐个 -e 点名太容易漏,
+# docker 的 --env-file 一次就能全带进去。它是引擎写的(docker CLI 在引擎这一侧
+# 读),所以权限收到 0600,容器里那个用户反而看不见这个文件。
+ENV_FILE_NAME = ".harness-env"
 
 
 @dataclass(frozen=True)
@@ -142,6 +146,26 @@ def build_env(
     return {**stored, **(extra or {})}
 
 
+def _write_env_file(root: Path, values: dict[str, str]) -> Path:
+    """把这一场要用的环境变量写成 docker --env-file 能读的样子。
+
+    带换行的值(整段 PEM)写不进去,跳过——那种东西该走 -e 或者挂文件,不该塞进
+    env 文件里假装成功。
+    """
+    usable = {
+        str(key): str(value)
+        for key, value in values.items()
+        if str(value) and "\n" not in str(value) and "\r" not in str(value)
+    }
+    path = root / ENV_FILE_NAME
+    path.write_text("".join(f"{k}={v}\n" for k, v in sorted(usable.items())), encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)  # 只有引擎这一侧要读它(docker CLI 在引擎里)
+    except OSError:
+        pass
+    return path
+
+
 async def run_harness(
     *,
     command: str,
@@ -169,7 +193,9 @@ async def run_harness(
     report_path = root / REPORT_NAME
 
     resolved = command.replace("{workspace}", str(root))
-    env = {**os.environ, **build_env(extra_env, tenant)}
+    harness_env = build_env(extra_env, tenant)
+    _write_env_file(root, harness_env)
+    env = {**os.environ, **harness_env}
     env.update(
         {
             "GWEI_WORKSPACE": str(root),
@@ -221,4 +247,11 @@ async def run_harness(
     return result
 
 
-__all__ = ["HarnessResult", "run_harness", "build_task", "build_env", "REPORT_NAME"]
+__all__ = [
+    "HarnessResult",
+    "run_harness",
+    "build_task",
+    "build_env",
+    "ENV_FILE_NAME",
+    "REPORT_NAME",
+]

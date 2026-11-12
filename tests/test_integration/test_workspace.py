@@ -94,6 +94,16 @@ def test_platform_files_in_the_workspace_are_not_part_of_the_change(repo, work):
     assert paths == ["app.py"]
 
 
+def test_the_env_file_never_rides_along_with_the_commit(repo, work):
+    """工作区里的 .harness-env 是这一场的凭据,跟着提交走就等于写进仓库。"""
+    (work / "app.py").write_text("print('v4b')\n", encoding="utf-8", newline="\n")
+    (work / ".harness-env").write_text("DEEPSEEK_API_KEY=sk-redacted\n", encoding="utf-8")
+
+    paths = [item["path"] for item in _collect(repo, work)]
+
+    assert paths == ["app.py"]
+
+
 def test_ignored_paths_stay_out(repo, work):
     """仓库自己说 node_modules 不进版本库,那它也不进这次提交。"""
     (work / "app.py").write_text("print('v4')\n", encoding="utf-8", newline="\n")

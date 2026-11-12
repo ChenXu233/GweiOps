@@ -38,9 +38,11 @@ curl -X PUT http://<平台>/api/settings/scopes/harness-env \
   -d '{"values": {"deepseek_api_key": "…", "dsh_model": "…"}}'
 ```
 
-存进去的 `deepseek_api_key` 会变成容器里的 `DEEPSEEK_API_KEY`,其余同理(键名大写)。这条命令里再加 `-e DEEPSEEK_API_KEY` 就能透进容器。
+存进去的 `deepseek_api_key` 会变成引擎进程环境里的 `DEEPSEEK_API_KEY`,其余同理(键名大写),整份键值同时落在工作区的 `.harness-env`(0600)。
 
-容器认不认这个变量名,是 dsh 的事,平台不替它猜;平台只保证值从库里来、按大写注入、不进日志也不进报告。
+`docker run` 只转发被点名的变量,所以命令里用 `--env-file {workspace}/.harness-env` 一次带进去 —— 新加一个键不用改命令;要指名也可以用 `-e NAME`。
+
+容器认不认这个变量名,是 harness 的事,平台不替它猜;平台只保证值从库里来、按大写注入、进得了容器、不进日志也不进报告。
 
 ## 接上平台
 
@@ -52,14 +54,14 @@ HARNESS_COMMAND=docker run --rm -i \
   -v gwei-dsh-home:/data/dsh-home \
   -v "$(pwd)/deploy/harness/plans:/opt/plans:ro" \
   -e DSH_PLAN=gwei \
-  -e GWEI_EXIT_URL -e GWEI_TOKEN -e GWEI_REPORT -e GWEI_INCIDENT_ID -e GWEI_TENANT -e GWEI_BINDING \
+  --env-file {workspace}/.harness-env \
   gwei-harness:local - < {workspace}/task.md
 HARNESS_TOKEN=<从 API_TOKENS 里发一个给 harness 的令牌>
 PLATFORM_BASE_URL=http://<平台地址>:8000
 ```
 
 - `- < {workspace}/task.md`:任务从 stdin 进容器,避免把多行文本塞进命令行。
-- `-e NAME` 不带值:把宿主环境里的同名变量透传进去,平台已经设好了。
+- `--env-file`:平台把这一场的环境变量(出口地址、令牌、`harness-env` 里的键)写在 `.harness-env` 里,一次带进容器。这个文件属于平台,不进工作区的改动。
 - 想让它跑在别处,把 `docker run …` 换成 `ssh box …` 就行,平台那边一行不改。
 
 ## 验一下

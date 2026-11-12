@@ -35,7 +35,8 @@ MAX_FILES = 100
 MAX_FILE_BYTES = 512 * 1024
 
 # 工作区里属于平台自己、不属于这次改动的文件。
-IGNORED_NAMES = {"task.md", "report.json"}
+# .harness-env 里是这一场的凭据,跟着提交走就等于把它们写进仓库。
+IGNORED_NAMES = {"task.md", "report.json", ".harness-env"}
 
 REPO_DIR = ".repos"
 
