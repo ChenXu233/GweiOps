@@ -42,7 +42,8 @@ effects:
   # 撤销是关掉它并删掉分支;合并之后窗口就关了,那时候要撤是另一次变更。
   pr.open:
     label: 开一个 PR(建分支、提交、发起合并请求)
-    execute: { task: open_pull, args: [repo, base, head, title, body, files] }
+    # paths:只交这几个路径(相对工作区);不给 files 时平台按工作区的改动读内容
+    execute: { task: open_pull, args: [repo, base, head, title, body, files, paths] }
     undo: { task: close_pull, kind: symmetric }
     window: { read: pull_open }
     verify:

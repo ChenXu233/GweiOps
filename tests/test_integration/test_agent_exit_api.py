@@ -250,3 +250,113 @@ def test_the_same_call_id_in_another_incident_is_another_change(env):
     )
     assert env.provider.executed == 2
     assert len(_rows(env.ledger)) == 2
+
+# ---------------------------------------------------------------------------
+# 出口读工作区:files 不用 agent 手填
+# ---------------------------------------------------------------------------
+
+PR_DECL = EffectDecl(
+    capability="pr.open",
+    execute_task="open_pull",
+    undo_task="close_pull",
+    undo_kind="symmetric",
+    window_read="pull_open",
+    verify=({"query": "pull_open", "expect": "true"},),
+    label="开一个 PR",
+    execute_args=("repo", "head", "title", "files", "paths"),
+)
+
+
+class PrProvider(Provider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.args: dict | None = None
+
+    async def execute(self, task, args):
+        self.executed += 1
+        self.args = dict(args)
+        return {"handle": "1", "url": "https://github.com/o/r/pull/1"}
+
+
+def _pr_app(tmp_path, monkeypatch, provider):
+    from engine.api.auth import load_tokens, make_middleware
+    from engine.api.routes import agent as agent_mod
+
+    monkeypatch.setattr(config.settings, "change_ledger_backend", "file")
+    monkeypatch.setattr(
+        config.settings, "change_ledger_path", str(tmp_path / "ledger.jsonl")
+    )
+
+    class PrRegistry(Registry):
+        def __init__(self) -> None:
+            super().__init__(provider=provider)
+            self.menu = {
+                "pr.open": {"label": PR_DECL.label, "args": list(PR_DECL.execute_args)}
+            }
+
+        def effect_decl(self, capability, tenant="", binding=""):
+            return provider, PR_DECL
+
+    stub = PrRegistry()
+    monkeypatch.setattr(agent_mod, "registry", stub)
+
+    app = FastAPI()
+    app.include_router(agent_mod.router)
+    app.middleware("http")(make_middleware(load_tokens(OPERATOR)))
+    return SimpleNamespace(
+        client=TestClient(app), stub=stub, provider=provider, module=agent_mod
+    )
+
+
+def test_the_exit_fills_files_from_the_workspace(tmp_path, monkeypatch):
+    """agent 说"我改了这些路径",内容由平台去工作区读——别让它把整份文件塞进参数。"""
+    provider = PrProvider()
+    env = _pr_app(tmp_path, monkeypatch, provider)
+    seen = {}
+
+    async def fake_files(incident_id, paths):
+        seen["incident_id"] = incident_id
+        seen["paths"] = paths
+        return [{"path": "engine/x.py", "content": "x = 1\n"}]
+
+    monkeypatch.setattr(env.module, "_workspace_files", fake_files)
+
+    resp = env.client.post(
+        "/api/agent/exits/pr.open",
+        json={
+            "args": {"repo": "o/r", "head": "gwei/x", "paths": ["engine/x.py"]},
+            "incident_id": "inc-1",
+        },
+        headers=_h(),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+    assert seen == {"incident_id": "inc-1", "paths": ["engine/x.py"]}
+    assert provider.args["files"] == [{"path": "engine/x.py", "content": "x = 1\n"}]
+    # paths 只是"读哪几个"的简写,不该跟着效果进账本
+    assert "paths" not in provider.args
+
+
+def test_a_workspace_that_cannot_be_read_stops_before_the_call(tmp_path, monkeypatch):
+    from engine.harness.workspace import WorkspaceError
+
+    provider = PrProvider()
+    env = _pr_app(tmp_path, monkeypatch, provider)
+
+    async def fake_files(incident_id, paths):
+        raise WorkspaceError("这一场没有仓库副本,读不出改动")
+
+    monkeypatch.setattr(env.module, "_workspace_files", fake_files)
+
+    resp = env.client.post(
+        "/api/agent/exits/pr.open",
+        json={"args": {"repo": "o/r", "head": "gwei/x"}, "incident_id": "inc-1"},
+        headers=_h(),
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert "读不出工作区的改动" in body["reason"]
+    assert provider.executed == 0, "读不出改动就不该去开 PR"

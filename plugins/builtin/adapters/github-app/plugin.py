@@ -191,7 +191,10 @@ class GitHubAppAdapter(PluginBase):
         是一步到位的效果,而不是让 agent 先建分支再开 PR 两次外呼。
         """
         repo = args["repo"]
-        base = args.get("base") or "main"
+        # 基线不写死成 main:仓库的默认分支是它自己的事,问一句比猜一次便宜。
+        base = args.get("base") or await self.client.default_branch(repo)
+        if not base:
+            raise ValueError(f"取不到 {repo} 的默认分支,开 PR 需要知道基线")
         head = args.get("head") or ""
         if not head:
             raise ValueError("开 PR 需要 head 分支名")
@@ -203,6 +206,10 @@ class GitHubAppAdapter(PluginBase):
             await self.client.create_branch(repo, head, base_sha)
 
         files = args.get("files") or []
+        if not files and args.get("paths"):
+            # paths 是"从工作区读这几个文件"的简写,读工作区是出口那边做的。
+            # 走到这里说明不是从出口来的调用,那就别装作刚提交过什么。
+            raise ValueError("只给了 paths 没有 files:读工作区是出口的事,直接调用要自己给 files")
         if files:
             await self.client.commit_files(
                 repo,
@@ -224,6 +231,21 @@ class GitHubAppAdapter(PluginBase):
             "branch": head,
             "base": base,
             "head_sha": (pull.get("head") or {}).get("sha", ""),
+        }
+
+    async def workspace_source(self, repo: str) -> Dict[str, Any]:
+        """拉代码要的三样东西:地址、令牌、基线分支。
+
+        凭据只交出去这一次,用在哪、怎么用由平台决定;容器永远拿不到。
+        """
+        if not await self._ensure_ready():
+            raise RuntimeError(
+                "GitHub App 客户端还没建起来(app_id / private_key / installation_id)"
+            )
+        return {
+            "url": f"https://github.com/{repo}.git",
+            "token": await self.client.installation_token(),
+            "branch": await self.client.default_branch(repo),
         }
 
     async def undo(self, task: str, args: Dict[str, Any], handle: str) -> Dict[str, Any]:

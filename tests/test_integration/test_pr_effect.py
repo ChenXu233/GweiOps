@@ -24,7 +24,9 @@ class FakeRepo:
     """只实现 PR 需要的那几个方法,行为与 GitHub 的语义一致。"""
 
     def __init__(self) -> None:
-        self.branches: dict[str, str] = {"main": "sha-main"}
+        # 默认分支故意不叫 main:写死 main 的实现会在这里露馅
+        self.default_branch_name = "trunk"
+        self.branches: dict[str, str] = {"main": "sha-main", "trunk": "sha-trunk"}
         self.commits: list[tuple[str, list, str]] = []
         self.pulls: dict[int, dict] = {}
         self.deleted: list[str] = []
@@ -46,10 +48,14 @@ class FakeRepo:
         self.branches[branch] = "sha-commit-%d" % len(self.commits)
         return self.branches[branch]
 
+    async def default_branch(self, repo):
+        return self.default_branch_name
+
     async def open_pull(self, repo, head, base, title, body=""):
         number = len(self.pulls) + 1
         self.pulls[number] = {
             "number": number,
+            "base": base,
             "state": "open",
             "merged": False,
             "html_url": "https://github.com/%s/pull/%d" % (repo, number),
@@ -154,6 +160,42 @@ def test_a_merged_pull_has_no_undo_window():
     window = asyncio.run(run())
     # 合并之后窗口就不再是"一直能撤"——那时候要撤是另一次变更
     assert window.known is False
+
+
+def test_without_a_base_the_repository_says_which_branch(tmp_path):
+    """调用方推不出来的东西,别让它猜:默认分支是仓库的属性。"""
+    plugin = _plugin()
+    effect = Effect(
+        task="open_pull",
+        args={
+            "repo": REPO,
+            "head": "gwei/feature-2",
+            "title": "加个开关",
+            "files": [{"path": "engine/y.py", "content": "y = 2\n"}],
+        },
+        undo_task="close_pull",
+        undo_kind="symmetric",
+        capability="pr.open",
+    )
+
+    out = asyncio.run(apply(_unit(effect), plugin, JsonlLedger(tmp_path / "l.jsonl")))
+
+    assert out.verdict == VERDICT_KEPT, out.reason
+    assert plugin.client.pulls[1]["base"] == "trunk"
+    assert plugin.client.created_from["gwei/feature-2"] == "sha-trunk"
+
+
+def test_paths_without_files_is_refused_not_silently_empty(tmp_path):
+    """paths 只有出口会展开;直接调用时不能装作刚提交过东西。"""
+    plugin = _plugin()
+    effect = _effect()
+    effect.args.pop("files")
+    effect.args["paths"] = ["engine/x.py"]
+
+    out = asyncio.run(apply(_unit(effect), plugin, JsonlLedger(tmp_path / "l.jsonl")))
+
+    assert out.verdict == VERDICT_FAILED, out.reason
+    assert "paths" in out.reason
 
 
 def test_declared_effect_is_parsed_by_core():

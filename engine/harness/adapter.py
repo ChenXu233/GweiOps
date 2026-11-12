@@ -41,17 +41,40 @@ def build_task(
     exit_url: str,
     workspace: str,
     report_path: str,
+    repo: str = "",
+    branch: str = "",
 ) -> str:
     """交给 harness 的任务文本。它自己决定怎么查、怎么改,这里只说清楚边界。"""
     detail = str(signal.get("detail") or "").strip()
+    title = signal.get("title") or signal.get("subject") or "(未命名)"
+    from_github = signal.get("source") == "github"
+
     lines = [
-        "你在处理一次线上事故。",
+        "有人在这个仓库里提了一个改动需求:改代码并开一个 PR。"
+        if from_github
+        else "你在处理一次线上事故。",
         "",
         f"事故编号:{incident_id}",
-        f"信号:{signal.get('title') or signal.get('subject') or '(未命名)'}",
+        f"{'需求' if from_github else '信号'}:{title}",
     ]
+    if repo:
+        lines.append(f"仓库:{repo}" + (f"(基线分支 {branch})" if branch else ""))
     if detail:
         lines.append(f"详情:{detail}")
+
+    if repo:
+        lines += [
+            "",
+            f"工作区的 {workspace} 里是 {repo} 这份代码的当前内容。没有 .git:提交、分支、PR",
+            "都由平台做,你不要自己 git push,也没有可用的凭据。改文件就行,改完可以让它变成",
+            "一个 PR——那是出口里的 pr.open,一次调用就是一个可撤销的变更单元。",
+            "pr.open 的 files 不用你填:平台会读工作区里你改过的文件,paths 只在你想只交一部分",
+            "文件时才给。head 是分支名,自己起一个(例如 gwei/add-settings-page);base 不用给,",
+            "缺省就是仓库的默认分支。一次需求开一个 PR,不要开第二个。",
+        ]
+    else:
+        lines.append(f"\n工作区在 {workspace}。随便用:读代码、跑测试、改文件都行。")
+
     lines += [
         "",
         "改变外部世界只能通过出口(每次调用都经过平台判定,可能被拒绝或撤销,",
@@ -60,7 +83,6 @@ def build_task(
         f"  POST {exit_url}/<能力名>",
         "  GET 时会告诉你这个部署里能做什么、每个动作要哪些参数。",
         "",
-        f"工作区在 {workspace}。随便用:读代码、跑测试、改文件都行。",
         "那里没有生产凭据;凭据只在平台那一侧,你拿不到,也不需要。",
         "",
         "拿不准就什么都不做——那是合格的处理。",

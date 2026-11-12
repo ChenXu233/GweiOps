@@ -59,6 +59,23 @@ async def _exits_in_the_last_hour(tenant: str) -> int:
     return used
 
 
+async def _workspace_files(incident_id: str, paths: Any) -> list[dict[str, Any]]:
+    """工作区里的改动 → 提交能用的 files。
+
+    内容由平台读,不由 agent 塞进参数:它只要说"我改了东西",读哪几个文件是
+    平台对着仓库算得出来的。paths 给了就只要那几个。
+    """
+    from engine.harness import workspace as ws
+
+    if not incident_id:
+        raise ws.WorkspaceError("出口调用要带 incident_id,平台才知道去哪读工作区")
+    root = config.settings.harness_workspace_root
+    wanted = [paths] if isinstance(paths, str) else list(paths or [])
+    return await ws.collect(
+        ws.repo_of(root, incident_id), ws.workspace_of(root, incident_id), wanted
+    )
+
+
 @router.get("/api/agent/exits")
 async def list_exits(request: Request) -> dict:
     """出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。"""
@@ -84,8 +101,21 @@ async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
                     ),
                 )
 
+    args = dict(call.args or {})
+    declared = registry.declared_effects().get(name) or {}
+    # paths 是"读哪几个文件"的简写,由出口消化掉,不跟着效果进账本。
+    shorthand_paths = args.pop("paths", None)
+    if "files" in (declared.get("args") or []) and not args.get("files"):
+        from engine.harness.workspace import WorkspaceError
+
+        try:
+            args["files"] = await _workspace_files(call.incident_id, shorthand_paths)
+        except WorkspaceError as exc:
+            # 读不出改动不是"提交了空改动",说清楚并停在这里。
+            return {"ok": False, "reason": f"读不出工作区的改动:{exc}"}
+
     result = await run_tool(
-        ToolCall(name, dict(call.args or {})),
+        ToolCall(name, args),
         registry=registry,
         ledger=create_ledger(),
         tenant=tenant,
