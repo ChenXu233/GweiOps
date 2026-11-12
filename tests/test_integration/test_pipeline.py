@@ -57,7 +57,7 @@ class TestCache:
 
 
 class TestWebhookGuard:
-    def _client(self, monkeypatch, secret: str):
+    def _client(self, monkeypatch, secret: str, after: str | None = None):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
 
@@ -66,6 +66,10 @@ class TestWebhookGuard:
         class Adapter:
             config = SimpleNamespace(webhook_secret=secret)
             webhook_handler = SimpleNamespace(verify_signature=lambda body, sig: True)
+
+            async def on_startup(self):
+                if after is not None:
+                    self.config = SimpleNamespace(webhook_secret=after)
 
         monkeypatch.setattr(webhook_mod, "get_adapter", lambda: Adapter())
         app = FastAPI()
@@ -80,6 +84,18 @@ class TestWebhookGuard:
 
         assert resp.status_code == 503
         assert "GITHUB_APP_WEBHOOK_SECRET" in resp.json()["detail"]
+
+    def test_a_secret_filled_into_the_page_works_without_a_restart(self, monkeypatch):
+        """配置是启动时的快照:人刚填完密钥就投递,不该还要重启才认。"""
+        client = self._client(monkeypatch, "", after="s3cret")
+
+        resp = client.post(
+            "/webhook/github",
+            json={"zen": "hi"},
+            headers={"X-GitHub-Event": "ping", "X-Hub-Signature-256": "sha256=whatever"},
+        )
+
+        assert resp.status_code == 200
 
     def test_with_a_secret_the_ping_gets_through(self, monkeypatch):
         client = self._client(monkeypatch, "s3cret")

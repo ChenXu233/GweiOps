@@ -226,8 +226,10 @@ const sections = computed(() => {
               class="block"
               :class="f.multiline ? 'sm:col-span-2' : ''"
             >
+              <!-- 主标题用人话(引擎给的说明),字段名退成下方的小字:
+                   一屏密钥字段光看 webhook_secret 这种名字,不知道自己在填什么。 -->
               <span class="mb-1 flex items-center gap-1.5 text-[11.5px] text-ink-soft">
-                {{ f.name }}
+                {{ f.description || f.name }}
                 <span v-if="f.required" class="text-coral">*</span>
               </span>
               <textarea
@@ -249,10 +251,13 @@ const sections = computed(() => {
                 class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong"
                 autocomplete="off"
               >
-              <span
-                v-if="f.description"
-                class="mt-1 block text-[11px] text-ink-faint"
-              >{{ f.description }}</span>
+              <span class="mt-1 flex items-center gap-2 font-mono text-[10.5px] text-ink-faint">
+                <span>{{ f.name }}</span>
+                <span
+                  class="rounded px-1 py-px"
+                  :class="f.set ? 'bg-well text-ink-soft' : 'text-ink-faint/70'"
+                >{{ f.set ? '已设置' : '未设置' }}</span>
+              </span>
               <span
                 v-if="f.set && f.expose !== 'never' && f.value"
                 class="mt-1 block truncate text-[11px] text-ink-faint"
