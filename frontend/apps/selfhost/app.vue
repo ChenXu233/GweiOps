@@ -11,13 +11,19 @@ onMounted(() => {
     slow.value = true
   }, 5000)
 
+  const dismiss = () => {
+    booting.value = false
+    if (slowTimer) clearTimeout(slowTimer)
+  }
+
   // 让浏览器先把首帧画出来,再移除,避免白屏闪一下
   requestAnimationFrame(() => {
-    setTimeout(() => {
-      booting.value = false
-      if (slowTimer) clearTimeout(slowTimer)
-    }, 160)
+    setTimeout(dismiss, 160)
   })
+
+  // rAF 在后台标签页、无头浏览器里可能一直不触发;那会把启动画面永久留在屏幕上。
+  // 兜底计时器和它赛跑,谁先到都算数。
+  setTimeout(dismiss, 600)
 })
 
 onUnmounted(() => {
