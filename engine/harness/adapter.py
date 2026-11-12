@@ -47,6 +47,7 @@ def build_task(
     report_path: str,
     repo: str = "",
     branch: str = "",
+    token: str = "",
 ) -> str:
     """交给 harness 的任务文本。它自己决定怎么查、怎么改,这里只说清楚边界。"""
     detail = str(signal.get("detail") or "").strip()
@@ -86,6 +87,17 @@ def build_task(
         f"  GET  {exit_url}",
         f"  POST {exit_url}/<能力名>",
         "  GET 时会告诉你这个部署里能做什么、每个动作要哪些参数。",
+    ]
+    if token:
+        # 认证方式必须写在纸面上:让 agent 去猜 401 该怎么办,它只会把时间花在翻环境上。
+        lines += [
+            "",
+            "这两个地址要带请求头,值就是下面这一串:",
+            f"  X-Gwei-Token: {token}",
+            "例如:",
+            f'  curl -s -H "X-Gwei-Token: {token}" {exit_url}',
+        ]
+    lines += [
         "",
         "那里没有生产凭据;凭据只在平台那一侧,你拿不到,也不需要。",
         "",

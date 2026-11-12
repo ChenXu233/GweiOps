@@ -486,6 +486,7 @@ async def _run_harness_impl(payload: dict) -> dict | None:
             report_path=str(workspace / "report.json"),
             repo=repo,
             branch=branch,
+            token=config.settings.harness_token,
         ),
         extra_env={
             "GWEI_EXIT_URL": exit_url,

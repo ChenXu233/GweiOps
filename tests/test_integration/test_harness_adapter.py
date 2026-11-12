@@ -45,6 +45,30 @@ def test_the_task_says_where_the_exits_and_the_report_are():
     assert SIGNAL["title"] in task
 
 
+def test_the_task_says_how_to_authenticate():
+    """让 agent 去猜 401 该怎么办,它只会把时间花在翻环境变量上。"""
+    task = build_task(
+        incident_id="inc-9",
+        signal=SIGNAL,
+        exit_url="http://gw/api/agent/exits",
+        workspace="/w/inc-9",
+        report_path="/w/inc-9/report.json",
+        token="gwei-harness-abc",
+    )
+    assert "X-Gwei-Token: gwei-harness-abc" in task
+
+
+def test_without_a_token_no_header_is_invented():
+    task = build_task(
+        incident_id="inc-9",
+        signal=SIGNAL,
+        exit_url="http://gw/api/agent/exits",
+        workspace="/w/inc-9",
+        report_path="/w/inc-9/report.json",
+    )
+    assert "X-Gwei-Token" not in task
+
+
 def test_a_report_is_picked_up(tmp_path):
     result = asyncio.run(
         run_harness(
