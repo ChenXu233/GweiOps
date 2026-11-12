@@ -39,6 +39,14 @@ async def _validate_webhook(request: Request) -> bytes:
     body = await request.body()
     headers = dict(request.headers)
 
+    # 人可能刚在页面上填完密钥:配置是启动时读的一份快照,再读一次,
+    # 不用为了一个密钥重启服务。读回来还是空的,才按"没配"处理。
+    if not adapter.config.webhook_secret:
+        try:
+            await adapter.on_startup()
+        except Exception:  # noqa: BLE001 - 还是配不全就走下面的拒收,不在这里炸
+            logger.info("webhook secret still unset after reloading plugin config")
+
     # 没配密钥就是不设防,而这个端点会起工作流(容器、模型、PR)。放在公网上
     # 等于谁都能花你的钱、用你的 App 身份说话 —— 宁可拒收,等配置补齐。
     if not adapter.config.webhook_secret:

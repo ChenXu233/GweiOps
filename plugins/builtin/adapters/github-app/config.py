@@ -35,7 +35,7 @@ class GitHubAppSettings(BaseModel):
     )
     webhook_secret: str = Field(
         "",
-        description="Webhook 密钥,用于校验投递签名",
+        description="Webhook 密钥:GitHub 投递的签名密钥,必须和 App 设置里填的一致;不填就拒收投递",
         json_schema_extra={"expose": "never"},
     )
     installation_id: int = Field(
