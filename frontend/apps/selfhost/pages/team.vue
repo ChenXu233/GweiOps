@@ -140,6 +140,62 @@ async function createRole() {
   }
 }
 
+// ---- 成员操作:停用 / 删除 / 改角色 --------------------------------------
+const memberForRoles = ref<Member | null>(null)
+const memberRoleIds = ref<string[]>([])
+const memberError = ref('')
+
+function openMemberRoles(m: Member) {
+  memberForRoles.value = m
+  memberRoleIds.value = m.roles.map((r) => r.id)
+  memberError.value = ''
+}
+
+function toggleMemberRole(id: string) {
+  const i = memberRoleIds.value.indexOf(id)
+  if (i >= 0) memberRoleIds.value.splice(i, 1)
+  else memberRoleIds.value.push(id)
+}
+
+async function saveMemberRoles() {
+  if (!memberForRoles.value) return
+  try {
+    await $fetch(`/api/users/${memberForRoles.value.id}`, {
+      method: 'PUT',
+      body: { role_ids: memberRoleIds.value },
+    })
+    memberForRoles.value = null
+    await loadAll()
+  } catch (e) {
+    const err = e as { data?: { detail?: string } }
+    memberError.value = err.data?.detail || '保存失败'
+  }
+}
+
+async function toggleStatus(m: Member) {
+  try {
+    await $fetch(`/api/users/${m.id}`, {
+      method: 'PUT',
+      body: { status: m.status === 'active' ? 'disabled' : 'active' },
+    })
+    await loadAll()
+  } catch (e) {
+    const err = e as { data?: { detail?: string } }
+    error.value = err.data?.detail || '改不了状态'
+  }
+}
+
+async function removeMember(m: Member) {
+  if (!window.confirm(`删掉 ${m.display_name || m.email}?这个动作不可撤销。`)) return
+  try {
+    await $fetch(`/api/users/${m.id}`, { method: 'DELETE' })
+    await loadAll()
+  } catch (e) {
+    const err = e as { data?: { detail?: string } }
+    error.value = err.data?.detail || '删不掉'
+  }
+}
+
 function when(iso: string) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -259,6 +315,13 @@ onMounted(loadAll)
         <div class="w-32 shrink-0 text-right text-[11px] text-ink-faint">
           {{ m.last_login_at ? when(m.last_login_at) : '从未登录' }}
         </div>
+        <div v-if="canManageUsers && me?.user_id !== m.id" class="flex shrink-0 items-center gap-1">
+          <button class="btn-outline h-7 px-2 text-[11.5px]" @click="openMemberRoles(m)">角色</button>
+          <button class="btn-outline h-7 px-2 text-[11.5px]" @click="toggleStatus(m)">
+            {{ m.status === 'active' ? '停用' : '启用' }}
+          </button>
+          <button class="btn-outline h-7 px-2 text-[11.5px] text-coral" @click="removeMember(m)">删除</button>
+        </div>
       </div>
     </section>
 
@@ -303,6 +366,30 @@ onMounted(loadAll)
       </div>
       <p v-if="!audit.length" class="text-[12px] text-ink-faint">还没有审计记录。</p>
     </section>
+
+    <!-- 成员角色弹层 -->
+    <div v-if="memberForRoles" class="fixed inset-0 z-40 grid place-items-center bg-ink/30 p-4" @click.self="memberForRoles = null">
+      <div class="panel w-full max-w-[420px] p-5">
+        <h2 class="text-[15px] font-semibold">改角色 · {{ memberForRoles.display_name || memberForRoles.email }}</h2>
+        <div class="mt-3 flex flex-wrap gap-1.5">
+          <button
+            v-for="r in roles"
+            :key="r.id"
+            type="button"
+            class="chip"
+            :class="memberRoleIds.includes(r.id) ? 'border-ink bg-ink text-paper' : ''"
+            @click="toggleMemberRole(r.id)"
+          >
+            {{ r.name }}
+          </button>
+        </div>
+        <p v-if="memberError" class="mt-2 text-[11.5px] text-coral">{{ memberError }}</p>
+        <div class="mt-4 flex items-center gap-2">
+          <button class="btn-solid h-8 px-3 text-[12px]" @click="saveMemberRoles">保存</button>
+          <button class="btn-outline h-8 px-3 text-[12px]" @click="memberForRoles = null">取消</button>
+        </div>
+      </div>
+    </div>
 
     <!-- 角色编辑弹层 -->
     <div v-if="editing" class="fixed inset-0 z-40 grid place-items-center bg-ink/30 p-4" @click.self="editing = null">
