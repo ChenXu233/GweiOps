@@ -14,7 +14,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from engine.api.auth import actor_of, by_of, tenant_scope
+from engine.api.auth import actor_of, by_of, require, tenant_scope
 from engine.shared.config import config, mask_value
 from engine.shared.settings_store import create_settings_store
 
@@ -65,6 +65,7 @@ def _shown(spec, raw: str | None, caller_scope: str) -> str | None:
 
 @router.get("/api/settings/scopes")
 async def list_scopes(request: Request) -> list[ScopeDTO]:
+    require(request, "settings.read")
     actor = actor_of(request)
     caller_scope = actor.scope if actor else "operate"
     tenant = tenant_scope(request, None) or ""
@@ -140,6 +141,7 @@ def _explain(exc: ValidationError, scope_name: str, tenant: str) -> str:
 
 @router.put("/api/settings/scopes/{scope_name}")
 async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> dict:
+    require(request, "settings.write")
     if config.get_scope(scope_name) is None:
         raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
     values = {str(key): str(value) for key, value in body.values.items()}
@@ -186,6 +188,7 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
 @router.delete("/api/settings/scopes/{scope_name}/{key}")
 async def delete_value(scope_name: str, key: str, request: Request) -> dict:
     """删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。"""
+    require(request, "settings.write")
     if config.get_scope(scope_name) is None:
         raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
     tenant = tenant_scope(request, None) or ""

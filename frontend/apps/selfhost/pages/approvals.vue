@@ -6,6 +6,9 @@ import type { Tone } from '@gwei/core/utils/tone'
 const { items, total, loading, error, actingId, actingAction, failure, notice, groups, refresh, approve, veto } =
   useApprovals()
 
+// 没有审批权限就只看:按钮不显示,后端也会拦(403)
+const { can } = useAuth()
+
 /** 页首那排数字:待放行总数,再加按阻断原因拆开的条数。 */
 const overview = computed(() => [
   { label: '待放行', value: total.value, hint: '停在账本里等人点头的改变' },
@@ -220,6 +223,10 @@ onUnmounted(() => {
         </p>
 
         <div class="mt-3.5 flex flex-wrap items-center gap-2 border-t border-line/70 pt-3.5">
+          <p v-if="!can('changes.approve')" class="text-[12px] text-ink-faint">
+            你的角色没有审批权限,只能看。
+          </p>
+          <template v-else>
           <button
             class="btn btn-solid"
             :disabled="Boolean(actingId)"
@@ -247,6 +254,7 @@ onUnmounted(() => {
           <span v-if="confirming?.id === row.id" class="text-[12px] text-ink-faint">
             再点一次「{{ confirming.action === 'approve' ? '放行' : '否决' }}」以确认。
           </span>
+          </template>
         </div>
       </article>
     </div>

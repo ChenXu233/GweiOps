@@ -14,7 +14,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from engine.api.auth import by_of, tenant_scope
+from engine.api.auth import by_of, require, tenant_scope
 from engine.api.schemas import ChangeDetailDTO, ChangeListDTO
 from engine.change_unit import (
     ChangeUnit,
@@ -92,6 +92,7 @@ async def list_changes(
     过滤在截断之前:先按 verdict / binding 收窄,再取前 limit 条,
     total 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。
     """
+    require(request, "changes.read")
     tenant = tenant_scope(request, tenant)
     filtering = bool(verdict or binding or incident)
     rows = await _ledger().latest(
@@ -110,6 +111,7 @@ async def list_changes(
 async def get_change(
     unit_id: str, request: Request, tenant: str | None = None
 ) -> ChangeDetailDTO:
+    require(request, "changes.read")
     tenant = tenant_scope(request, tenant)
     rows = await _ledger().history(unit_id, tenant=tenant)
     if not rows:
@@ -134,6 +136,7 @@ async def approve_change(
 
     by 以控制台令牌为准;没有配置令牌时才采信调用方写的那一个。
     """
+    require(request, "changes.approve")
     tenant = tenant_scope(request, tenant)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
@@ -166,6 +169,7 @@ async def veto_change(
     tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """不做这次变更。否决也写一行账——它和放行一样是一次决定。"""
+    require(request, "changes.approve")
     tenant = tenant_scope(request, tenant)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
@@ -195,6 +199,7 @@ async def rollback_change(
     tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
+    require(request, "changes.rollback")
     tenant = tenant_scope(request, tenant)
     ledger, latest = await _latest_or_404(unit_id, tenant)
 

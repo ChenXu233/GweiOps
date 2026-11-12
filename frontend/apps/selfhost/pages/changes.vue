@@ -55,7 +55,10 @@ function when(iso: string) {
   return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
 }
 
+const { can } = useAuth()
+
 function canRollback(row: ChangeRow | null) {
+  if (!can('changes.rollback')) return false
   return Boolean(row && row.handle && row.verdict === 'kept')
 }
 

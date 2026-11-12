@@ -7,13 +7,19 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from engine.api.auth import tenant_scope
 from engine.api.schemas import IncidentDTO, IncidentListDTO
 from engine.incidents import create_incident_store
 
-router = APIRouter()
+def _need_changes_read(request: Request) -> None:
+    from engine.api.auth import require
+
+    require(request, "changes.read")
+
+
+router = APIRouter(dependencies=[Depends(_need_changes_read)])
 
 
 @router.get("/api/incidents")

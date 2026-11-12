@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
 from engine.change_unit import create_ledger
@@ -34,7 +34,22 @@ from engine.api.schemas import (
 from engine.db.models import AgentSession, Issue, Patch, Project
 from engine.plugin_manager import registry
 
-router = APIRouter()
+def _any_read(request: Request) -> None:
+    """控制台的读权限:有任意一个读权限就能看。写接口各自另有 require。"""
+    from engine.api.auth import actor_of, auth_required
+
+    if not auth_required():
+        return
+    actor = actor_of(request)
+    if actor is None:
+        raise HTTPException(status_code=401, detail="未登录或令牌无效")
+    if actor.permissions and not (
+        {"changes.read", "settings.read", "plugins.read"} & set(actor.permissions)
+    ):
+        raise HTTPException(status_code=403, detail="缺少读权限")
+
+
+router = APIRouter(dependencies=[Depends(_any_read)])
 logger = logging.getLogger(__name__)
 
 
