@@ -56,6 +56,10 @@ async function loadScopes() {
 // 只在浏览器里拉数据:渲染期不发起同源请求,SSR 不依赖它。
 onMounted(loadScopes)
 
+// 没有写权限就只读:按钮禁掉,后端也会拦(403)
+const { can } = useAuth()
+const canWriteSettings = computed(() => can('settings.write'))
+
 async function onSave(name: string) {
   const values = Object.fromEntries(
     Object.entries(drafts[name] || {}).filter(([, v]) => v !== ''),
@@ -259,7 +263,7 @@ const sections = computed(() => {
           <div class="mt-3 flex items-center gap-2">
             <button
               class="btn-solid h-8 px-3 text-[12px]"
-              :disabled="saving === s.name"
+              :disabled="saving === s.name || !canWriteSettings"
               @click="onSave(s.name)"
             >
               {{ saving === s.name ? '保存中…' : '保存' }}

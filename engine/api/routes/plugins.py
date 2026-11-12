@@ -9,7 +9,9 @@ import logging
 import mimetypes
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from engine.api.auth import require
 from fastapi.responses import FileResponse
 
 from engine.api.schemas import MetricDTO, PluginDTO, PluginWidgetDTO
@@ -34,14 +36,18 @@ def _plugin_dto(name: str) -> PluginDTO:
 
 
 @router.get("/api/plugins")
-async def list_plugins() -> list[PluginDTO]:
+async def list_plugins(request: Request) -> list[PluginDTO]:
+    require(request, "plugins.read")
     if not registry.names():
         return []
     return [_plugin_dto(name) for name in registry.names()]
 
 
 @router.get("/api/plugins/widgets")
-async def list_widgets(slot: str = Query("dashboard.bento")) -> list[PluginWidgetDTO]:
+async def list_widgets(
+    request: Request, slot: str = Query("dashboard.bento")
+) -> list[PluginWidgetDTO]:
+    require(request, "plugins.read")
     widgets: list[dict] = []
     for name in registry.names():
         manifest = registry.manifest(name)
