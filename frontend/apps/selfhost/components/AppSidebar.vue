@@ -9,6 +9,11 @@ const route = useRoute()
 const { countFor } = useNavCounts()
 const { show: showPalette } = usePalette()
 const { data: settings } = useSettings()
+// 谁在操作。首屏没有就拉一次;退出按钮走同一个 composable。
+const { user, load: loadUser, logout } = useAuth()
+onMounted(() => {
+  if (!user.value) loadUser()
+})
 
 const collapsed = useState<boolean>('gwei-nav-collapsed', () => false)
 
@@ -171,16 +176,24 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
           <span
             class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink text-[11.5px] font-semibold text-paper"
           >
-            {{ (settings?.teamName || '当').slice(0, 1) }}
+            {{ (user?.name || settings?.teamName || '当').slice(0, 1) }}
           </span>
-          <div class="min-w-0">
+          <div class="min-w-0 flex-1">
             <div class="truncate text-[12.5px] font-medium leading-tight">
-              {{ settings?.teamName || '当前租户' }}
+              {{ user?.name || settings?.teamName || '当前租户' }}
             </div>
             <div class="mono-label mt-1 truncate">
-              {{ settings?.plan || 'SELFHOST' }} · {{ settings?.memberCount ?? 1 }} 人
+              {{ user?.is_sub_user ? '子账号' : '所有者' }} · {{ user?.tenant || settings?.plan || 'SELFHOST' }}
             </div>
           </div>
+          <button
+            type="button"
+            title="退出登录"
+            class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-faint hover:bg-line/40 hover:text-ink"
+            @click="logout"
+          >
+            <AppIcon name="log-out" :size="14" />
+          </button>
         </div>
       </template>
     </div>

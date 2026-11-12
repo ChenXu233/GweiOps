@@ -98,9 +98,8 @@ services:
       NUXT_PUBLIC_API_BASE: "/api"
       NUXT_PUBLIC_USE_MOCK: "false"
       NUXT_PUBLIC_DEPLOYMENT_MODE: "selfhost"
-      # 服务端代理替浏览器带令牌;浏览器永远拿不到它
+      # 只告诉代理引擎在哪;凭据由浏览器自己的会话 cookie 带过去
       NUXT_ENGINE_URL: "http://engine:8000"
-      NUXT_ENGINE_TOKEN: ${CONSOLE_TOKEN:?必须设置 CONSOLE_TOKEN}
     restart: unless-stopped
     logging:
       driver: "json-file"
