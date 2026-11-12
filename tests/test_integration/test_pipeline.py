@@ -52,6 +52,49 @@ class TestCache:
 
 
 # ============================================================================
+# Webhook 入口不设防就拒收
+# ============================================================================
+
+
+class TestWebhookGuard:
+    def _client(self, monkeypatch, secret: str):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from engine.api.routes import webhook as webhook_mod
+
+        class Adapter:
+            config = SimpleNamespace(webhook_secret=secret)
+            webhook_handler = SimpleNamespace(verify_signature=lambda body, sig: True)
+
+        monkeypatch.setattr(webhook_mod, "get_adapter", lambda: Adapter())
+        app = FastAPI()
+        app.include_router(webhook_mod.router)
+        return TestClient(app)
+
+    def test_no_secret_means_no_workflows(self, monkeypatch):
+        """没密钥就是谁都能起工作流:容器、模型、App 身份都算别人的账单。"""
+        client = self._client(monkeypatch, "")
+
+        resp = client.post("/webhook/github", json={}, headers={"X-GitHub-Event": "ping"})
+
+        assert resp.status_code == 503
+        assert "GITHUB_APP_WEBHOOK_SECRET" in resp.json()["detail"]
+
+    def test_with_a_secret_the_ping_gets_through(self, monkeypatch):
+        client = self._client(monkeypatch, "s3cret")
+
+        resp = client.post(
+            "/webhook/github",
+            json={"zen": "hi"},
+            headers={"X-GitHub-Event": "ping", "X-Hub-Signature-256": "sha256=whatever"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["message"] == "pong"
+
+
+# ============================================================================
 # Webhook payload 提取
 # ============================================================================
 

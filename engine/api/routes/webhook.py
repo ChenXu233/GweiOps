@@ -39,11 +39,20 @@ async def _validate_webhook(request: Request) -> bytes:
     body = await request.body()
     headers = dict(request.headers)
 
-    # 验证签名
+    # 没配密钥就是不设防,而这个端点会起工作流(容器、模型、PR)。放在公网上
+    # 等于谁都能花你的钱、用你的 App 身份说话 —— 宁可拒收,等配置补齐。
+    if not adapter.config.webhook_secret:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "未配置 GITHUB_APP_WEBHOOK_SECRET,拒绝接收 GitHub 投递:"
+                "这个端点会起工作流,不能默认敞开"
+            ),
+        )
+
     signature = headers.get("x-hub-signature-256", "")
-    if adapter.config.webhook_secret:
-        if not adapter.webhook_handler.verify_signature(body, signature):
-            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    if not adapter.webhook_handler.verify_signature(body, signature):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     return body
 
