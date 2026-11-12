@@ -351,3 +351,134 @@ class TestWorkflowEndToEnd:
                 adapter.execute_task.assert_not_awaited()
         finally:
             DBOS.destroy(destroy_registry=True)
+
+
+# ============================================================================
+# 有人点名要改动:@gwei → agent(不再只是给建议)
+# ============================================================================
+
+
+def _fake_harness(tmp_path, payload: dict) -> str:
+    """一条跨平台的假 harness:把报告写进约定位置就退出。
+
+    写成脚本文件而不是一行 -c:报告里带中文和引号,嵌套转义只会制造新的失败点。
+    """
+    import sys
+
+    script = tmp_path / "fake_harness.py"
+    script.write_text(
+        "import json, os\n"
+        f"payload = {payload!r}\n"
+        "open(os.environ['GWEI_REPORT'], 'w', encoding='utf-8').write(json.dumps(payload))\n",
+        encoding="utf-8",
+    )
+    return f'"{sys.executable}" "{script}"'
+
+
+def _comment_payload(**extra) -> dict:
+    return {
+        "tenant_slug": "default",
+        "repo_full_name": "ChenXu233/GweiOps",
+        "issue_number": 7,
+        "title": "加一个设置页",
+        "body": "@gwei 帮我加一个能填 key 的设置页",
+        "source": "comment",
+        **extra,
+    }
+
+
+async def _ready_workspace(_payload) -> dict:
+    """拉好代码的样子:这一层只关心"准备好了没有",拉取本身另有测试。"""
+    return {"repo": "ChenXu233/GweiOps", "branch": "master", "commit": "sha-base"}
+
+
+class TestAgentPath:
+    def _stub_steps(self, monkeypatch):
+        from engine.workflows import pipeline as pipeline_module
+
+        seen: list[str] = []
+
+        def make(name):
+            async def step(*args, **kwargs):
+                seen.append(name)
+                return {}
+
+            return step
+
+        for name in ("persist_triage_step", "open_incident_step", "close_incident_step"):
+            monkeypatch.setattr(pipeline_module, name, make(name))
+        return seen
+
+    def test_a_mention_hands_the_work_to_the_harness(self, tmp_path, monkeypatch):
+        from engine.shared.config import config
+        from engine.workflows import pipeline as pipeline_module
+
+        seen = self._stub_steps(monkeypatch)
+        monkeypatch.setattr(pipeline_module, "DBOS", SimpleNamespace(workflow_id="wf-agent"))
+        monkeypatch.setattr(pipeline_module, "_prepare_workspace_impl", _ready_workspace)
+        monkeypatch.setattr(
+            config.settings,
+            "harness_command",
+            _fake_harness(tmp_path, {"summary": "设置页加好了"}),
+        )
+        monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
+
+        report = asyncio.run(pipeline_module._run_agent_impl(_comment_payload()))
+
+        assert report["summary"] == "设置页加好了"
+        # 落库、开事故、收口:顺序如此,少一行就等于有一次改动没有归属
+        assert seen == ["persist_triage_step", "open_incident_step", "close_incident_step"]
+        assert (tmp_path / "wf-agent" / "task.md").exists()
+
+    def test_without_code_the_agent_never_starts(self, tmp_path, monkeypatch):
+        """拉不到仓库就不该开工:空工作区里跑出来的报告看着像真的。"""
+        import sys
+
+        from engine.shared.config import config
+        from engine.workflows import pipeline as pipeline_module
+
+        self._stub_steps(monkeypatch)
+        monkeypatch.setattr(pipeline_module, "DBOS", SimpleNamespace(workflow_id="wf-nocode"))
+        marker = tmp_path / "should-not-exist"
+        started = tmp_path / "started.py"
+        started.write_text(f"open(r'{marker}', 'w').close()\n", encoding="utf-8")
+        monkeypatch.setattr(
+            config.settings, "harness_command", f'"{sys.executable}" "{started}"'
+        )
+        monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
+
+        class NoCredentials:
+            config = None
+
+            async def on_startup(self):
+                raise RuntimeError("没配 GitHub App")
+
+        monkeypatch.setattr(pipeline_module, "get_adapter", lambda: NoCredentials())
+
+        report = asyncio.run(pipeline_module._run_agent_impl(_comment_payload()))
+
+        assert "拿不到代码" in report["summary"]
+        assert "没配 GitHub App" in report["summary"]
+        assert not marker.exists(), "没代码还起容器,只会得到一份编出来的报告"
+
+    def test_the_harness_report_is_taken_as_it_is(self, tmp_path, monkeypatch):
+        """agent 自己交的报告就是这一场的结论,平台不替它改写成别的话。"""
+        from engine.shared.config import config
+        from engine.workflows import pipeline as pipeline_module
+
+        self._stub_steps(monkeypatch)
+        monkeypatch.setattr(pipeline_module, "DBOS", SimpleNamespace(workflow_id="wf-2"))
+        monkeypatch.setattr(pipeline_module, "_prepare_workspace_impl", _ready_workspace)
+        monkeypatch.setattr(
+            config.settings,
+            "harness_command",
+            _fake_harness(
+                tmp_path, {"summary": "只改了 README", "counts": {}, "exhausted": True}
+            ),
+        )
+        monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
+
+        report = asyncio.run(pipeline_module._run_agent_impl(_comment_payload()))
+
+        assert report["exhausted"] is True
+        assert report["source"] == "harness"

@@ -184,6 +184,32 @@ class GitHubAppClient:
     # 把这些改动变成一个提交、一条分支、一个 PR —— 这样"开一个 PR"才是一个
     # 可撤销、可验证的变更单元,而不是容器里一次看不见的 push。
 
+    async def default_branch(self, repo: str) -> str:
+        """仓库的默认分支。
+
+        不默认成 main:这个仓库叫 master。调用方推断不出来的东西,API 早就知道。
+        """
+        owner, repo_name = self._parse_repo(repo)
+        response = await self.github.rest.repos.async_get(owner, repo_name)
+        data = response.parsed_data.model_dump()
+        return str(data.get("default_branch") or "")
+
+    async def installation_token(self) -> str:
+        """换一张安装令牌,只用来拉一次代码。
+
+        走 App 的 JWT(AppAuthStrategy)换,和业务调用用的安装认证分开:这张令牌
+        有寿命、只在这一次 clone 的命令行里出现,不会进 .git/config,也不会进容器。
+        """
+        from githubkit import AppAuthStrategy, GitHub
+
+        app = GitHub(
+            AppAuthStrategy(app_id=self._config.app_id, private_key=self._config.private_key)
+        )
+        response = await app.rest.apps.async_create_installation_access_token(
+            self._config.installation_id
+        )
+        return response.parsed_data.token
+
     async def get_branch_sha(self, repo: str, branch: str) -> str | None:
         """分支头的 sha;分支不存在返回 None。"""
         owner, repo_name = self._parse_repo(repo)

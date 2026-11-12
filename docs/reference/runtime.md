@@ -18,7 +18,7 @@
 | 工作流 | 触发 | 链路 |
 | --- | --- | --- |
 | `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → `intent.propose` → 效果单元(回评,可撤销) |
-| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 补丁建议 → `patch.generated` transform → `intent.propose` → 效果单元(回评,不自动建 PR) |
+| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 配了 `HARNESS_COMMAND` 就整场交给 harness(它改工作区里的代码,效果仍从出口落成,通常是 `pr.open`);没配才退回 补丁建议 → `patch.generated` transform → `intent.propose` → 回评 |
 | `alert_triage_workflow` | 监控告警 firing | 归化信号 → 有 `incident.handle` 提供者就整场交给 agent,否则 `intent.propose` → 效果单元(没有补丁、没有回评) |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
@@ -61,6 +61,7 @@
 - 参数 `binding` 缺省取 `default_binding`。绑错目标不是结论,是配置错误:拒绝执行,不留账本行。
 - 参数 `incident_id` 把这次事故的所有变更串在一起,早上可以用 `GET /api/changes?incident=` 一次捞出来。`call_id` 只在同一次事故里有意义:换一次事故,同样的编号就是另一件事。
 - `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
+- 声明里带 `files` 的效果(`pr.open`),`files` 可以不由 agent 给:平台按 `incident_id` 找到这一场的工作区,把 agent 改过的文件读成 `[{path, content}]`,删掉的给 `{path, delete: true}`。`paths` 只用来收窄到其中几个路径。读不出来(没有仓库副本、非 UTF-8、单文件超过 512 KB、改动超过 100 个文件)时这次调用直接失败并说明原因,不拿空改动去开 PR。
 - 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
 
 ## Harness
@@ -69,7 +70,8 @@
 
 - `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成这一场的工作区(`HARNESS_WORKSPACE_ROOT/<incident_id>`)。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
 - 边界由那条命令决定:`docker run --rm -v {workspace}:/w …` 或 `ssh box …`。平台不会替你在宿主机上直接起进程。
-- 交进去:工作区里的 `task.md`(信号、出口地址、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_WORKSPACE`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
+- **工作区里有代码**:载荷带仓库时,平台先用 App 安装令牌拉一份浅克隆——令牌只在那一次 clone 的命令行里(走 `http.extraheader`),不落进 `.git/config`,也不进容器;然后把文件铺进工作区并放开到其他用户可写(引擎与 harness 镜像的 uid 不同)。容器看到的没有 `.git`:提交、分支、PR 由平台做,容器里没有可用的 git 凭据。仓库副本留在工作区根下的 `.repos/<incident_id>`,容器挂不到那一层。拉不到代码时这一场不开工,报告直接写原因。
+- 交进去:工作区里的 `task.md`(信号、仓库与基线分支、出口地址、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_WORKSPACE`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
 - **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式作为容器环境变量传进去,不需要进容器手配,也不落在卷里。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 接入与密钥」写的就是这个 scope,密钥永不回显。
 - 收回来:工作区里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
 - 它改世界仍然只能走[出口](#出口),所以变更、账本、可撤销性和进程内 agent 完全一样。

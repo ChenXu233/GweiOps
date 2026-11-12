@@ -166,7 +166,9 @@ effects:
 - 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
 - 同名效果由多个插件声明时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
 
-插件只实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
+效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
+
+能拉代码的适配器还可以实现 `workspace_source(repo)`,返回 `{url, token, branch}`:工作流把一场交给 harness 之前用它拉一份代码进工作区。它不是能力、不进出口菜单——凭据只在平台这一侧用一次,容器里拿不到。没有这个方法的部署,harness 的工作区里就没有代码。
 
 `execute` 抛什么,决定这次失败怎么记账:认得出没碰到下游(构造请求就失败、下游明确拒绝 4xx)时抛 `engine.change_unit.EffectNotApplied`,单元记 `failed`(可重试);抛别的异常一律记 `unknown`(请求可能已经到了对面,要人去核)。分不清的时候不要猜着抛 `EffectNotApplied` —— 把 `unknown` 说成 `failed`,等于教人放心重试一次可能已经生效的操作。
 
@@ -174,6 +176,7 @@ effects:
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
 - triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
+- `@gwei` 评论:配了 `HARNESS_COMMAND` 就直接交给 harness(先开事故、再跑、再收口),没配才走补丁建议那条老路;
 - `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账。跑在进程外沙箱里的 harness 不经过这个接缝,它直接调[出口端点](runtime.md);
 - `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为这次查询付钱。模型拿不准就给空 effects —— 空效果是合法结论,编一个动作不是;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;

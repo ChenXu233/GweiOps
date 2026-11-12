@@ -414,6 +414,35 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
     )
 
 
+async def _prepare_workspace_impl(payload: dict) -> dict:
+    """开工前把代码放进工作区:从哪拉、基线是哪条分支。
+
+    凭据在这一步用掉一次,之后容器里就只有文件了。拉不到就如实返回,让工作流
+    带着原因收尾——空工作区里跑一个 agent,只会得到一份看着像真的报告。
+    """
+    repo = payload.get("repo_full_name") or ""
+    if not repo:
+        return {}
+
+    from engine.harness import workspace as ws
+
+    adapter = get_adapter()
+    if adapter.config is None:
+        await adapter.on_startup()
+    source = await adapter.workspace_source(repo)
+    checkout = await ws.prepare(
+        source=source,
+        root=config.settings.harness_workspace_root,
+        incident_id=DBOS.workflow_id,
+    )
+    return {"repo": repo, "branch": checkout.branch, "commit": checkout.commit}
+
+
+def harness_configured() -> bool:
+    """部署里配了 harness 吗。工作流据此决定开不开事故、走不走 agent。"""
+    return bool((config.settings.harness_command or "").strip())
+
+
 async def _run_harness_impl(payload: dict) -> dict | None:
     """有外部 harness 就交给它;没有就返回 None,往下回落到进程内或声明式。
 
@@ -430,6 +459,22 @@ async def _run_harness_impl(payload: dict) -> dict | None:
     workspace = Path(config.settings.harness_workspace_root) / incident_id
     exit_url = config.settings.platform_base_url.rstrip("/") + "/api/agent/exits"
 
+    repo = payload.get("repo_full_name") or ""
+    branch = ""
+    if repo:
+        try:
+            prepared = await _prepare_workspace_impl(payload)
+            branch = prepared.get("branch", "")
+        except Exception as exc:  # noqa: BLE001 - 拉不到代码也是一种要人看的结论
+            logger.warning("workspace not prepared for %s: %s", incident_id, exc)
+            return {
+                "source": "harness",
+                "summary": f"工作区拿不到代码,这一场没开工:{type(exc).__name__}: {exc}",
+                "steps": [],
+                "counts": {},
+                "exhausted": False,
+            }
+
     result = await run_harness(
         command=command,
         workspace=workspace,
@@ -439,6 +484,8 @@ async def _run_harness_impl(payload: dict) -> dict | None:
             exit_url=exit_url,
             workspace=str(workspace),
             report_path=str(workspace / "report.json"),
+            repo=repo,
+            branch=branch,
         ),
         extra_env={
             "GWEI_EXIT_URL": exit_url,
@@ -575,9 +622,29 @@ async def issue_triage_workflow(payload: dict) -> dict:
     }
 
 
+async def _run_agent_impl(payload: dict) -> dict:
+    """有人点名要改动:落库 → 开事故 → 交给 harness → 收口。
+
+    落库是为了这一条需求在控制台里查得到;不跑感知分析——要给 agent 的是原始
+    标题与正文,再让另一个模型先把它"分析"一遍只是多一次可能出错的翻译。
+    """
+    await persist_triage_step(payload, {}, "FIX_REQUESTED")
+    await open_incident_step(payload)
+    report = await run_harness_step(payload) or {}
+    await close_incident_step(payload, report)
+    return report
+
+
 @DBOS.workflow()
 async def fix_suggestion_workflow(payload: dict) -> dict:
-    """@gwei 修复建议工作流：落库 → 补丁建议 → Hook → 起草意图 → 效果落成变更单元（不自动建 PR）。"""
+    """@gwei 评论 → 让 agent 去做;没有 agent 就退回补丁建议 + 回评。
+
+    这里不分"修 bug"和"做功能":两者都是"有人要这个仓库变一下"。谁来做这件事由
+    部署决定——配了 harness 就让它在工作区里动手,没配就仍然只是给建议。
+    """
+    if harness_configured():
+        return await _run_agent_impl(payload)
+
     analysis = await analyze_issue_step(payload)
     record = await persist_triage_step(payload, analysis, status="FIX_REQUESTED")
 
