@@ -185,6 +185,24 @@ def test_without_a_base_the_repository_says_which_branch(tmp_path):
     assert plugin.client.created_from["gwei/feature-2"] == "sha-trunk"
 
 
+def test_missing_arguments_fail_without_touching_github(tmp_path):
+    """参数不全就是确定没动过:记 failed(可重试),别让它变成"要人去核"。"""
+    plugin = _plugin()
+    effect = Effect(
+        task="open_pull",
+        args={"files": [{"path": "README.md", "content": "x"}]},
+        undo_task="close_pull",
+        undo_kind="symmetric",
+        capability="pr.open",
+    )
+
+    out = asyncio.run(apply(_unit(effect), plugin, JsonlLedger(tmp_path / "l.jsonl")))
+
+    assert out.verdict == VERDICT_FAILED
+    assert "缺参数" in out.reason and "repo" in out.reason and "head" in out.reason
+    assert plugin.client.pulls == {}
+
+
 def test_paths_without_files_is_refused_not_silently_empty(tmp_path):
     """paths 只有出口会展开;直接调用时不能装作刚提交过东西。"""
     plugin = _plugin()
