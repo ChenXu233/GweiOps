@@ -58,6 +58,22 @@ def test_the_task_says_how_to_authenticate():
     assert "X-Gwei-Token: gwei-harness-abc" in task
 
 
+def test_the_task_points_at_the_open_pull():
+    """同一个话题上已经有 PR:任务书要写出分支名,否则 agent 只会再开一个。"""
+    task = build_task(
+        incident_id="inc-9",
+        signal={"source": "github", "title": "再加一节", "detail": "@gwei 补一下"},
+        exit_url="http://gw/api/agent/exits",
+        workspace="/w/inc-9",
+        report_path="/w/inc-9/report.json",
+        repo="ChenXu233/GweiOps",
+        branch="master",
+        thread={"pull": "7", "head": "gwei/add-runtime-requirements"},
+    )
+    assert "PR:#7" in task
+    assert "gwei/add-runtime-requirements" in task
+
+
 def test_without_a_token_no_header_is_invented():
     task = build_task(
         incident_id="inc-9",
