@@ -10,6 +10,18 @@
 └── proto/           # gRPC 定义
 ```
 
+## 运行环境要求
+
+| 依赖 | 版本要求 | 说明 |
+|------|----------|------|
+| Python | 3.12 | 运行 `engine/` 后端与测试 |
+| Node.js | 22 | 运行 `frontend/` 前端 |
+| pnpm | 10 | 前端包管理器 |
+| PostgreSQL | 16 | 业务库，需安装 [pgvector](https://github.com/pgvector/pgvector) 扩展 |
+| Redis | 7 | 临时状态缓存（webhook 去重、LLM 结果缓存） |
+
+> 使用 Docker 方式启动时，上述依赖已包含在镜像与 compose 配置中，无需在宿主机单独安装。
+
 ## 快速开始
 
 ### 使用 Docker（开发）
