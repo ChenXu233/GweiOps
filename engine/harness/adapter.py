@@ -134,21 +134,42 @@ def _read_report(workspace: Path) -> dict[str, Any] | None:
 
 
 def _fallback_report(result: HarnessResult) -> dict[str, Any]:
-    """没交报告也要有个交代:退出码、最后几行输出,原样带回来。
+    """没交报告也要有个交代。
 
-    stderr 也要带上——dsh 这类启动器把失败原因(message、缺哪个变量)写在 stderr,
-    只看 stdout 等于把「为什么没跑起来」丢掉。
+    退出码是 0 说明它干完了,只是没按约定写 report.json —— 那种情况下它的输出就是
+    答案,原样带回来,别把一句"没交报告"当成人读的结论(那会把一段正常的工作描述成
+    失败)。非零退出码才是失败:那时带退出码与最后几行输出,stderr 也带上——dsh 这类
+    启动器把失败原因写在 stderr,只看 stdout 等于把「为什么没跑起来」丢掉。
     """
-    tail = (result.stdout or "").strip().splitlines()[-8:]
+    # [plan] 是启动脚本自己的话,不是 agent 说的
+    out = [
+        line
+        for line in (result.stdout or "").strip().splitlines()
+        if line.strip() and not line.startswith("[plan]")
+    ]
+    answer = "\n".join(out[-12:]).strip()
+
+    if result.exit_code == 0 and not result.timed_out and answer:
+        return {
+            "source": "harness",
+            "summary": answer,
+            "steps": [],
+            "counts": {},
+            "exhausted": False,
+            # 约定没被遵守这件事要留痕,但不必占用"人读的第一行"
+            "report_missing": True,
+        }
+
     err_tail = (result.stderr or "").strip().splitlines()[-8:]
-    lines = tail + (["[stderr]"] + err_tail if err_tail else [])
+    lines = out[-8:] + (["[stderr]"] + err_tail if err_tail else [])
     reason = "超时" if result.timed_out else f"退出码 {result.exit_code}"
     return {
         "source": "harness",
-        "summary": f"harness 没有交报告({reason})" + ("\n" + "\n".join(lines) if lines else ""),
+        "summary": f"agent 没跑完({reason})" + ("\n" + "\n".join(lines) if lines else ""),
         "steps": [],
         "counts": {},
         "exhausted": result.timed_out,
+        "report_missing": True,
     }
 
 
