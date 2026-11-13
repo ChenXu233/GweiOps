@@ -169,14 +169,40 @@ def test_a_multiline_value_is_left_out_of_the_env_file(tmp_path):
     assert "pem" not in text
 
 
-def test_a_silent_harness_still_gets_a_report(tmp_path):
-    """没交报告不是"什么都没发生",是一条要被人看见的结论。"""
+def test_an_answer_without_a_report_file_is_taken_at_its_word(tmp_path):
+    """退出码 0 就是干完了:它的输出就是答案,别把一段正常的工作说成失败。"""
     result = asyncio.run(
         run_harness(command=_py("print('hello')"), workspace=tmp_path / "inc-3", task="x")
     )
-    assert "没有交报告" in result.report["summary"]
-    assert "hello" in result.report["summary"]
+    assert result.report["summary"] == "hello"
+    assert result.report["report_missing"] is True
     assert result.report["source"] == "harness"
+
+
+def test_the_boot_noise_is_not_part_of_the_answer(tmp_path):
+    """[plan] 开头的行是启动脚本说的,不是 agent 说的。"""
+    result = asyncio.run(
+        run_harness(
+            command=_py("print('[plan] boot headless profile');print('done')"),
+            workspace=tmp_path / "inc-3b",
+            task="x",
+        )
+    )
+    assert result.report["summary"] == "done"
+
+
+def test_a_failing_harness_says_why(tmp_path):
+    import sys as _sys
+
+    result = asyncio.run(
+        run_harness(
+            command=_py("import sys;print('boom', file=sys.stderr);raise SystemExit(3)"),
+            workspace=tmp_path / "inc-3c",
+            task="x",
+        )
+    )
+    assert result.report["summary"].startswith("agent 没跑完(退出码 3)")
+    assert "boom" in result.report["summary"]
 
 
 def test_a_hung_harness_is_cut_off_and_said_so(tmp_path):
