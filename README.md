@@ -64,8 +64,4 @@ pnpm dev:selfhost
 
 ## 许可证
 
-- engine/: AGPL-3.0
-- frontend/: AGPL-3.0
-- plugins/builtin/: Apache-2.0
-- plugins/community/: MIT
-- proto/: MIT
+本仓库以 [AGPL-3.0](LICENSE) 授权。
