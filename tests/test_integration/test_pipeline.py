@@ -464,7 +464,12 @@ class TestAgentPath:
 
             return step
 
-        for name in ("persist_triage_step", "open_incident_step", "close_incident_step"):
+        for name in (
+            "persist_triage_step",
+            "open_incident_step",
+            "close_incident_step",
+            "reply_on_topic_step",
+        ):
             monkeypatch.setattr(pipeline_module, name, make(name))
         return seen
 
@@ -486,7 +491,12 @@ class TestAgentPath:
 
         assert report["summary"] == "设置页加好了"
         # 落库、开事故、收口:顺序如此,少一行就等于有一次改动没有归属
-        assert seen == ["persist_triage_step", "open_incident_step", "close_incident_step"]
+        assert seen == [
+            "persist_triage_step",
+            "open_incident_step",
+            "close_incident_step",
+            "reply_on_topic_step",
+        ]
         assert (tmp_path / "wf-agent" / "task.md").exists()
 
     def test_without_code_the_agent_never_starts(self, tmp_path, monkeypatch):
@@ -541,3 +551,65 @@ class TestAgentPath:
 
         assert report["exhausted"] is True
         assert report["source"] == "harness"
+
+class TestReplyOnTheTopic:
+    def test_the_reply_says_what_happened(self):
+        from engine.workflows.pipeline import _reply_body
+
+        body = _reply_body(
+            {"repo_full_name": "o/r", "issue_number": 6},
+            {
+                "summary": "改了 README\n\n新增一节运行环境要求",
+                "counts": {"kept": 1},
+                "exhausted": False,
+            },
+        )
+
+        assert "处理完了:改了 README" in body
+        assert "新增一节运行环境要求" in body
+        assert "kept 1" in body
+        assert "没跑完" not in body
+
+    def test_an_unfinished_run_says_so(self):
+        from engine.workflows.pipeline import _reply_body
+
+        body = _reply_body({}, {"summary": "超时了", "counts": {}, "exhausted": True})
+
+        assert "没跑完" in body
+
+    def test_no_topic_means_no_reply(self, monkeypatch):
+        import asyncio as _asyncio
+
+        from engine.workflows import pipeline as pipeline_module
+
+        monkeypatch.setattr(pipeline_module, "DBOS", SimpleNamespace(workflow_id="wf-x"))
+        out = _asyncio.run(pipeline_module._reply_on_topic_impl({}, {"summary": "x"}))
+
+        assert out["posted"] is False
+        assert "话题" in out["reason"]
+
+    def test_if_the_agent_already_spoke_we_stay_quiet(self, monkeypatch):
+        import asyncio as _asyncio
+
+        from engine.workflows import pipeline as pipeline_module
+
+        class Ledger:
+            async def latest(self, tenant="", limit=50):
+                return [
+                    {
+                        "incident_id": "wf-x",
+                        "effect": {"capability": "comment.create"},
+                    }
+                ]
+
+        monkeypatch.setattr(pipeline_module, "DBOS", SimpleNamespace(workflow_id="wf-x"))
+        monkeypatch.setattr(pipeline_module, "create_ledger", lambda: Ledger())
+
+        out = _asyncio.run(
+            pipeline_module._reply_on_topic_impl(
+                {"repo_full_name": "o/r", "issue_number": 6}, {"summary": "x"}
+            )
+        )
+
+        assert out["posted"] is False
+        assert "已经回过话" in out["reason"]
