@@ -665,16 +665,102 @@ async def issue_triage_workflow(payload: dict) -> dict:
     }
 
 
+def _reply_body(payload: dict, report: dict) -> str:
+    """在话题上回一句话。
+
+    有人在这里点了名,平台上做了事,那就要有人看见——只在控制台里留一行不算回话:
+    GitHub 上那条评论的人不会打开控制台。
+    """
+    summary = str(report.get("summary") or "").strip()
+    lines = summary.splitlines()
+    first = lines[0].strip() if lines else "这一场没有留下结论"
+
+    parts = [f"处理完了:{first}", ""]
+    detail = "\n".join(line for line in lines[1:4] if line.strip()).strip()
+    if detail:
+        parts += [detail, ""]
+
+    counts = report.get("counts") or {}
+    if counts:
+        parts.append("变更:" + "、".join(f"{name} {value}" for name, value in counts.items()))
+    if report.get("exhausted"):
+        parts.append("这一场没跑完(超时或额度用尽),需要人接手。")
+
+    parts += [
+        "",
+        f"事故:{DBOS.workflow_id}",
+        "结论、可撤销性与账本在平台的「变更」与「事故」里。",
+    ]
+    return "\n".join(parts)
+
+
+async def _already_commented(tenant: str, incident_id: str) -> bool:
+    """这一场里 agent 自己回过话了吗。回过就不再补一句——同一个话题上两条机器人。"""
+    try:
+        rows = await create_ledger().latest(tenant=tenant, limit=50)
+    except Exception:  # noqa: BLE001 - 账本读不到就按没回过处理,回话比沉默好
+        return False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("incident_id") or "") != incident_id:
+            continue
+        effect = row.get("effect")
+        if isinstance(effect, dict) and effect.get("capability") == "comment.create":
+            return True
+    return False
+
+
+async def _reply_on_topic_impl(payload: dict, report: dict) -> dict:
+    repo = payload.get("repo_full_name") or ""
+    number = payload.get("issue_number")
+    if not repo or number is None:
+        return {"posted": False, "reason": "没有可回复的话题"}
+    tenant = payload.get("tenant_slug", "")
+    if await _already_commented(tenant, DBOS.workflow_id):
+        return {"posted": False, "reason": "agent 已经回过话"}
+
+    intent = {
+        "version": 1,
+        "summary": "回一句这一场的结果",
+        "evidence": [{"kind": "issue", "ref": f"{repo}#{number}"}],
+        "effects": [
+            {
+                "capability": "comment.create",
+                "args": {
+                    "repo": repo,
+                    "issue_number": number,
+                    "body": _reply_body(payload, report),
+                },
+            }
+        ],
+        "rationale": "有人点了名,平台做了事,要在原处说清楚结果;这句回话本身也是一次可撤销的变更。",
+    }
+    applied = await _apply_effects_impl(
+        intent, payload, f"{DBOS.workflow_id}:reply", incident_id=DBOS.workflow_id
+    )
+    verdicts = [item.get("verdict") for item in applied.get("applied") or []]
+    return {"posted": "kept" in verdicts, "verdicts": verdicts}
+
+
+@DBOS.step()
+async def reply_on_topic_step(payload: dict, report: dict) -> dict:
+    return await _reply_on_topic_impl(payload, report)
+
+
 async def _run_agent_impl(payload: dict) -> dict:
-    """有人点名要改动:落库 → 开事故 → 交给 harness → 收口。
+    """有人点名要改动:落库 → 开事故 → 交给 harness → 收口 → 回一句话。
 
     落库是为了这一条需求在控制台里查得到;不跑感知分析——要给 agent 的是原始
     标题与正文,再让另一个模型先把它"分析"一遍只是多一次可能出错的翻译。
+
+    最后一步是回话:不回,那条 @gwei 的人在 GitHub 上什么也看不到,只会以为它没理人。
     """
     await persist_triage_step(payload, {}, "FIX_REQUESTED")
     await open_incident_step(payload)
     report = await run_harness_step(payload) or {}
     await close_incident_step(payload, report)
+    await reply_on_topic_step(payload, report)
     return report
 
 
