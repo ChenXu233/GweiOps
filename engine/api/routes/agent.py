@@ -101,7 +101,16 @@ async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
                     ),
                 )
 
-    args = dict(call.args or {})
+    # 参数可以放 args 里,也可以直接放顶层 —— 出口清单给的是"这个动作要哪些参数",
+    # 照着它把参数写在最外层是最自然的读法。只认 args 的话,那种调用会变成
+    # "一个参数都没给",然后被平台补上 files 当成一次空调用。
+    envelope = {"args", "call_id", "incident_id", "binding", "tenant", "summary"}
+    flat = {
+        key: value
+        for key, value in (call.model_extra or {}).items()
+        if key not in envelope
+    }
+    args = {**flat, **dict(call.args or {})}
     declared = registry.declared_effects().get(name) or {}
     # paths 是"读哪几个文件"的简写,由出口消化掉,不跟着效果进账本。
     shorthand_paths = args.pop("paths", None)

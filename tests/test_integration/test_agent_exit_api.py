@@ -338,6 +338,34 @@ def test_the_exit_fills_files_from_the_workspace(tmp_path, monkeypatch):
     assert "paths" not in provider.args
 
 
+def test_arguments_may_sit_at_the_top_level(tmp_path, monkeypatch):
+    """出口清单是"这个动作要哪些参数",照它把参数写在外层是最自然的读法。"""
+    provider = PrProvider()
+    env = _pr_app(tmp_path, monkeypatch, provider)
+
+    async def fake_files(incident_id, paths):
+        return [{"path": "README.md", "content": "x\n"}]
+
+    monkeypatch.setattr(env.module, "_workspace_files", fake_files)
+
+    resp = env.client.post(
+        "/api/agent/exits/pr.open",
+        json={
+            "repo": "o/r",
+            "head": "gwei/x",
+            "title": "加一节",
+            "incident_id": "inc-1",
+        },
+        headers=_h(),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert provider.args["repo"] == "o/r"
+    assert provider.args["head"] == "gwei/x"
+    assert provider.args["title"] == "加一节"
+    assert provider.args["files"] == [{"path": "README.md", "content": "x\n"}]
+
+
 def test_a_workspace_that_cannot_be_read_stops_before_the_call(tmp_path, monkeypatch):
     from engine.harness.workspace import WorkspaceError
 
