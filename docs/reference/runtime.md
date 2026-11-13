@@ -26,6 +26,7 @@
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
 - 两种来源归化成一个信号再入队:GitHub 载荷现场翻译,监控告警由 `/webhook/alertmanager` 解析。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
+- PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到那个分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
 
 ## 变更账本
 

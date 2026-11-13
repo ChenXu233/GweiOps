@@ -173,7 +173,19 @@ effects:
 
 人在场时履历不生效:它挡的是"机器自己决定",不是"人已经决定"。没有账本时是"不知道",不是"没问题"。
 
-## 9. 不变量
+## 9. 话题与分支
+
+一次讨论是一个**话题**(`owner/repo#number`),话题上的每次改动是一个变更单元。
+
+GitHub 把 PR 的评论也当作 `issue_comment` 发出来——在"评论"这件事上,issue 与 PR 本来就分不开(PR 在 API 里就是一个带上 `pull_request` 字段的 issue)。分得开的是平台这一侧:
+
+- 事故记下它的话题(`incidents.topic`),账本里每个单元记下 `intent.topic`。
+- 同一个话题上已经有打开的 PR 时,新的改动**接着那个分支走**:任务书里直接写出分支名,`pr.open` 复用已存在的 PR、把这次提交追加到它上面,不再开第二个。
+- 那条分支上的 PR 已经关闭时,`pr.open` 当场拒绝(记 `failed`,什么都还没碰)——把提交推到一条没人看得见的分支上,是比报错更糟的结果。
+
+"接着哪个分支"不是让 agent 猜:账本记着上一次开出来的 PR 与它的分支;评论落在别人开的 PR 上时,平台再问一次下游要那个分支。聚合逻辑在 [threads.py](../../engine/change_unit/threads.py),测试见 [test_threads.py](../../tests/test_integration/test_threads.py)。
+
+## 10. 不变量
 
 1. 没有 `handle` 的效果不得进入第一类路径。
 2. `window` 只能来自读取,不得来自插件声明。
@@ -186,7 +198,7 @@ effects:
 
 前四条与第六、第八条都可以机检,第五条是审计口径。
 
-## 10. 现状
+## 11. 现状
 
 - 第一个真实单元已跑通:在 GitHub 上发一条评论 → 回读验证 → 删除撤销 → 再验证为空。能力 `comment.create`,提供者是 [GitHub App 适配器](../../plugins/builtin/adapters/github-app/plugin.yaml)。
 - 第二个样例:[docker-compose 动作插件](../../plugins/builtin/actions/docker-compose/plugin.yaml)。能力 `compose.scale`,对称撤销,窗口 `unbounded`;真 docker 往返已验证——`test_real_compose_scale_roundtrip` 在守护进程可用时跑完整一圈(扩容 → 读窗口 → 验证 → 缩回),不可用时跳过。

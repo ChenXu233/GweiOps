@@ -48,6 +48,7 @@ def build_task(
     repo: str = "",
     branch: str = "",
     token: str = "",
+    thread: dict[str, Any] | None = None,
 ) -> str:
     """交给 harness 的任务文本。它自己决定怎么查、怎么改,这里只说清楚边界。"""
     detail = str(signal.get("detail") or "").strip()
@@ -80,6 +81,14 @@ def build_task(
             "",
             "改动通常只占几行:在原文件里插入,不要整篇重写,不要删掉你以为不重要的段落。",
         ]
+        if thread and thread.get("head"):
+            lines += [
+                "",
+                f"这个话题上已经有一个打开的 PR:#{thread.get('pull') or '?'}"
+                f"(分支 {thread['head']})。",
+                f"接着它改:pr.open 的 head 就用 {thread['head']},平台会把这次提交追加到"
+                "那个 PR 上,不会另外再开一个。",
+            ]
     else:
         lines.append(f"\n工作区在 {workspace}。随便用:读代码、跑测试、改文件都行。")
 

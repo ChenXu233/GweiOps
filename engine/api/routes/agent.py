@@ -59,6 +59,19 @@ async def _exits_in_the_last_hour(tenant: str) -> int:
     return used
 
 
+async def _topic_of(incident_id: str) -> str:
+    """这一场事故对应的话题。读不到就是空 —— 没记下来,不猜一个。"""
+    if not incident_id:
+        return ""
+    try:
+        from engine.incidents import create_incident_store
+
+        row = await create_incident_store().get(incident_id)
+    except Exception:  # noqa: BLE001 - 事件库不可用不该让出口断掉
+        return ""
+    return str((row or {}).get("topic") or "")
+
+
 async def _workspace_files(incident_id: str, paths: Any) -> list[dict[str, Any]]:
     """工作区里的改动 → 提交能用的 files。
 
@@ -135,6 +148,7 @@ async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
         summary=call.summary,
         actor=actor,
         incident_id=call.incident_id,
+        topic=await _topic_of(call.incident_id),
     )
     logger.info(
         "exit %s by %s [%s/%s] -> %s",

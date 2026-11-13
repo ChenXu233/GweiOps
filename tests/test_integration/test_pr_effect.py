@@ -51,6 +51,12 @@ class FakeRepo:
     async def default_branch(self, repo):
         return self.default_branch_name
 
+    async def get_pull_by_head(self, repo, head):
+        for pull in self.pulls.values():
+            if pull.get("head_ref") == head:
+                return pull
+        return None
+
     async def open_pull(self, repo, head, base, title, body=""):
         number = len(self.pulls) + 1
         self.pulls[number] = {
@@ -60,6 +66,7 @@ class FakeRepo:
             "merged": False,
             "html_url": "https://github.com/%s/pull/%d" % (repo, number),
             "head": {"sha": self.branches.get(head, "")},
+            "head_ref": head,
         }
         return self.pulls[number]
 
@@ -124,6 +131,37 @@ def test_an_existing_branch_is_reused_not_recreated(tmp_path):
     assert out.verdict == VERDICT_KEPT
     # 已经存在的分支不该被重置到 base
     assert plugin.client.branches["gwei/feature-1"].startswith("sha-commit")
+
+
+def test_a_second_change_continues_the_same_pull(tmp_path):
+    """同一条分支只该有一个 PR:接着改是追加提交,不是再开一个。"""
+    plugin = _plugin()
+    ledger = JsonlLedger(tmp_path / "l.jsonl")
+
+    first = asyncio.run(apply(_unit(), plugin, ledger))
+    second_effect = _effect(files=[{"path": "engine/x.py", "content": "x = 2\n"}])
+    second = asyncio.run(apply(_unit(second_effect), plugin, ledger))
+
+    assert first.handle == second.handle == "1"
+    assert len(plugin.client.pulls) == 1, "不该开出第二个 PR"
+    assert len(plugin.client.commits) == 2, "第二次应该是往同一个分支上追加"
+
+
+def test_a_closed_pull_on_the_same_branch_fails_loudly(tmp_path):
+    """分支上的 PR 已经关了:提交上去也没人看得见,这种要当场说清楚。"""
+    plugin = _plugin()
+    plugin.client.pulls[1] = {
+        "number": 1,
+        "state": "closed",
+        "merged": False,
+        "head_ref": "gwei/feature-1",
+    }
+
+    out = asyncio.run(apply(_unit(), plugin, JsonlLedger(tmp_path / "l.jsonl")))
+
+    assert out.verdict == VERDICT_FAILED
+    assert "已经关闭" in out.reason
+    assert plugin.client.commits == [], "说清楚之前不该往分支上提交"
 
 
 def test_rollback_closes_the_pull_and_deletes_the_branch(tmp_path):

@@ -414,6 +414,45 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
     )
 
 
+async def _thread_for(payload: dict) -> dict | None:
+    """这个话题上接着要改的那个 PR。
+
+    先看账本:同一个话题上开出来、此刻还开着的 PR 就是它。账本没有、而这次评论
+    落在 PR 上,再问一次 GitHub —— 人自己开的 PR 也要能接着改。
+    """
+    topic = str(payload.get("topic") or "")
+    if not topic:
+        return None
+
+    from engine.change_unit.threads import open_pull_on
+
+    thread = await open_pull_on(create_ledger(), payload.get("tenant_slug", ""), topic)
+    if thread is not None:
+        return thread
+
+    repo = payload.get("repo_full_name") or ""
+    number = payload.get("issue_number")
+    if not payload.get("is_pull") or not repo or number is None:
+        return None
+    try:
+        adapter = get_adapter()
+        if adapter.config is None:
+            await adapter.on_startup()
+        pull = await adapter.client.get_pull(repo, int(number))
+    except Exception as exc:  # noqa: BLE001 - 问不到就当没有,不猜一个分支
+        logger.info("could not read pull %s#%s: %s", repo, number, exc)
+        return None
+    head = ((pull or {}).get("head") or {}).get("ref") or ""
+    if not head:
+        return None
+    return {
+        "repo": repo,
+        "head": head,
+        "pull": str(number),
+        "url": (pull or {}).get("html_url", ""),
+    }
+
+
 async def _prepare_workspace_impl(payload: dict) -> dict:
     """开工前把代码放进工作区:从哪拉、基线是哪条分支。
 
@@ -475,6 +514,8 @@ async def _run_harness_impl(payload: dict) -> dict | None:
                 "exhausted": False,
             }
 
+    thread = await _thread_for(payload)
+
     result = await run_harness(
         command=command,
         workspace=workspace,
@@ -487,6 +528,7 @@ async def _run_harness_impl(payload: dict) -> dict | None:
             repo=repo,
             branch=branch,
             token=config.settings.harness_token,
+            thread=thread,
         ),
         extra_env={
             "GWEI_EXIT_URL": exit_url,

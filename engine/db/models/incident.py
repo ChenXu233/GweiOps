@@ -22,6 +22,9 @@ class Incident(Base):
     tenant: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     signal_source: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     signal_title: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    # 这一场对应的话题(owner/repo#number)。PR 与 issue 在评论这件事上本来就是一回事,
+    # 有了它,下一次评论才知道该接着哪个分支改。
+    topic: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     started_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")

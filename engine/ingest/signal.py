@@ -71,5 +71,6 @@ def from_github(payload: dict[str, Any]) -> dict[str, Any]:
             "repo": repo,
             "issue_number": number,
             "trigger": payload.get("source", "issue"),
+            "topic": payload.get("topic") or f"{repo}#{number}",
         },
     )

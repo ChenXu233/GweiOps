@@ -288,6 +288,19 @@ class GitHubAppClient:
         )
         return response.parsed_data.model_dump()
 
+    async def get_pull_by_head(self, repo: str, head: str) -> dict[str, Any] | None:
+        """这条分支上的 PR(含已关闭的),没有返回 None。
+
+        同一条分支只该有一个 PR:"接着这个 PR 改"和"再开一个 PR"是两件事,
+        分不清就会出现两条并行的分支,而人只能看见其中一条。
+        """
+        owner, repo_name = self._parse_repo(repo)
+        response = await self.github.rest.pulls.async_list(
+            owner, repo_name, head=f"{owner}:{head}", state="all"
+        )
+        items = [item.model_dump() for item in response.parsed_data]
+        return items[0] if items else None
+
     async def get_pull(self, repo: str, number: int) -> dict[str, Any] | None:
         """按编号取 PR;不存在返回 None(撤销后用它验证)。"""
         owner, repo_name = self._parse_repo(repo)
