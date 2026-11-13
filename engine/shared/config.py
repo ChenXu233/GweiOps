@@ -444,6 +444,15 @@ class Settings(BaseSettings):
     # 一个租户每小时能通过出口改几次世界;0 表示不限。循环搬进沙箱后,平台只能数次数。
     agent_max_exits_per_hour: int = 20
 
+    # ---- 发布(合并即发布) ----
+    # PR 合并后把合并提交发布到下游;三项缺一就不发布,不猜部署参数。
+    # image_template 支持 {repo} / {sha} / {number},例如 "ghcr.io/{repo}:{sha}"。
+    release_project_dir: str = ""
+    release_service: str = ""
+    release_image_template: str = ""
+    release_binding: str = "local"  # 发布效果打到的目标;与 compose 插件实例一致
+    release_base_branch: str = ""  # 只发布合入这条基线的 PR;空 = 任意基线
+
     # ---- 变更单元 ----
     default_binding: str = "github"  # 效果执行的下游目标;多目标解析前只有一个
     alertmanager_webhook_token: str = ""  # 监控信号入口的共享令牌;空 = 拒绝接收

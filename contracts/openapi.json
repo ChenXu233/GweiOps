@@ -3273,9 +3273,26 @@
         "summary": "Alertmanager Webhook"
       }
     },
+    "/webhook/cnb": {
+      "post": {
+        "description": "CNB Webhook(当前接 PullRequestEvent 的合并事件)。",
+        "operationId": "cnb_webhook_webhook_cnb_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Cnb Webhook"
+      }
+    },
     "/webhook/github": {
       "post": {
-        "description": "处理 GitHub Webhook（issues / issue_comment / ping）。",
+        "description": "GitHub Webhook(issues / issue_comment / pull_request / ping)。",
         "operationId": "github_webhook_webhook_github_post",
         "responses": {
           "200": {
@@ -3292,7 +3309,7 @@
     },
     "/webhook/github/comment": {
       "post": {
-        "description": "处理 GitHub Webhook 评论事件（@gwei 触发）。",
+        "description": "GitHub 评论专用入口:只接 issue_comment。",
         "operationId": "github_comment_webhook_webhook_github_comment_post",
         "responses": {
           "200": {
@@ -3305,6 +3322,23 @@
           }
         },
         "summary": "Github Comment Webhook"
+      }
+    },
+    "/webhook/gitlab": {
+      "post": {
+        "description": "GitLab Webhook(当前接合并请求的合并事件)。",
+        "operationId": "gitlab_webhook_webhook_gitlab_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Gitlab Webhook"
       }
     }
   }

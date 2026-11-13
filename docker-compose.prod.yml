@@ -59,6 +59,20 @@ services:
       PLATFORM_BASE_URL: "http://engine:8000"
       HARNESS_WORKSPACE_ROOT: /workspaces
       ALERTMANAGER_WEBHOOK_TOKEN: ${ALERTMANAGER_WEBHOOK_TOKEN:-}
+      # 合并即发布:缺项就不发布;项目目录要在 compose 插件能看到的文件系统里
+      RELEASE_PROJECT_DIR: ${RELEASE_PROJECT_DIR:-}
+      RELEASE_SERVICE: ${RELEASE_SERVICE:-}
+      RELEASE_IMAGE_TEMPLATE: ${RELEASE_IMAGE_TEMPLATE:-}
+      RELEASE_BINDING: ${RELEASE_BINDING:-local}
+      RELEASE_BASE_BRANCH: ${RELEASE_BASE_BRANCH:-}
+      # 多来源适配器:谁的密钥配了,谁的 /webhook/<source> 才会接收
+      GITLAB_BASE_URL: ${GITLAB_BASE_URL:-https://gitlab.com}
+      GITLAB_WEBHOOK_SECRET: ${GITLAB_WEBHOOK_SECRET:-}
+      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      CNB_BASE_URL: ${CNB_BASE_URL:-https://api.cnb.cool}
+      CNB_WEBHOOK_TOKEN: ${CNB_WEBHOOK_TOKEN:-}
+      CNB_WEBHOOK_HEADER: ${CNB_WEBHOOK_HEADER:-X-Cnb-Token}
+      CNB_TOKEN: ${CNB_TOKEN:-}
     volumes:
       # 引擎在容器里,但它要替事故起 harness 容器:这两行是 dogfood 的代价。
       # 只读挂 docker.sock 做不到(要创建容器),所以这里给的是完整 docker 权限。

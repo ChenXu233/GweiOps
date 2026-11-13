@@ -62,6 +62,16 @@ def _severity(labels: list[str] | None) -> str:
     return "low"
 
 
+# 发布是上线,不是修复:同一本账里的 kept 不能都算进「昨夜自动修复」。
+RELEASE_CAPABILITIES = {"compose.release"}
+
+
+def _is_repair(row: dict) -> bool:
+    effect = row.get("effect")
+    capability = effect.get("capability", "") if isinstance(effect, dict) else ""
+    return capability not in RELEASE_CAPABILITIES
+
+
 def _not_before(value: object, cutoff: datetime) -> bool:
     """账本里的时间是 ISO 字符串;解析不了就不算进这个窗口。"""
     try:
@@ -156,7 +166,9 @@ async def dashboard() -> DashboardDTO:
     overnight = sum(
         1
         for row in await create_ledger().latest()
-        if row.get("verdict") == "kept" and _not_before(row.get("created_at"), day_ago)
+        if row.get("verdict") == "kept"
+        and _is_repair(row)
+        and _not_before(row.get("created_at"), day_ago)
     )
 
     try:

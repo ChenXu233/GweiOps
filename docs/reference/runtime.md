@@ -19,6 +19,7 @@
 | --- | --- | --- |
 | `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → `intent.propose` → 效果单元(回评,可撤销) |
 | `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 配了 `HARNESS_COMMAND` 就整场交给 harness(它改工作区里的代码,效果仍从出口落成,通常是 `pr.open`),收口后在原话题上回一句结果;没配才退回 补丁建议 → `patch.generated` transform → `intent.propose` → 回评 |
+| `release_workflow` | 任何来源的合并事件(GitHub PR / GitLab MR / CNB PR) | 合并提交 → 发布意图(`compose.release`)→ 指定下游的变更单元 → 来源支持回评时回帖 |
 | `alert_triage_workflow` | 监控告警 firing | 归化信号 → 有 `incident.handle` 提供者就整场交给 agent,否则 `intent.propose` → 效果单元(没有补丁、没有回评) |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
@@ -27,6 +28,19 @@
 - 两种来源归化成一个信号再入队:GitHub 载荷现场翻译,监控告警由 `/webhook/alertmanager` 解析。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 - PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到那个分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
+
+## 发布(合并即发布)
+
+审核发生在来源侧:人看 PR/MR、合并。平台不替人点合并,只认来源适配器归一化出的 `kind="merge"`。GitHub 的 `pull_request`、GitLab 的 `merge_request`、CNB 的 `PullRequestEvent` 都在各自适配器里翻译,核心不认这些字段名。
+
+- 三项配置缺一就不发布,不猜部署参数:`RELEASE_PROJECT_DIR`(compose 项目目录)、`RELEASE_SERVICE`(服务名)、`RELEASE_IMAGE_TEMPLATE`(支持 `{repo}` / `{sha}` / `{number}`)。缺项时这一场只写事故报告说明缺什么,不产生变更单元。
+- `RELEASE_BASE_BRANCH` 非空时只发布合入该基线的 PR;空 = 任意基线。
+- 效果是 `compose.release`:把服务切到合并提交对应的镜像。compose 文件用 `${GWEI_RELEASE_IMAGE}` 取这次的目标镜像;插件先 `pull`,再 `up -d --no-deps`。
+- 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进第一类路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
+- 验证读服务当前镜像:容器在跑、镜像与目标一致才算成;不一致走回滚。
+- 发布效果打到的下游是 `RELEASE_BINDING`(默认 `local`),不是部署默认的 `DEFAULT_BINDING`;两者要分别配。
+- 这不是金丝雀:一次发布就是一个单元、一步切换。分阶段发布见[路线图](../plan/roadmap.md)的「金丝雀」。
+- 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
 
 ## MCP
 
@@ -151,8 +165,10 @@
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/mcp` | MCP(streamable HTTP):`tools/list` 就是出口清单,`tools/call` 就是走一次出口;需令牌 |
 | GET | `/mcp` | 这个端点是什么、当前有哪些工具 |
-| POST | `/webhook/github` | GitHub Webhook(issue 事件);需 `GITHUB_APP_WEBHOOK_SECRET`,未配置返回 503 |
+| POST | `/webhook/github` | GitHub Webhook(issues / issue_comment / pull_request);需 `GITHUB_APP_WEBHOOK_SECRET`,未配置返回 503 |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
+| POST | `/webhook/gitlab` | GitLab Webhook(合并请求);需 `GITLAB_WEBHOOK_SECRET` |
+| POST | `/webhook/cnb` | CNB Webhook(PullRequestEvent);需 `CNB_WEBHOOK_TOKEN` |
 | POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |
 
 ### 接口契约

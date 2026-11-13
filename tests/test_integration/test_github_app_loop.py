@@ -60,7 +60,9 @@ class TestImports:
 
     def test_import_webhook_routes(self):
         """验证 webhook 路由模块可以导入。"""
-        from engine.api.routes.webhook import router, get_adapter, get_sensor
+        from engine.api.routes.webhook import router
+        from engine.shared.runtime import get_adapter, get_sensor
+
         assert router is not None
         assert get_adapter is not None
         assert get_sensor is not None

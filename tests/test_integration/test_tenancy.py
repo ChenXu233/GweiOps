@@ -18,17 +18,22 @@ from unittest.mock import AsyncMock, patch
 
 
 class TestTenantPayloadAndKeys:
-    def test_extract_payload_carries_tenant_slug(self):
-        from engine.api.routes.webhook import _extract_payload
+    def test_payload_carries_tenant_slug(self):
+        from engine.api.routes.webhook import _payload_from_event
+        from engine.ingest.events import event as normalized_event
 
-        issue_info = {"owner": "o", "repo": "r", "issue_number": 1, "title": "T"}
-        raw = {
-            "repository": {"id": 1},
-            "issue": {"id": 2, "title": "T", "body": "B"},
-        }
-        payload = _extract_payload(raw, issue_info, "issues")
+        event = normalized_event(
+            kind="issue",
+            source="github",
+            repo="o/r",
+            repo_id=1,
+            change_id=2,
+            number=1,
+            title="T",
+            body="B",
+        )
+        payload = _payload_from_event(event)
 
-        assert payload is not None
         slug = payload["tenant_slug"]
         assert isinstance(slug, str) and slug
 

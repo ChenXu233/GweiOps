@@ -4,5 +4,11 @@ from .pipeline import (
     fix_suggestion_workflow,
     issue_triage_workflow,
 )
+from .release import release_workflow
 
-__all__ = ["WORKFLOW_QUEUE", "issue_triage_workflow", "fix_suggestion_workflow"]
+__all__ = [
+    "WORKFLOW_QUEUE",
+    "issue_triage_workflow",
+    "fix_suggestion_workflow",
+    "release_workflow",
+]

@@ -217,22 +217,46 @@ def test_apply_requires_capability_when_target_is_registry():
 
 
 class FakeDocker:
-    """记录命令并模拟 compose ps / up --scale 的状态。"""
+    """记录命令并模拟 compose ps / up --scale / 发布时的镜像切换。"""
 
-    def __init__(self, replicas: int = 1, service: str = "web") -> None:
+    def __init__(
+        self,
+        replicas: int = 1,
+        service: str = "web",
+        image: str = "app:1",
+        pull_fails: bool = False,
+        apply_release: bool = True,
+    ) -> None:
         self.replicas = replicas
         self.service = service
+        self.image = image
+        self.pull_fails = pull_fails
+        self.apply_release = apply_release
         self.calls: list[list[str]] = []
+        self.envs: list[dict[str, str] | None] = []
 
-    def __call__(self, args: list[str], cwd: str) -> str:
+    def __call__(
+        self, args: list[str], cwd: str, env: dict[str, str] | None = None
+    ) -> str:
         self.calls.append(list(args))
+        self.envs.append(dict(env) if env else None)
         if "ps" in args:
             return json.dumps(
-                [{"Service": self.service, "State": "running"} for _ in range(self.replicas)]
+                [
+                    {"Service": self.service, "State": "running", "Image": self.image}
+                    for _ in range(self.replicas)
+                ]
             )
+        if "pull" in args:
+            if self.pull_fails:
+                raise subprocess.CalledProcessError(1, "docker compose pull")
+            return ""
         if "up" in args:
-            scale = args[args.index("--scale") + 1]
-            self.replicas = int(scale.split("=")[1])
+            if "--scale" in args:
+                scale = args[args.index("--scale") + 1]
+                self.replicas = int(scale.split("=")[1])
+            if env and self.apply_release:
+                self.image = env.get("GWEI_RELEASE_IMAGE", self.image)
             return ""
         return ""
 
@@ -310,6 +334,84 @@ def test_compose_window_unknown_without_compose_file(tmp_path):
     assert unit.verdict == VERDICT_BLOCKED
 
 
+def _release_effect(project_dir, service="web", image="app:2"):
+    return Effect(
+        task="release",
+        args={"project_dir": str(project_dir), "service": service, "image": image},
+        undo_task="undo_release",
+        undo_kind="symmetric",
+        capability="compose.release",
+    )
+
+
+def _release_project(tmp_path):
+    (tmp_path / "docker-compose.yml").write_text(
+        'services:\n  web:\n    image: "${GWEI_RELEASE_IMAGE}"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_compose_release_switches_image_and_undo_restores(tmp_path):
+    project = _release_project(tmp_path)
+    docker = FakeDocker(image="app:1")
+    plugin = compose_mod.DockerComposeAction(runner=docker)
+    asyncio.run(plugin.on_startup())
+
+    unit = asyncio.run(
+        apply(ChangeUnit(intent={}, effect=_release_effect(project), binding="local"), plugin)
+    )
+
+    assert unit.verdict == VERDICT_KEPT, unit.reason
+    assert json.loads(unit.handle)["before_image"] == "app:1"
+    assert docker.image == "app:2"
+    assert any("pull" in call for call in docker.calls)
+
+    asyncio.run(rollback(unit, plugin))
+    assert docker.image == "app:1"
+
+
+def test_compose_release_rolls_back_when_image_does_not_take(tmp_path):
+    project = _release_project(tmp_path)
+    docker = FakeDocker(image="app:1", apply_release=False)
+    plugin = compose_mod.DockerComposeAction(runner=docker)
+    asyncio.run(plugin.on_startup())
+
+    unit = asyncio.run(
+        apply(ChangeUnit(intent={}, effect=_release_effect(project), binding="local"), plugin)
+    )
+
+    assert unit.verdict == VERDICT_ROLLED_BACK, unit.reason
+    assert docker.image == "app:1"
+
+
+def test_compose_release_without_current_image_does_not_touch_anything(tmp_path):
+    project = _release_project(tmp_path)
+    docker = FakeDocker(image="")
+    plugin = compose_mod.DockerComposeAction(runner=docker)
+    asyncio.run(plugin.on_startup())
+
+    unit = asyncio.run(
+        apply(ChangeUnit(intent={}, effect=_release_effect(project), binding="local"), plugin)
+    )
+
+    assert unit.verdict == "failed", unit.reason
+    assert not any("up" in call for call in docker.calls)
+
+
+def test_compose_release_pull_failure_is_retryable(tmp_path):
+    project = _release_project(tmp_path)
+    docker = FakeDocker(image="app:1", pull_fails=True)
+    plugin = compose_mod.DockerComposeAction(runner=docker)
+    asyncio.run(plugin.on_startup())
+
+    unit = asyncio.run(
+        apply(ChangeUnit(intent={}, effect=_release_effect(project), binding="local"), plugin)
+    )
+
+    assert unit.verdict == "failed", unit.reason
+    assert not any("up" in call for call in docker.calls)
+
+
 def _docker_ready() -> bool:
     if shutil.which("docker") is None:
         return False
@@ -323,6 +425,35 @@ def _docker_ready() -> bool:
         return True
     except Exception:
         return False
+
+
+@pytest.mark.skipif(not _docker_ready(), reason="docker daemon 未运行")
+def test_real_compose_release_roundtrip(tmp_path):
+    (tmp_path / "docker-compose.yml").write_text(
+        'services:\n  web:\n    image: "${GWEI_RELEASE_IMAGE}"\n    command: sleep 300\n',
+        encoding="utf-8",
+    )
+    plugin = compose_mod.DockerComposeAction()
+    asyncio.run(plugin.on_startup())
+    start = [
+        "compose", "-f", "docker-compose.yml", "up", "-d", "--no-deps", "web",
+    ]
+    asyncio.run(plugin._exec(start, str(tmp_path), {"GWEI_RELEASE_IMAGE": "alpine:3.19"}))
+    effect = _release_effect(tmp_path, image="alpine:3.20")
+    unit = asyncio.run(
+        apply(ChangeUnit(intent={"issue": 1}, effect=effect, binding="local"), plugin)
+    )
+    try:
+        assert unit.verdict == VERDICT_KEPT, unit.reason
+        rows = asyncio.run(plugin._ps(str(tmp_path), "docker-compose.yml"))
+        assert plugin._image_of(rows, "web").endswith("alpine:3.20")
+        asyncio.run(rollback(unit, plugin))
+        rows = asyncio.run(plugin._ps(str(tmp_path), "docker-compose.yml"))
+        assert plugin._image_of(rows, "web").endswith("alpine:3.19")
+    finally:
+        asyncio.run(plugin._exec([
+            "compose", "-f", "docker-compose.yml", "down", "-v",
+        ], str(tmp_path)))
 
 
 @pytest.mark.skipif(not _docker_ready(), reason="docker daemon 未运行")

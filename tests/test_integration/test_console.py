@@ -38,6 +38,14 @@ def client():
     return TestClient(app)
 
 
+def test_release_is_not_counted_as_an_overnight_fix():
+    from engine.api.routes.console import _is_repair
+
+    assert _is_repair({"effect": {"capability": "pr.open"}})
+    assert _is_repair({"effect": {"capability": "compose.scale"}})
+    assert not _is_repair({"effect": {"capability": "compose.release"}})
+
+
 @requires_postgres
 class TestConsole:
     def test_dashboard_shape(self, client):

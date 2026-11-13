@@ -37,6 +37,22 @@ def get_adapter():
     return _adapter_instance
 
 
+def get_source_adapter(source: str):
+    """按来源取 Webhook 适配器(github / gitlab / cnb ...)。
+
+    注册表没加载时返回 None:入口据此如实回 503,不回落到某个"默认"适配器——
+    把 GitLab 的投递交给 GitHub 适配器,比拒绝更糟。
+    """
+    try:
+        from engine.plugin_manager import registry
+
+        return registry.webhook_adapter(source)
+    except LookupError:
+        raise
+    except Exception:
+        return None
+
+
 def get_sensor():
     """获取 SensorAgent 实例（延迟导入避免循环依赖）。"""
     global _sensor_instance

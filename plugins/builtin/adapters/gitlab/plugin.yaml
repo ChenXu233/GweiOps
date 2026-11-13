@@ -1,0 +1,16 @@
+name: gitlab-adapter
+version: 0.1.0
+type: adapter
+class_name: GitLabAdapter
+description: GitLab 适配器:接收合并请求 Webhook,把"合并"翻译成平台事件
+
+capabilities:
+  - webhook.receive
+  - webhook.verify
+
+config:
+  required:
+    - GITLAB_WEBHOOK_SECRET
+  optional:
+    - GITLAB_BASE_URL
+    - GITLAB_TOKEN

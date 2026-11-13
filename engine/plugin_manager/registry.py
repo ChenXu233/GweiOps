@@ -226,6 +226,24 @@ class PluginRegistry:
     def names(self) -> list[str]:
         return sorted(self._instances)
 
+    def webhook_adapter(self, source: str) -> PluginBase | None:
+        """哪个实例负责这个来源的 Webhook。
+
+        来源名由适配器自己声明(`source = "github" | "gitlab" | "cnb"`),核心
+        不认识任何一家的语法;同一个来源只该有一个提供者。
+        """
+        found: list[PluginBase] = []
+        for key, instance in self._instances.items():
+            if getattr(instance, "source", "") != source:
+                continue
+            manifest = self._manifests.get(self._instance_names.get(key, ""))
+            if manifest is not None and "webhook.receive" not in manifest.capabilities:
+                continue
+            found.append(instance)
+        if len(found) > 1:
+            raise LookupError(f"来源 {source!r} 有多个 webhook 适配器,拒绝猜一个")
+        return found[0] if found else None
+
     def instances_for_event(self, event: str) -> list[PluginBase]:
         return [
             self._instances[key] for key in self._event_index.get(event, [])

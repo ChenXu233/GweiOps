@@ -1,11 +1,14 @@
 # engine/api/routes/webhook.py
-"""Webhook 路由 - 处理 GitHub Webhook 事件。
+"""Webhook 入口 —— 各来源的投递归一化后入队。
 
-职责收窄为：验签 → 解析 → 去重 → 入 DBOS 队列。
-实际处理逻辑在 engine/workflows/pipeline.py 的工作流中持久化执行。
+核心只做四件事:按来源找适配器 → 验签 → 取归一化事件 → 去重入队。
+GitHub / GitLab / CNB 的字段名、事件名与签名方式都留在各自适配器里,
+工作流只认 `engine/ingest/events.py` 那一种说法。
+
+新增一个来源 = 加一个声明 `webhook.receive` 的适配器插件,这里不加分支。
 """
 
-import json
+import hashlib
 import logging
 import re
 import uuid
@@ -14,100 +17,125 @@ from dbos import DBOS, SetEnqueueOptions, SetWorkflowID
 from fastapi import APIRouter, HTTPException, Request
 
 from engine.ingest import parse_alerts
+from engine.ingest.events import header_value
 from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
 from engine.shared.config import config
-from engine.shared.runtime import get_adapter, get_sensor  # noqa: F401 — 兼容既有导入
+from engine.shared.runtime import get_source_adapter
 from engine.workflows.pipeline import (
     WORKFLOW_QUEUE,
     alert_triage_workflow,
     fix_suggestion_workflow,
     issue_triage_workflow,
 )
+from engine.workflows.release import release_workflow
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def _validate_webhook(request: Request) -> bytes:
-    """验证 Webhook 请求并返回 body。"""
-    adapter = get_adapter()
+def _payload_from_event(event: dict) -> dict:
+    """归一化事件 → 工作流入参。字段名与来源无关。"""
+    repo = event["repo"]
+    number = event["number"]
+    return {
+        "tenant_slug": config.settings.default_tenant_slug,
+        "repo_full_name": repo,
+        "topic": f"{repo}#{number}",
+        "source": event.get("kind", ""),
+        # 适配器来源:回评这类效果要按它选提供者,不能都算到 GitHub 头上。
+        "source_adapter": event.get("source", ""),
+        "is_pull": bool(event.get("is_pull")),
+        "repo_github_id": event.get("repo_id"),
+        "issue_github_id": event.get("change_id"),
+        "issue_number": number,
+        "title": event.get("title", ""),
+        "body": event.get("body", ""),
+        "action": event.get("action", ""),
+        "base_ref": event.get("base_ref", ""),
+        "head_ref": event.get("head_ref", ""),
+        "merge_sha": event.get("merge_sha", ""),
+        "url": event.get("url", ""),
+    }
 
-    # 确保 adapter 已初始化
-    if adapter.config is None:
-        await adapter.on_startup()
+
+def _delivery_id(headers: dict, body: bytes) -> str:
+    """投递身份:优先用来源给的,没给就用内容哈希。
+
+    没给唯一 ID 的来源(GitLab/CNB 的某些投递)如果用随机数,重试会被当成
+    新投递再跑一场;内容哈希让同一条投递在重试时落在同一个工作流上。
+    """
+    for name in ("X-GitHub-Delivery", "X-Gitlab-Event-UUID", "X-Request-Id"):
+        value = header_value(headers, name)
+        if value:
+            return value
+    return hashlib.sha256(body).hexdigest()[:16]
+
+
+async def _handle_source_event(
+    source: str, request: Request, *, only_kind: str | None = None
+) -> dict:
+    """一个来源的 Webhook:验签、归一化、去重、入队。"""
+    try:
+        adapter = get_source_adapter(source)
+    except LookupError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if adapter is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"没有为 {source} 配置 webhook 适配器:装上声明 webhook.receive 的插件再来",
+        )
+
+    # 人可能刚在页面上填完密钥:启动时读的是快照,再读一次,不用重启。
+    if not adapter.webhook_configured():
+        try:
+            await adapter.on_startup()
+        except Exception:  # noqa: BLE001 - 还是配不全就按"没配"拒收,不在这里炸
+            logger.info("webhook adapter %s still unconfigured after reload", source)
+
+    # 没配密钥就是不设防:这个端点会起工作流(容器、模型、PR),不能默认敞开。
+    if not adapter.webhook_configured():
+        hint = {
+            "github": "GITHUB_APP_WEBHOOK_SECRET",
+            "gitlab": "GITLAB_WEBHOOK_SECRET",
+            "cnb": "CNB_WEBHOOK_TOKEN",
+        }.get(source, f"{source.upper()}_WEBHOOK_SECRET")
+        raise HTTPException(
+            status_code=503,
+            detail=f"未配置 {hint},拒绝接收 {source} webhook 投递:这个端点会起工作流,不能默认敞开",
+        )
 
     body = await request.body()
     headers = dict(request.headers)
-
-    # 人可能刚在页面上填完密钥:配置是启动时读的一份快照,再读一次,
-    # 不用为了一个密钥重启服务。读回来还是空的,才按"没配"处理。
-    if not adapter.config.webhook_secret:
-        try:
-            await adapter.on_startup()
-        except Exception:  # noqa: BLE001 - 还是配不全就走下面的拒收,不在这里炸
-            logger.info("webhook secret still unset after reloading plugin config")
-
-    # 没配密钥就是不设防,而这个端点会起工作流(容器、模型、PR)。放在公网上
-    # 等于谁都能花你的钱、用你的 App 身份说话 —— 宁可拒收,等配置补齐。
-    if not adapter.config.webhook_secret:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "未配置 GITHUB_APP_WEBHOOK_SECRET,拒绝接收 GitHub 投递:"
-                "这个端点会起工作流,不能默认敞开"
-            ),
-        )
-
-    signature = headers.get("x-hub-signature-256", "")
-    if not adapter.webhook_handler.verify_signature(body, signature):
+    if not adapter.verify_webhook(headers, body):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    return body
+    event = adapter.parse_webhook(headers, body)
+    if event is None:
+        return {"status": "ignored", "message": "Unsupported or filtered event"}
 
+    if event.get("kind") == "ping":
+        return {"status": "ok", "message": "pong"}
+    if only_kind is not None and event.get("kind") != only_kind:
+        return {"status": "ignored", "message": f"Not a {only_kind} event"}
 
-def _build_headers_dict(request: Request) -> dict:
-    """从 Request 构建 headers 字典（键名与 GitHub 一致）。"""
-    return {
-        "X-GitHub-Event": request.headers.get("X-GitHub-Event", ""),
-        "X-GitHub-Delivery": request.headers.get("X-GitHub-Delivery", ""),
-        "X-Hub-Signature-256": request.headers.get("X-Hub-Signature-256", ""),
-    }
+    payload = _payload_from_event(event)
+    delivery = _delivery_id(headers, body)
 
+    # 投递去重(键带租户段):来源会重试投递,防止重复触发工作流
+    if not await dedup_once(
+        f"gwei:{payload['tenant_slug']}:webhook-dedup:{delivery}",
+        WEBHOOK_DEDUP_TTL_S,
+    ):
+        return {"status": "duplicate", "workflow_id": f"gwei-dedup-{delivery}"}
 
-def _extract_payload(raw: dict, issue_info: dict, event_type: str) -> dict | None:
-    """从原始 payload 提取工作流入参（GitHub 数字 ID 用于业务表幂等 upsert）。"""
-    repo = raw.get("repository") or {}
-    issue = raw.get("issue") or {}
-    comment = raw.get("comment") or {}
-    repo_id = repo.get("id")
-    issue_id = issue.get("id")
-    if repo_id is None or issue_id is None:
-        logger.warning("Webhook payload missing repository.id/issue.id; ignoring")
-        return None
-
-    if event_type == "issue_comment":
-        # 评论触发：以评论内容为分析对象，标题取真实 Issue 标题
-        body = comment.get("body") or ""
-        source = "comment"
-    else:
-        body = issue.get("body") or ""
-        source = "issue"
-
-    # PR 在 GitHub 的 API 里就是一个 issue:评论事件不区分两者。这里把"是不是 PR"
-    # 与"这是哪条线"一起带下去,后面的任务书才说得出"接着哪个分支改"。
-    repo_full_name = f"{issue_info['owner']}/{issue_info['repo']}"
-    return {
-        "tenant_slug": config.settings.default_tenant_slug,
-        "repo_full_name": repo_full_name,
-        "topic": f"{repo_full_name}#{issue_info['issue_number']}",
-        "is_pull": bool(issue.get("pull_request")),
-        "repo_github_id": repo_id,
-        "issue_github_id": issue_id,
-        "issue_number": issue_info["issue_number"],
-        "title": issue.get("title") or issue_info["title"],
-        "body": body,
-        "source": source,
-    }
+    kind = event.get("kind")
+    if kind == "merge":
+        return await _enqueue_workflow("gwei-release", release_workflow, delivery, payload)
+    if kind == "comment":
+        if "@gwei" not in (payload["body"] or "").lower():
+            return {"status": "ignored", "message": "Comment does not mention @gwei"}
+        return await _enqueue_workflow("gwei-fix", fix_suggestion_workflow, delivery, payload)
+    return await _enqueue_workflow("gwei-triage", issue_triage_workflow, delivery, payload)
 
 
 async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: dict) -> dict:
@@ -133,59 +161,28 @@ async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: di
     return {"status": "queued", "workflow_id": workflow_id}
 
 
-async def _handle_event(event_type: str, delivery_id: str, headers: dict, body: bytes) -> dict:
-    adapter = get_adapter()
-
-    event = adapter.webhook_handler.parse_event(headers, body)
-    if event is None:
-        return {"status": "ignored", "message": "Unsupported or filtered event"}
-
-    action = event.get("action", "")
-    if event_type == "issues" and action not in ("opened", "edited"):
-        return {"status": "ignored", "message": f"Unsupported action: {action}"}
-    if event_type == "issue_comment" and action not in ("created", "edited"):
-        return {"status": "ignored", "message": f"Unsupported action: {action}"}
-
-    issue_info = adapter.webhook_handler.extract_issue_info(event)
-    if issue_info is None:
-        return {"status": "ignored", "message": "Could not extract issue info"}
-
-    payload = _extract_payload(json.loads(body), issue_info, event_type)
-    if payload is None:
-        return {"status": "ignored", "message": "Missing repository/issue id"}
-
-    # 投递去重（键带租户段）：GitHub 会重试投递，防止重复触发工作流
-    if not await dedup_once(
-        f"gwei:{payload['tenant_slug']}:webhook-dedup:{delivery_id}",
-        WEBHOOK_DEDUP_TTL_S,
-    ):
-        return {"status": "duplicate", "workflow_id": f"gwei-dedup-{delivery_id}"}
-
-    if event_type == "issue_comment":
-        if "@gwei" not in (payload["body"] or "").lower():
-            return {"status": "ignored", "message": "Comment does not mention @gwei"}
-        return await _enqueue_workflow("gwei-fix", fix_suggestion_workflow, delivery_id, payload)
-
-    return await _enqueue_workflow("gwei-triage", issue_triage_workflow, delivery_id, payload)
-
-
 @router.post("/webhook/github")
 async def github_webhook(request: Request):
-    """处理 GitHub Webhook（issues / issue_comment / ping）。"""
-    body = await _validate_webhook(request)
-    headers = _build_headers_dict(request)
-    event_type = headers.get("X-GitHub-Event", "")
-    delivery_id = headers.get("X-GitHub-Delivery", "") or str(uuid.uuid4())
+    """GitHub Webhook(issues / issue_comment / pull_request / ping)。"""
+    return await _handle_source_event("github", request)
 
-    logger.info(f"Received webhook: {event_type}, delivery: {headers.get('X-GitHub-Delivery')}")
 
-    if event_type == "ping":
-        return {"status": "ok", "message": "pong"}
+@router.post("/webhook/github/comment")
+async def github_comment_webhook(request: Request):
+    """GitHub 评论专用入口:只接 issue_comment。"""
+    return await _handle_source_event("github", request, only_kind="comment")
 
-    if event_type in ("issues", "issue_comment"):
-        return await _handle_event(event_type, delivery_id, headers, body)
 
-    return {"status": "ignored", "event": event_type}
+@router.post("/webhook/gitlab")
+async def gitlab_webhook(request: Request):
+    """GitLab Webhook(当前接合并请求的合并事件)。"""
+    return await _handle_source_event("gitlab", request)
+
+
+@router.post("/webhook/cnb")
+async def cnb_webhook(request: Request):
+    """CNB Webhook(当前接 PullRequestEvent 的合并事件)。"""
+    return await _handle_source_event("cnb", request)
 
 
 @router.post("/webhook/alertmanager")
@@ -240,19 +237,3 @@ def _safe_id(*parts: str) -> str:
     """工作流 id 只留安全字符:告警标题可能带空格和中文。"""
     raw = "-".join(part for part in parts if part)
     return re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-") or "alert"
-
-
-@router.post("/webhook/github/comment")
-async def github_comment_webhook(request: Request):
-    """处理 GitHub Webhook 评论事件（@gwei 触发）。"""
-    body = await _validate_webhook(request)
-    headers = _build_headers_dict(request)
-    event_type = headers.get("X-GitHub-Event", "")
-    delivery_id = headers.get("X-GitHub-Delivery", "") or str(uuid.uuid4())
-
-    logger.info(f"Received comment webhook: {event_type}, delivery: {headers.get('X-GitHub-Delivery')}")
-
-    if event_type != "issue_comment":
-        return {"status": "ignored", "message": "Not a comment event"}
-
-    return await _handle_event(event_type, delivery_id, headers, body)

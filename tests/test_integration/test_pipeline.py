@@ -64,14 +64,25 @@ class TestWebhookGuard:
         from engine.api.routes import webhook as webhook_mod
 
         class Adapter:
-            config = SimpleNamespace(webhook_secret=secret)
-            webhook_handler = SimpleNamespace(verify_signature=lambda body, sig: True)
+            def __init__(self):
+                self.secret = secret
+
+            def webhook_configured(self):
+                return bool(self.secret)
+
+            def verify_webhook(self, headers, body):
+                return True
+
+            def parse_webhook(self, headers, body):
+                from engine.ingest.events import event
+
+                return event(kind="ping", source="github")
 
             async def on_startup(self):
                 if after is not None:
-                    self.config = SimpleNamespace(webhook_secret=after)
+                    self.secret = after
 
-        monkeypatch.setattr(webhook_mod, "get_adapter", lambda: Adapter())
+        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: Adapter())
         app = FastAPI()
         app.include_router(webhook_mod.router)
         return TestClient(app)
@@ -83,7 +94,8 @@ class TestWebhookGuard:
         resp = client.post("/webhook/github", json={}, headers={"X-GitHub-Event": "ping"})
 
         assert resp.status_code == 503
-        assert "GITHUB_APP_WEBHOOK_SECRET" in resp.json()["detail"]
+        assert "未配置" in resp.json()["detail"]
+        assert "webhook" in resp.json()["detail"]
 
     def test_a_secret_filled_into_the_page_works_without_a_restart(self, monkeypatch):
         """配置是启动时的快照:人刚填完密钥就投递,不该还要重启才认。"""
@@ -116,45 +128,94 @@ class TestWebhookGuard:
 
 
 class TestPayloadExtraction:
+    """GitHub 语法在适配器里就被翻译成归一化事件,核心不再认它的字段。"""
+
     @staticmethod
-    def _issue_info():
-        return {"owner": "my-org", "repo": "my-repo", "issue_number": 42, "title": "Bug"}
+    def _normalizer():
+        handlers = importlib.import_module("plugins.builtin.adapters.github-app.handlers")
+        return handlers.WebhookHandler(SimpleNamespace(webhook_secret="s3cret"))
 
-    def test_extract_issue_payload(self):
-        from engine.api.routes.webhook import _extract_payload
-
+    def test_issue_event(self):
         raw = {
-            "repository": {"id": 1},
-            "issue": {"id": 100, "title": "Bug", "body": "B"},
+            "repository": {
+                "id": 1,
+                "name": "my-repo",
+                "owner": {"login": "my-org"},
+            },
+            "issue": {"id": 100, "number": 42, "title": "Bug", "body": "B"},
         }
-        payload = _extract_payload(raw, self._issue_info(), "issues")
+        event = self._normalizer().normalize_event(
+            {"type": "issues", "action": "opened", "payload": raw}
+        )
 
-        assert payload is not None
-        assert payload["repo_github_id"] == 1
-        assert payload["issue_github_id"] == 100
-        assert payload["repo_full_name"] == "my-org/my-repo"
-        assert payload["issue_number"] == 42
-        assert payload["source"] == "issue"
+        assert event["kind"] == "issue"
+        assert event["source"] == "github"
+        assert event["repo"] == "my-org/my-repo"
+        assert event["repo_id"] == 1
+        assert event["change_id"] == 100
+        assert event["number"] == 42
+        assert event["body"] == "B"
 
-    def test_extract_comment_payload_uses_comment_body(self):
-        from engine.api.routes.webhook import _extract_payload
-
+    def test_comment_event_uses_comment_body(self):
         raw = {
-            "repository": {"id": 1},
-            "issue": {"id": 100, "title": "Bug"},
+            "repository": {"id": 1, "name": "my-repo", "owner": {"login": "my-org"}},
+            "issue": {
+                "id": 100,
+                "number": 42,
+                "title": "Bug",
+                "pull_request": {"url": "https://api.github.com/repos/my-org/my-repo/pulls/42"},
+            },
             "comment": {"body": "@gwei 请修复"},
         }
-        payload = _extract_payload(raw, self._issue_info(), "issue_comment")
+        event = self._normalizer().normalize_event(
+            {"type": "issue_comment", "action": "created", "payload": raw}
+        )
 
-        assert payload is not None
-        assert payload["body"] == "@gwei 请修复"
-        assert payload["source"] == "comment"
+        assert event["kind"] == "comment"
+        assert event["body"] == "@gwei 请修复"
+        assert event["is_pull"] is True
 
-    def test_missing_ids_returns_none(self):
-        from engine.api.routes.webhook import _extract_payload
+    def test_merged_pull_request_event(self):
+        raw = {
+            "repository": {"id": 1, "name": "my-repo", "owner": {"login": "my-org"}},
+            "pull_request": {
+                "id": 900,
+                "number": 42,
+                "title": "修好了",
+                "merged": True,
+                "merge_commit_sha": "sha-merge",
+                "base": {"ref": "main"},
+                "head": {"ref": "gwei/fix-1"},
+            },
+        }
+        event = self._normalizer().normalize_event(
+            {"type": "pull_request", "action": "closed", "payload": raw}
+        )
+
+        assert event["kind"] == "merge"
+        assert event["number"] == 42
+        assert event["merge_sha"] == "sha-merge"
+        assert event["base_ref"] == "main"
+
+    def test_unmerged_pull_request_is_not_an_event(self):
+        raw = {
+            "repository": {"id": 1, "name": "my-repo", "owner": {"login": "my-org"}},
+            "pull_request": {"id": 900, "number": 42, "merged": False},
+        }
+        event = self._normalizer().normalize_event(
+            {"type": "pull_request", "action": "closed", "payload": raw}
+        )
+
+        assert event is None
+
+    def test_missing_ids_are_rejected(self):
+        from engine.ingest.events import EventError
 
         raw = {"repository": {}, "issue": {}}
-        assert _extract_payload(raw, self._issue_info(), "issues") is None
+        with pytest.raises(EventError):
+            self._normalizer().normalize_event(
+                {"type": "issues", "action": "opened", "payload": raw}
+            )
 
 
 # ============================================================================
@@ -267,9 +328,11 @@ class TestWorkflowSymbols:
             WORKFLOW_QUEUE,
             fix_suggestion_workflow,
             issue_triage_workflow,
+            release_workflow,
         )
 
         assert WORKFLOW_QUEUE == "gwei-agents"
+        assert callable(release_workflow)
 
 
 # ============================================================================

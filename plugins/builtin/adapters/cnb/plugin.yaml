@@ -1,0 +1,17 @@
+name: cnb-adapter
+version: 0.1.0
+type: adapter
+class_name: CNBAdapter
+description: CNB(cnb.cool)适配器:接收 PullRequestEvent,把合并翻译成平台事件
+
+capabilities:
+  - webhook.receive
+  - webhook.verify
+
+config:
+  required:
+    - CNB_WEBHOOK_TOKEN
+  optional:
+    - CNB_BASE_URL
+    - CNB_TOKEN
+    - CNB_WEBHOOK_HEADER

@@ -71,6 +71,7 @@ ui:
 - **能力调用**:`registry.run_capability(capability, params)` 选优先级最高的提供者,按 `tasks` 映射任务名;无提供者抛 `LookupError`。
 - **按目标解析**:传 `tenant=` / `binding=` 时改走 `registry.resolve()`,只做精确匹配,不跨目标回退;实例以 `tenant` / `binding` 属性声明自己服务谁,控制面能力用空值解析。诊断用 `registry.capability_bindings(capability)`。
 - **兼容入口**:`engine/shared/runtime.py` 的 `get_adapter()` / `get_sensor()` 先查注册表,注册表未加载时回退直连单例。
+- **Webhook 来源**:`registry.webhook_adapter(source)` 按实例的 `source` 属性选适配器;该实例必须声明 `webhook.receive`。来源重复直接报错。
 
 ## 事件总线
 
@@ -143,6 +144,18 @@ config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GIT
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`。
+
+## Webhook 适配器
+
+Webhook 的字段名、事件名与验签方式都属于来源,不属于核心。一个来源 = 一个适配器插件:
+
+- 实例属性 `source` 是来源名(`github` / `gitlab` / `cnb`),`binding` 是它的下游目标;
+- 清单声明 `webhook.receive`,注册表按来源找它(`registry.webhook_adapter(source)`);同一来源有两个提供者直接报错,不猜;
+- 适配器实现三个方法:`webhook_configured()`(密钥配没配)、`verify_webhook(headers, body)`(验签)、`parse_webhook(headers, body)`(投递 → 归一化事件);
+- 归一化事件只有一种说法,定义在 [engine/ingest/events.py](../../engine/ingest/events.py):`kind`(issue / comment / merge / ping)、`source`、`repo`、`number`、`merge_sha` 等。核心不认识任何一家的原始字段;
+- 入口是 `/webhook/<source>`。新增来源不加路由分支:装上适配器,投递就有地方去;没装则回 503,不回落到"默认适配器"——把 GitLab 的投递交给 GitHub,比拒绝更糟。
+
+当前内置:`github-app`(issues / issue_comment / pull_request)、`gitlab`(合并请求)、`cnb`(PullRequestEvent)。GitLab/CNB 目前只做合并触发;回评与开 MR 需要各自的项目令牌与 API,等真要用时再在适配器里补能力,不先声明一个调不通的效果。
 
 ## 效果声明
 

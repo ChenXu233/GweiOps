@@ -284,14 +284,22 @@ async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict
 
 
 async def _apply_effects_impl(
-    intent: dict, payload: dict, idem_base: str, incident_id: str = ""
+    intent: dict,
+    payload: dict,
+    idem_base: str,
+    incident_id: str = "",
+    binding: str = "",
 ) -> dict:
-    """把 intent 里的候选效果逐个落成变更单元:解析提供者 → 执行 → 验证 → 记账。"""
+    """把 intent 里的候选效果逐个落成变更单元:解析提供者 → 执行 → 验证 → 记账。
+
+    binding 缺省取部署的默认目标;发布这类"效果打到另一台下游"的路径显式传它,
+    不把部署默认值当成万能的。
+    """
     from engine.change_unit.intent import parse_intent
 
     parsed = parse_intent(intent)
     tenant = payload.get("tenant_slug", "")
-    binding = config.settings.default_binding
+    binding = binding or config.settings.default_binding
     ledger = create_ledger()
 
     applied: list[dict] = []
@@ -391,6 +399,18 @@ async def apply_effects_step(intent: dict, payload: dict) -> dict:
     """效果执行以 workflow_id 作为幂等基座:重放只复用账本结论。"""
     return await _apply_effects_impl(
         intent, payload, f"{DBOS.workflow_id}:effects", incident_id=DBOS.workflow_id
+    )
+
+
+@DBOS.step()
+async def apply_effects_on_binding_step(intent: dict, payload: dict, binding: str) -> dict:
+    """把一个意图落到指定下游目标上;发布用,和默认目标不是同一台机器。"""
+    return await _apply_effects_impl(
+        intent,
+        payload,
+        f"{DBOS.workflow_id}:effects",
+        incident_id=DBOS.workflow_id,
+        binding=binding,
     )
 
 
@@ -711,7 +731,9 @@ async def _already_commented(tenant: str, incident_id: str) -> bool:
     return False
 
 
-async def _reply_on_topic_impl(payload: dict, report: dict) -> dict:
+async def _reply_on_topic_impl(
+    payload: dict, report: dict, binding: str = "github"
+) -> dict:
     repo = payload.get("repo_full_name") or ""
     number = payload.get("issue_number")
     if not repo or number is None:
@@ -737,15 +759,19 @@ async def _reply_on_topic_impl(payload: dict, report: dict) -> dict:
         "rationale": "有人点了名,平台做了事,要在原处说清楚结果;这句回话本身也是一次可撤销的变更。",
     }
     applied = await _apply_effects_impl(
-        intent, payload, f"{DBOS.workflow_id}:reply", incident_id=DBOS.workflow_id
+        intent,
+        payload,
+        f"{DBOS.workflow_id}:reply",
+        incident_id=DBOS.workflow_id,
+        binding=binding,
     )
     verdicts = [item.get("verdict") for item in applied.get("applied") or []]
     return {"posted": "kept" in verdicts, "verdicts": verdicts}
 
 
 @DBOS.step()
-async def reply_on_topic_step(payload: dict, report: dict) -> dict:
-    return await _reply_on_topic_impl(payload, report)
+async def reply_on_topic_step(payload: dict, report: dict, binding: str = "github") -> dict:
+    return await _reply_on_topic_impl(payload, report, binding)
 
 
 async def _run_agent_impl(payload: dict) -> dict:

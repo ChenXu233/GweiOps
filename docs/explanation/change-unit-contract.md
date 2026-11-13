@@ -202,6 +202,7 @@ GitHub 把 PR 的评论也当作 `issue_comment` 发出来——在"评论"这�
 
 - 第一个真实单元已跑通:在 GitHub 上发一条评论 → 回读验证 → 删除撤销 → 再验证为空。能力 `comment.create`,提供者是 [GitHub App 适配器](../../plugins/builtin/adapters/github-app/plugin.yaml)。
 - 第二个样例:[docker-compose 动作插件](../../plugins/builtin/actions/docker-compose/plugin.yaml)。能力 `compose.scale`,对称撤销,窗口 `unbounded`;真 docker 往返已验证——`test_real_compose_scale_roundtrip` 在守护进程可用时跑完整一圈(扩容 → 读窗口 → 验证 → 缩回),不可用时跳过。
+- 发布也是同一个插件里的效果:`compose.release` 把服务切到指定镜像,句柄记下切换前的镜像,撤销就是部署回去,窗口 `unbounded`。触发在 [release_workflow](../../engine/workflows/release.py):PR 合并是人的审核,平台只接合并事件,发布参数(`RELEASE_PROJECT_DIR` / `RELEASE_SERVICE` / `RELEASE_IMAGE_TEMPLATE`)缺一就不发。真 docker 往返见 `test_real_compose_release_roundtrip`,不可用时跳过。
 - 推进器:[engine/change_unit](../../engine/change_unit/runner.py) 做预读窗口 → 查履历 → 判定路径 → 执行 → 后读 → 验证 → 保持或回滚。
 - 账本有两个后端,同一套异步接口:`db`(默认,业务库 `change_events` 表,按租户可查、并发追加不丢行)与 `file`(单文件 JSONL,只配演示与离线调试)。选哪个由 `CHANGE_LEDGER_BACKEND` 决定。
 - `binding` 已进入单元与账本,并由推进器强校验。解析层已实现:`registry.resolve(capability, tenant=, binding=)` 按 (租户, 目标) 精确匹配,选不到直接抛,不回退。

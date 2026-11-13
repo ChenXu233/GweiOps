@@ -3,9 +3,10 @@ version: 0.1.0
 type: action
 description: 用 docker compose 执行可撤销的服务变更,是变更单元契约的第一个下游样例
 class_name: DockerComposeAction
-capabilities: [compose.scale]
+capabilities: [compose.scale, compose.release]
 tasks:
   compose.scale: scale
+  compose.release: release
 
 # 变更单元声明:核心目前只忽略这一段,由插件自己读取并对外提供。
 effects:
@@ -16,3 +17,12 @@ effects:
     window: { read: project_present }
     verify:
       - { query: running_replicas, expect: ">= {replicas}", for: 10s }
+  # 发布 = 把服务切到指定镜像。compose 文件用 ${GWEI_RELEASE_IMAGE} 取镜像;
+  # 撤销是重新部署切换前那个镜像,句柄里带着它,所以窗口是 unbounded。
+  compose.release:
+    label: 把 compose 服务切到指定镜像(发布)
+    execute: { task: release, args: [project_dir, service, image] }
+    undo: { task: undo_release, kind: symmetric }
+    window: { read: project_present }
+    verify:
+      - { query: running_image, expect: "matches target_image", for: 10s }

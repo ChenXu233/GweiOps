@@ -4,6 +4,7 @@
 from typing import Any, Dict
 
 from engine.change_unit import Effect, EffectNotApplied, Window
+from engine.ingest.events import EventError, header_value
 from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 from .config import GitHubAppConfig
 from .client import GitHubAppClient
@@ -50,6 +51,8 @@ class GitHubAppAdapter(PluginBase):
         # 变更单元:这个适配器服务的目标与租户。GitHub 侧的目标是"这个适配器所连的 GitHub"。
         self.binding = "github"
         self.tenant = ""
+        # 来源名:核心按它把 /webhook/<source> 的投递交给这个适配器。
+        self.source = "github"
 
     def info(self) -> PluginInfo:
         return PluginInfo(
@@ -94,6 +97,31 @@ class GitHubAppAdapter(PluginBase):
         except Exception:  # noqa: BLE001 - 还是没配好就照常报错,别在这里炸
             return False
         return self.client is not None
+
+    # -- Webhook:验签与归一化 --------------------------------------
+    #
+    # 核心只问三件事:配没配、签名对不对、这条投递归一化后是什么。
+    # GitHub 的字段名与事件名都留在这一层,不往工作流里漏。
+
+    def webhook_configured(self) -> bool:
+        return bool(self.config and self.config.webhook_secret and self.webhook_handler)
+
+    def verify_webhook(self, headers: Dict[str, Any], body: bytes) -> bool:
+        if not self.webhook_configured():
+            return False
+        signature = header_value(headers, "X-Hub-Signature-256")
+        return bool(self.webhook_handler.verify_signature(body, signature))
+
+    def parse_webhook(self, headers: Dict[str, Any], body: bytes) -> Dict[str, Any] | None:
+        if self.webhook_handler is None:
+            return None
+        parsed = self.webhook_handler.parse_event(headers, body)
+        if parsed is None:
+            return None
+        try:
+            return self.webhook_handler.normalize_event(parsed)
+        except EventError:
+            return None
 
     async def on_shutdown(self):
         """关闭时释放资源。"""
