@@ -28,6 +28,16 @@
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 - PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到那个分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
 
+## MCP
+
+别人的 agent(Claude Code、Cursor、dsh)用 MCP 说话;这台机器用出口改世界。两者要的是同一件事,所以 `/mcp` 不是第二套接口,是出口的另一种传输:
+
+- `tools/list` 直接来自 `tool_specs(registry)` —— 插件声明过的效果就是工具,名字以 `.read` 结尾的能力是只读工具。没有第二份清单要维护。
+- `tools/call` 走 `run_tool`,和沙箱里的 agent 完全一条路:读窗口、判定、执行、验证、记账。所以从 MCP 点一下,和从出口点一下,账本里长得一模一样。
+- 身份同一个:`X-Gwei-Token`。令牌的租户盖过工具参数里的 `tenant`,只读令牌能调只读工具、调不动效果。
+- 一次调用可以带 `_summary` / `_incident_id` / `_topic` / `_binding` 这几个保留参数,它们只影响这一行账怎么写,不传给下游。
+
+接入方式:URL 填 `https://<平台>/mcp`,请求头带 `X-Gwei-Token`。平台自己的只读口(账本、事故、话题)由内置插件 `platform-mcp` 声明,装上就出现在工具清单里。
 ## 变更账本
 
 - 后端:`CHANGE_LEDGER_BACKEND`。`db`(默认)写业务库 `change_events` 表,启动时 checkfirst 建表;`file` 写 `CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`)的单文件 JSONL,仅用于演示与离线调试——并发追加与租户隔离都靠不住。
@@ -139,6 +149,8 @@
 | GET | `/api/agent/exits` | 出口清单:沙箱里的 agent 能改什么、每个动作的参数名 |
 | POST | `/api/agent/exits/{name}` | 走一次出口;改世界的调用落成一个变更单元 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
+| POST | `/mcp` | MCP(streamable HTTP):`tools/list` 就是出口清单,`tools/call` 就是走一次出口;需令牌 |
+| GET | `/mcp` | 这个端点是什么、当前有哪些工具 |
 | POST | `/webhook/github` | GitHub Webhook(issue 事件);需 `GITHUB_APP_WEBHOOK_SECRET`,未配置返回 503 |
 | POST | `/webhook/github/comment` | GitHub 评论事件 |
 | POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |

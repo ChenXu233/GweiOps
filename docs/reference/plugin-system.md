@@ -172,6 +172,14 @@ effects:
 
 `execute` 抛什么,决定这次失败怎么记账:认得出没碰到下游(构造请求就失败、下游明确拒绝 4xx)时抛 `engine.change_unit.EffectNotApplied`,单元记 `failed`(可重试);抛别的异常一律记 `unknown`(请求可能已经到了对面,要人去核)。分不清的时候不要猜着抛 `EffectNotApplied` —— 把 `unknown` 说成 `failed`,等于教人放心重试一次可能已经生效的操作。
 
+## 插件就是 MCP 的工具来源
+
+没有单独的 MCP 插件清单:插件声明过的效果自动成为 MCP 工具,名字以 `.read` 结尾的能力自动成为只读工具。核心只做翻译 —— `tool_specs(registry)` 原是给沙箱里的 agent 看的出口清单,`/mcp` 的 `tools/list` 用的是同一份。
+
+想给外面的 agent 加一个工具,加能力,不要加接口:例如内置插件 [`platform-mcp`](../../plugins/builtin/actions/platform-mcp/plugin.yaml) 声明 `changes.read` / `incidents.read` / `topic.read`,装上之后任何 MCP 客户端的工具清单里就多了这三样,查的是本机的账本与事故。
+
+只读能力拿到的是平台按身份定下的租户,不是调用方写在参数里的那个:收不住范围,读口就成了越权口。
+
 ## 运行时接线
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;

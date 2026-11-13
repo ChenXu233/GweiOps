@@ -123,8 +123,11 @@ def make_middleware(tokens: dict[str, Actor]) -> Callable[..., Any]:
         request.state.actor = None
         request.state.identity = None
         path = request.url.path
+        # MCP 是一个端点承载读与写:"这次算不算写"由具体工具决定,
+        # 不能因为它是 POST 就把只读身份挡在门外。
+        is_mcp = path == "/mcp" or path.startswith("/mcp/")
         exempt = (
-            not path.startswith("/api/")
+            not (path.startswith("/api/") or is_mcp)
             or path in EXEMPT_PATHS
             or path.startswith(EXEMPT_PREFIXES)
         )
@@ -155,7 +158,7 @@ def make_middleware(tokens: dict[str, Actor]) -> Callable[..., Any]:
             actor = request.state.actor
             if actor is None:
                 return JSONResponse({"detail": "未登录或令牌无效"}, status_code=401)
-            if request.method not in SAFE_METHODS and not actor.can_write:
+            if not is_mcp and request.method not in SAFE_METHODS and not actor.can_write:
                 return JSONResponse(
                     {"detail": f"这个身份只读,不能 {request.method}"}, status_code=403
                 )

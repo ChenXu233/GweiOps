@@ -1,0 +1,17 @@
+name: platform-mcp
+version: 0.1.0
+type: action
+description: 把平台自己记下的事(账本、事故、话题)做成只读能力,任何 MCP 客户端都能查
+class_name: PlatformMcpAction
+
+# 只读口:能力名以 .read 结尾,不进变更闸门、不落账。
+# 任何支持 MCP 的 agent 接上 /mcp 就能看到这三个工具。
+capabilities:
+  - changes.read
+  - incidents.read
+  - topic.read
+
+tasks:
+  changes.read: read_changes
+  incidents.read: read_incidents
+  topic.read: read_topic
