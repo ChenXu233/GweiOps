@@ -3224,6 +3224,38 @@
         "summary": "Update User"
       }
     },
+    "/mcp": {
+      "get": {
+        "description": "MCP 只有一条 POST 通道;GET 只用来告诉人\"这里是什么\"。",
+        "operationId": "mcp_describe_mcp_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp Describe"
+      },
+      "post": {
+        "description": "单端点:请求是 JSON-RPC,响应也是(通知类消息返回 202)。",
+        "operationId": "mcp_mcp_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp"
+      }
+    },
     "/webhook/alertmanager": {
       "post": {
         "description": "监控信号入口。\n\nAlertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,\n不应该默认敞开。",
