@@ -190,14 +190,17 @@ class GitHubAppAdapter(PluginBase):
         分支名由调用方给(head)。分支不存在就从 base 的头建出来,这样"开 PR"
         是一步到位的效果,而不是让 agent 先建分支再开 PR 两次外呼。
         """
+        # 参数不全的时候什么都没碰过:这种必须记 failed(可重试),不是"不知道动没动"。
+        missing = [name for name in ("repo", "head") if not str(args.get(name) or "").strip()]
+        if missing:
+            raise EffectNotApplied(f"开 PR 缺参数:{'、'.join(missing)}")
+
         repo = args["repo"]
         # 基线不写死成 main:仓库的默认分支是它自己的事,问一句比猜一次便宜。
         base = args.get("base") or await self.client.default_branch(repo)
         if not base:
             raise ValueError(f"取不到 {repo} 的默认分支,开 PR 需要知道基线")
-        head = args.get("head") or ""
-        if not head:
-            raise ValueError("开 PR 需要 head 分支名")
+        head = args["head"]
 
         if await self.client.get_branch_sha(repo, head) is None:
             base_sha = await self.client.get_branch_sha(repo, base)
