@@ -126,6 +126,7 @@ async def run_tool(
     summary: str = "",
     actor: str = "",
     incident_id: str = "",
+    topic: str = "",
     policy: Any = None,
 ) -> ToolResult:
     """走一次出口。改世界的过闸门,只读的直接调。
@@ -161,6 +162,9 @@ async def run_tool(
     }
     if actor:
         intent["by"] = actor
+    if topic:
+        # 记在单元上:下一次同一个话题上的评论,平台据此知道该接着哪个分支改。
+        intent["topic"] = topic
 
     unit = ChangeUnit(
         intent=intent,

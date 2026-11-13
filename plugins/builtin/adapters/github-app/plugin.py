@@ -202,6 +202,15 @@ class GitHubAppAdapter(PluginBase):
             raise ValueError(f"取不到 {repo} 的默认分支,开 PR 需要知道基线")
         head = args["head"]
 
+        # 同一条分支上只该有一个 PR。"接着这个 PR 改"和"再开一个 PR"是两件事:
+        # 分不清就会留下两条并行分支,而人只看得到其中一条。
+        existing = await self.client.get_pull_by_head(repo, head)
+        if existing is not None and existing.get("state") != "open":
+            raise EffectNotApplied(
+                f"分支 {head} 上的 PR #{existing.get('number')} 已经关闭,改动不会被看见;"
+                "换一个分支名重新开"
+            )
+
         if await self.client.get_branch_sha(repo, head) is None:
             base_sha = await self.client.get_branch_sha(repo, base)
             if base_sha is None:
@@ -221,13 +230,17 @@ class GitHubAppAdapter(PluginBase):
                 args.get("message") or args.get("title") or "gwei: 代码改动",
             )
 
-        pull = await self.client.open_pull(
-            repo,
-            head=head,
-            base=base,
-            title=args.get("title") or head,
-            body=args.get("body") or "",
-        )
+        if existing is not None:
+            # 已经有打开的 PR:这次是往它上面追加,不再开第二个
+            pull = existing
+        else:
+            pull = await self.client.open_pull(
+                repo,
+                head=head,
+                base=base,
+                title=args.get("title") or head,
+                body=args.get("body") or "",
+            )
         return {
             "handle": str(pull["number"]),
             "url": pull.get("html_url", ""),

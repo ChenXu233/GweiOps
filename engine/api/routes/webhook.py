@@ -93,9 +93,14 @@ def _extract_payload(raw: dict, issue_info: dict, event_type: str) -> dict | Non
         body = issue.get("body") or ""
         source = "issue"
 
+    # PR 在 GitHub 的 API 里就是一个 issue:评论事件不区分两者。这里把"是不是 PR"
+    # 与"这是哪条线"一起带下去,后面的任务书才说得出"接着哪个分支改"。
+    repo_full_name = f"{issue_info['owner']}/{issue_info['repo']}"
     return {
         "tenant_slug": config.settings.default_tenant_slug,
-        "repo_full_name": f"{issue_info['owner']}/{issue_info['repo']}",
+        "repo_full_name": repo_full_name,
+        "topic": f"{repo_full_name}#{issue_info['issue_number']}",
+        "is_pull": bool(issue.get("pull_request")),
         "repo_github_id": repo_id,
         "issue_github_id": issue_id,
         "issue_number": issue_info["issue_number"],
