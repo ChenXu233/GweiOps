@@ -3231,26 +3231,9 @@
         "summary": "Mcp"
       }
     },
-    "/webhook/github/comment": {
-      "post": {
-        "description": "GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。",
-        "operationId": "github_comment_webhook_webhook_github_comment_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Github Comment Webhook"
-      }
-    },
     "/webhook/{source}": {
       "post": {
-        "description": "任何来源的投递。\n\n核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:\n它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。\n接一个新的告警系统 = 装一个适配器插件,这里不加分支。",
+        "description": "任何来源的投递。\n\n核心这里不认识 GitHub、GitLab、CNB、Alertmanager、Caddy、云雀中的任何一个:\n它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。\n接一个新的来源 = 装一个适配器插件,这里不加分支、不加一家专用的入口。",
         "operationId": "source_webhook_webhook__source__post",
         "parameters": [
           {

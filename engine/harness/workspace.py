@@ -15,6 +15,9 @@
 
 铺进工作区的那份不带 `.git`,并放开到其他用户可写:引擎是 gwei(999),harness 镜像
 里是 node(1000),不放宽就一个文件都改不动。
+
+"代码从哪来"只有一种说法 —— `Source`。适配器负责填它(哪个地址、什么凭证、哪条
+基线),这里不认任何一家的仓库地址,也不认自己身上背着的 `Authorization` 是哪家的。
 """
 
 from __future__ import annotations
@@ -23,8 +26,9 @@ import asyncio
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 # 一次提交能带多少:多到这个数的改动不是"改一下",该拆成几次。
@@ -44,6 +48,23 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 class WorkspaceError(ValueError):
     """工作区没准备好,或者改动读不出来。"""
+
+
+@dataclass(frozen=True)
+class Source:
+    """一份代码的来路:一个能下整棵树的地址、一份凭证、一条基线分支。
+
+    `archive_url` 是个归档端点(tar.gz/zip 都行),不是一个 git 远程:走 HTTP
+    一取就走,不需要容器里有 git 凭据,也不受某些网络里 git 协议连不上的影响。
+    """
+
+    archive_url: str = ""
+    token: str = ""
+    branch: str = ""
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.archive_url)
 
 
 @dataclass(frozen=True)
@@ -95,13 +116,15 @@ async def _git(*args: str, cwd: Path | None = None, timeout_s: int = 300) -> str
 async def download(url: str, token: str, dest: Path, timeout_s: int = 300) -> Path:
     """把仓库快照下载成一个 tar.gz。
 
-    走 API 的 tarball 端点,不走 `git clone`:github.com 在有些网络里连不上
-    (GnuTLS recv error、直接超时),api.github.com 通常还行。这条路本来就要一个
-    令牌,顺带就不用把凭据塞进命令行。
+    走归档端点,不走 `git clone`:地址由适配器给(对 GitHub 是 API 的 tarball,
+    对 CNB 是它的归档下载),这里不认 Accept 里的厂商媒体类型,也不猜令牌属于谁
+    —— 一个 Bearer 头对所有来源都成立,来源自己知道怎么签。
     """
     import httpx
 
-    headers = {"Accept": "application/vnd.github.v3.raw"}
+    if not url:
+        raise WorkspaceError("没有可下载的仓库快照地址")
+    headers: dict[str, str] = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -134,7 +157,25 @@ def extract(archive: Path, dest: Path) -> None:
             if len(parts) < 2 or not parts[1]:
                 continue
             member.name = parts[1]
-            tar.extract(member, dest, filter="data")
+            # filter="data" 在 3.12 才有:拒绝绝对路径、`..`、设备文件与指向树外的链接。
+            # 3.11 上退回同一套判断,不因为本机解释器旧就把快照当可信的。
+            if sys.version_info >= (3, 12):
+                tar.extract(member, dest, filter="data")
+            elif _unsafe(member):
+                raise WorkspaceError(f"快照里有不安全的路径:{member.name}")
+            else:
+                tar.extract(member, dest)
+
+
+def _unsafe(member: Any) -> bool:
+    """这一项解出来会不会跑到 dest 外面,或者解成一个危险的东西。"""
+    path = PurePosixPath(member.name)
+    if path.is_absolute() or ".." in path.parts:
+        return True
+    if member.issym() or member.islnk():
+        target = PurePosixPath(member.linkname)
+        return target.is_absolute() or ".." in target.parts
+    return not (member.isfile() or member.isdir())
 
 
 async def commit_snapshot(repo_dir: Path) -> str:
@@ -200,28 +241,26 @@ def materialize(checkout: Checkout, workspace: Path) -> None:
     open_up(workspace)
 
 
-async def prepare(
-    *, source: dict[str, Any], root: str | Path, incident_id: str
-) -> Checkout:
+async def prepare(*, source: Source, root: str | Path, incident_id: str) -> Checkout:
     """开工前的一步:取一份代码、铺进工作区。
 
-    source 由适配器给(快照地址、令牌、基线分支);平台不认识 GitHub,只认这三个字段。
+    source 由适配器给;这里不认识 GitHub,只认"地址、凭证、基线"三样。
     快照下来先变成一个本地提交,之后"改了什么"就有得比。
     """
+    if not source.configured:
+        raise WorkspaceError("适配器没给出仓库快照地址,工作区里没有代码")
 
     repo_dir = repo_of(root, incident_id)
     archive = repo_dir.parent / f"{safe_id(incident_id)}.tar.gz"
 
-    await download(str(source.get("tarball_url") or ""), str(source.get("token") or ""), archive)
+    await download(source.archive_url, source.token, archive)
     try:
         extract(archive, repo_dir)
     finally:
         archive.unlink(missing_ok=True)
 
     commit = await commit_snapshot(repo_dir)
-    checkout = Checkout(
-        repo_path=repo_dir, branch=str(source.get("branch") or ""), commit=commit
-    )
+    checkout = Checkout(repo_path=repo_dir, branch=source.branch, commit=commit)
     materialize(checkout, workspace_of(root, incident_id))
     return checkout
 
@@ -402,6 +441,7 @@ async def collect(
 
 __all__ = [
     "Checkout",
+    "Source",
     "MAX_FILE_BYTES",
     "MAX_FILES",
     "WorkspaceError",

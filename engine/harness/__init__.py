@@ -24,7 +24,14 @@ from .sandbox import (
     SandboxResult,
     SshSandbox,
 )
-from .workspace import WorkspaceError, collect, prepare, repo_of, workspace_of
+from .workspace import (
+    Source,
+    WorkspaceError,
+    collect,
+    prepare,
+    repo_of,
+    workspace_of,
+)
 
 # 形状写在类型里:写入时 validate_values 会拿模型验一遍,坏值当场 422,不等到起容器才炸。
 # 空串一律允许——"还没填"不是错误,缺什么由 validate_scope 单独报。
@@ -82,6 +89,7 @@ __all__ = [
     "Sandbox",
     "SandboxError",
     "SandboxResult",
+    "Source",
     "SshSandbox",
     "WorkspaceError",
     "build_env",

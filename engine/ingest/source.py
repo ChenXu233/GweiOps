@@ -1,0 +1,85 @@
+# engine/ingest/source.py
+"""来源适配器的契约 —— 核心对一个来源只问这几件事。
+
+一个来源(代码托管、告警系统)由适配器插件提供,核心不认识任何一家的字段名。
+适配器要能被 `POST /webhook/{source}` 接进来、被工作流当成"这条投递来自谁"来用,
+必须给出下面这几样:
+
+| 名字 | 核心拿它做什么 |
+| --- | --- |
+| `source` | `/webhook/<source>` 按它分发;回评按同名 binding 解析效果提供者 |
+| `mentions` | 这个来源上人叫平台用的触发词(CNB 上是 `@CodeBuddy`,不是 `@gwei`) |
+| `webhook_configured()` / `verify_webhook()` / `parse_webhook()` | 验签与归一化 |
+| `workspace_source(repo)` | 把哪份代码、哪条分支放进工作区 |
+
+**不拿某一个适配器兜底**:把 GitHub 的仓库名发给 CNB,要么 404,要么在另一个
+仓库里留下一条评论。所以解析只有一种"找不到"的表达 —— `LookupError`,调用方
+据此如实报错,不猜。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+# 一条评论要平台动起来,得有人用这些词叫它。空元组 = 这个来源不接评论触发。
+DEFAULT_MENTIONS: tuple[str, ...] = ()
+
+
+def source_adapter(source: str) -> Any:
+    """按来源名取适配器:声明了 `source` 且能收 webhook 的那一个。
+
+    这是核心与"有哪些来源"的唯一接触面。注册表没加载、来源没装、或同名来源
+    有多个提供者,一律抛 `LookupError` —— 本函数不返回 None,调用方也不必再
+    判空一次"会不会拿到一个错的默认适配器"。
+    """
+    if not source:
+        raise LookupError("没有来源名就没有适配器")
+    try:
+        from engine.plugin_manager import registry
+
+        adapter = registry.webhook_adapter(source)
+    except LookupError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 注册表没加载:当成"这个来源不可用"
+        raise LookupError(f"插件注册表没起来,取不到 {source} 的适配器:{exc}") from exc
+    if adapter is None:
+        raise LookupError(
+            f"没有为 {source} 配置 webhook 适配器:装上声明 webhook.receive 的插件再来"
+        )
+    return adapter
+
+
+def mentions_of(adapter: Any) -> tuple[str, ...]:
+    """适配器声明的触发词。没声明就是"这个来源不接评论触发",不继承别人的名字。"""
+    raw = getattr(adapter, "mentions", DEFAULT_MENTIONS) or ()
+    return tuple(str(item).lower() for item in raw if str(item).strip())
+
+
+def mentions_prompt(adapter: Any, body: str) -> bool:
+    """这条评论叫到平台了吗。大小写不敏感:人写 `@CodeBuddy` 还是 `@codebuddy` 都算。"""
+    text = (body or "").lower()
+    return any(term in text for term in mentions_of(adapter))
+
+
+async def workspace_source_of(adapter: Any, repo: str) -> Any:
+    """这个来源的"代码从哪来"。
+
+    返回 `engine.harness.workspace.Source`。适配器没实现就是不知道怎么把代码交给
+    这场运行 —— 抛 `LookupError`,工作流据此如实报告"没开工",而不是拿某个默认
+    来源去拉一份不相干的代码。
+    """
+    fn = getattr(adapter, "workspace_source", None)
+    if fn is None:
+        raise LookupError(
+            f"{type(adapter).__name__} 没有实现 workspace_source:这个来源的代码进不了工作区"
+        )
+    return await fn(repo)
+
+
+__all__ = [
+    "DEFAULT_MENTIONS",
+    "mentions_of",
+    "mentions_prompt",
+    "source_adapter",
+    "workspace_source_of",
+]

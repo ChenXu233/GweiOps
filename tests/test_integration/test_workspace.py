@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +18,20 @@ import pytest
 from engine.harness import workspace as ws
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="本机没有 git")
+
+
+@pytest.fixture(autouse=True)
+def unsigned_git(monkeypatch):
+    """开发机上的 commit.gpgsign / 钩子别掺进来。
+
+    这里验的是工作区怎么读写改动,不是谁的签名配置;开着签名又没配密钥时,
+    `git commit` 会直接失败,看起来像功能坏了。
+    """
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "2")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "false")
+    monkeypatch.setenv("GIT_CONFIG_KEY_1", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_1", os.devnull)
 
 
 def _git(*args: str, cwd: Path) -> str:

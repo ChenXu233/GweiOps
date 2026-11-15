@@ -78,35 +78,41 @@ class TestImports:
 # ============================================================================
 
 
+def _webhook_routes() -> dict[str, set[str]]:
+    """路径 → 方法,按 FastAPI 解析之后的样子读。
+
+    `app.routes` 上是没有拼开的路由器(新版本 FastAPI 用 `_IncludedRouter` 占位),
+    直接取 `.path` 只会拿到 AttributeError;`iter_route_contexts` 才是公开的展开方式。
+    """
+    from fastapi.routing import iter_route_contexts
+
+    from engine.api.app import app
+
+    table: dict[str, set[str]] = {}
+    for ctx in iter_route_contexts(app.routes):
+        if ctx.path and ctx.path.startswith("/webhook"):
+            table[ctx.path] = set(ctx.methods or ())
+    return table
+
+
 class TestWebhookRoutes:
     """验证 Webhook 路由是否正确注册。"""
 
     def test_webhook_routes_registered(self):
-        """只有一个按来源分发的入口,外加 GitHub 评论的专用别名。
+        """只有一个按来源分发的入口。
 
-        来源名不进路由表:接一个新来源不该要求核心加一条路由。
+        来源名不进路由表:接一个新来源不该要求核心加一条路由;也不再有
+        GitHub 专用的评论地址。
         """
-        from engine.api.app import app
-
-        routes = [route.path for route in app.routes]
+        routes = _webhook_routes()
 
         assert "/webhook/{source}" in routes, "按来源分发的入口未注册"
-        assert "/webhook/github/comment" in routes, "路由 /webhook/github/comment 未注册"
+        assert "/webhook/github/comment" not in routes, "不该再有一家专用的评论入口"
 
     def test_webhook_routes_methods(self):
         """验证 Webhook 路由支持 POST 方法。"""
-        from engine.api.app import app
-
-        webhook_routes = {}
-        for route in app.routes:
-            if hasattr(route, "path") and route.path.startswith("/webhook"):
-                methods = getattr(route, "methods", set())
-                webhook_routes[route.path] = methods
-
-        assert "POST" in webhook_routes.get("/webhook/{source}", set()), \
+        assert "POST" in _webhook_routes().get("/webhook/{source}", set()), \
             "/webhook/{source} 路由不支持 POST 方法"
-        assert "POST" in webhook_routes.get("/webhook/github/comment", set()), \
-            "/webhook/github/comment 路由不支持 POST 方法"
 
 
 # ============================================================================
@@ -304,43 +310,6 @@ class TestWebhookHandlerLogic:
         assert event["type"] == "issues"
         assert event["action"] == "opened"
 
-    def test_extract_issue_info(self):
-        """验证 Issue 信息提取。"""
-        import json
-        import importlib
-
-        handlers_mod = importlib.import_module("plugins.builtin.adapters.github-app.handlers")
-        WebhookHandler = handlers_mod.WebhookHandler
-
-        config = MagicMock()
-        handler = WebhookHandler(config)
-
-        headers = {"X-GitHub-Event": "issues"}
-        payload = {
-            "action": "opened",
-            "issue": {
-                "number": 42,
-                "title": "Bug Report",
-                "body": "Something is broken",
-            },
-            "repository": {
-                "name": "my-repo",
-                "owner": {"login": "my-org"},
-            },
-            "sender": {"login": "test-user"},
-        }
-        body = json.dumps(payload).encode()
-
-        event = handler.parse_event(headers, body)
-        issue_info = handler.extract_issue_info(event)
-
-        assert issue_info is not None
-        assert issue_info["owner"] == "my-org"
-        assert issue_info["repo"] == "my-repo"
-        assert issue_info["issue_number"] == 42
-        assert issue_info["title"] == "Bug Report"
-
-
 # ============================================================================
 # 额外验证：SensorAgent 分析逻辑
 # ============================================================================
@@ -417,7 +386,9 @@ class TestHealthRoute:
 
     def test_health_route_registered(self):
         """验证 /api/health 路由存在。"""
+        from fastapi.routing import iter_route_contexts
+
         from engine.api.app import app
 
-        routes = [route.path for route in app.routes]
+        routes = {ctx.path for ctx in iter_route_contexts(app.routes)}
         assert "/api/health" in routes, "路由 /api/health 未注册"

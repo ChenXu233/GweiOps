@@ -12,6 +12,11 @@ class CNBSettings(BaseModel):
         description="CNB OpenAPI 地址",
         json_schema_extra={"expose": "always"},
     )
+    web_base_url: str = Field(
+        "https://cnb.cool",
+        description="CNB 网页端点:仓库归档下载走它,和 OpenAPI 不是同一个域名",
+        json_schema_extra={"expose": "always"},
+    )
     webhook_token: str = Field(
         "",
         description="Webhook 共享令牌:CNB 投递时带的密钥,必须一致;不填就拒收投递",
@@ -41,6 +46,10 @@ class CNBConfig:
     @property
     def base_url(self) -> str:
         return str(self._settings.base_url).rstrip("/")
+
+    @property
+    def web_base_url(self) -> str:
+        return str(self._settings.web_base_url).rstrip("/")
 
     @property
     def webhook_token(self) -> str:

@@ -71,7 +71,8 @@ ui:
 - **生命周期**:`launch()` 逐个调用 `on_startup`,失败隔离;`shutdown()` 逆序;`health_check_all()` 汇总。
 - **能力调用**:`registry.run_capability(capability, params)` 选优先级最高的提供者,按 `tasks` 映射任务名;无提供者抛 `LookupError`。
 - **按目标解析**:传 `tenant=` / `binding=` 时改走 `registry.resolve()`,只做精确匹配,不跨目标回退;实例以 `tenant` / `binding` 属性声明自己服务谁,控制面能力用空值解析。诊断用 `registry.capability_bindings(capability)`。
-- **兼容入口**:`engine/shared/runtime.py` 的 `get_adapter()` / `get_sensor()` 先查注册表,注册表未加载时回退直连单例。
+- **按来源取适配器**:`engine/ingest/source.py` 的 `source_adapter(source)` 是核心与"有哪些来源"的唯一接触面;取不到一律抛 `LookupError`,不返回默认实现。`engine/shared/runtime.py` 的 `get_adapter(source)` 只是它的转调。
+- **兼容入口**:`get_sensor()` 先查注册表,注册表未加载时回退直连单例。
 - **Webhook 来源**:`registry.webhook_adapter(source)` 按实例的 `source` 属性选适配器;该实例必须声明 `webhook.receive`。来源重复直接报错。
 
 ## 周期巡检
@@ -172,12 +173,13 @@ Webhook 的字段名、事件名与验签方式都属于来源,不属于核心�
 - 实例属性 `source` 是来源名(`github` / `gitlab` / `cnb`),`binding` 是它的下游目标;
 - 清单声明 `webhook.receive`,注册表按来源找它(`registry.webhook_adapter(source)`);同一来源有两个提供者直接报错,不猜;
 - 适配器实现三个方法:`webhook_configured()`(密钥配没配)、`verify_webhook(headers, body)`(验签)、`parse_webhook(headers, body)`(投递 → 归一化事件);
+- 实例属性 `mentions` 是**这个来源上人叫平台的触发词**:评论里没出现其中任何一个就不入队。`@gwei` 是 GitHub 适配器声明的,CNB 上是 `@CodeBuddy`;空元组 = 这个来源不接评论触发。核心不认识任何一个具体名字;
 - 归一化事件只有一种说法,定义在 [engine/ingest/events.py](../../engine/ingest/events.py):`kind`(issue / comment / merge / ping)、`source`、`repo`、`number`、`merge_sha` 等。核心不认识任何一家的原始字段;
 - 入口只有一个:`POST /webhook/{source}`。新增来源不加路由分支:装上适配器,投递就有地方去;没装则回 503,不回落到"默认适配器"——把 GitLab 的投递交给 GitHub,比拒绝更糟。
 - 适配器声明 `produces`:`event`(默认,产 issue / comment / merge 这类事件)或 `signal`(产信号,直接进事故管线)。产信号的适配器实现 `parse_signals(headers, body) -> list[signal]`,入口按 `ref + occurrence` 逐条去重后入队;一条重复不拖累其余。内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.yaml)就是这一种,接 Caddy、云雀、Grafana 也照这个形状写,核心一行不改。
 - `config_hint` 是适配器告诉人"该去填哪个环境变量"的一个字符串;没配密钥时入口按它回 503,核心不维护来源清单。
 
-当前内置:`github-app`(issues / issue_comment / pull_request)、`gitlab`(合并请求)、`cnb`(PullRequestEvent)。GitLab/CNB 目前只做合并触发;回评与开 MR 需要各自的项目令牌与 API,等真要用时再在适配器里补能力,不先声明一个调不通的效果。
+当前内置:`github-app`(issues / issue_comment / pull_request,`comment.create` + `pr.open`)、`cnb`(议题 / 评论 / 合并请求,`comment.create` + `pr.open`)、`gitlab`(仅合并请求)。GitLab 还没补回评与开 MR 的能力,所以不声明、也不接评论触发 —— 声明了却调不通的效果比不声明更糟。
 
 ## 效果声明
 
@@ -203,7 +205,15 @@ effects:
 
 效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
 
-能拉代码的适配器还可以实现 `workspace_source(repo)`,返回 `{tarball_url, token, branch}`:工作流把一场交给 harness 之前用它取一份代码进工作区。地址要指向能下载整棵树的端点(对 GitHub 是 API 的 tarball),不走 git 协议——有些网络里 `github.com` 连不上,API 还在。它不是能力、不进出口菜单——凭据只在平台这一侧用一次,容器里拿不到。没有这个方法的部署,harness 的工作区里就没有代码。
+适配器还负责"这场运行的代码从哪来",三件事各有各的方法:
+
+| 方法 | 谁在用 | 拿不到时 |
+| --- | --- | --- |
+| `workspace_source(repo) -> harness.workspace.Source` | 交给 harness 之前把代码铺进工作区 | 抛错,这一场如实报告"没开工" |
+| `read_pull(repo, number)` | 话题上已有 PR 时接着改它(要分支与地址) | 抛错,当成"没有 PR" |
+| `mentions` | 评论里算不算叫了平台 | 空 = 不接评论触发 |
+
+`Source` 是 `archive_url` / `token` / `branch` 三样:一个能下整棵树的归档地址(不走 git 协议——有些网络里 `github.com` 连不上,API 还在)、一份只在平台这一侧用一次的凭证、一条基线分支。代码由**这条投递的来源**给:CNB 的议题进来,工作区里就是 CNB 那份仓库,不会拿 GitHub App 去拉一个同名仓库。它不是能力、不进出口菜单,容器永远拿不到凭证。
 
 `execute` 抛什么,决定这次失败怎么记账:认得出没碰到下游(构造请求就失败、下游明确拒绝 4xx)时抛 `engine.change_unit.EffectNotApplied`,单元记 `failed`(可重试);抛别的异常一律记 `unknown`(请求可能已经到了对面,要人去核)。分不清的时候不要猜着抛 `EffectNotApplied` —— 把 `unknown` 说成 `failed`,等于教人放心重试一次可能已经生效的操作。
 

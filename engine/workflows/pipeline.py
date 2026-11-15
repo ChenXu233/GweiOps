@@ -3,13 +3,15 @@
 
 两个入口工作流：
 - issue_triage_workflow:  issues opened/edited → Sensor 感知分析 → 落库 → 回评
-- fix_suggestion_workflow: @gwei 评论 → 落库 → Fixer 补丁建议 → 格式化 → 回评
+- fix_suggestion_workflow: 有人叫平台的评论 → 落库 → Fixer 补丁建议 → 格式化 → 回评
 
 约定：
 - 每个步骤一个 @DBOS.step()，纯逻辑抽成同名 `_impl` 普通函数便于单测；
 - 步骤输入输出必须是 JSON 可序列化 dict；
 - 持久化执行状态由 DBOS 写入 Postgres（dbos schema），业务数据写业务表；
-- 回评失败不使工作流失败（分析已落库，评论可由 GitHub 重投递补偿）。
+- 回评失败不使工作流失败（分析已落库，评论可由来源重投递补偿）。
+- 回哪个来源、拿哪个来源的代码,都由 `payload["source_adapter"]` 决定:同一套
+  工作流服务所有来源,不默认任何一家。
 """
 
 import logging
@@ -28,7 +30,8 @@ from engine.change_unit import ChangeUnit, apply as apply_change_unit, create_le
 from engine.ingest import from_github
 from engine.shared.config import config
 from engine.shared.render import format_suggestion_reply as _format_suggestion_reply
-from engine.shared.runtime import get_adapter, get_sensor
+from engine.ingest.source import source_adapter, workspace_source_of
+from engine.shared.runtime import get_sensor
 
 logger = logging.getLogger(__name__)
 
@@ -171,31 +174,6 @@ async def _generate_patches_impl(payload: dict) -> list[dict]:
         {"title": payload["title"], "body": payload["body"], "file_path": ""},
     )
     return list(result.get("patches", []))
-
-
-async def _post_comment_impl(payload: dict, body: str) -> dict:
-    """通过 GitHub App 在 Issue 上回评。失败只记录，不使工作流失败。"""
-    adapter = get_adapter()
-    if adapter.config is None:
-        await adapter.on_startup()
-    try:
-        await adapter.execute_task(
-            "create_comment",
-            {
-                "repo": payload["repo_full_name"],
-                "issue_number": payload["issue_number"],
-                "body": body,
-            },
-        )
-        return {"posted": True}
-    except Exception as e:
-        logger.error(
-            "Failed to post comment on %s#%s: %s",
-            payload["repo_full_name"],
-            payload["issue_number"],
-            e,
-        )
-        return {"posted": False, "error": str(e)}
 
 
 def signal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -423,11 +401,6 @@ async def generate_patches_step(payload: dict) -> list[dict]:
 
 
 @DBOS.step()
-async def post_comment_step(payload: dict, body: str) -> dict:
-    return await _post_comment_impl(payload, body)
-
-
-@DBOS.step()
 async def apply_hooks_step(point: str, payload: dict) -> dict:
     """Hook 管线以 step 封装获得 checkpoint,返回 {"allowed", "payload"}。"""
     return await hooks.apply(point, payload)
@@ -499,10 +472,7 @@ async def _thread_for(payload: dict) -> dict | None:
     if not payload.get("is_pull") or not repo or number is None:
         return None
     try:
-        adapter = get_adapter()
-        if adapter.config is None:
-            await adapter.on_startup()
-        pull = await adapter.client.get_pull(repo, int(number))
+        pull = await read_pull(payload, repo, int(number))
     except Exception as exc:  # noqa: BLE001 - 问不到就当没有,不猜一个分支
         logger.info("could not read pull %s#%s: %s", repo, number, exc)
         return None
@@ -513,7 +483,7 @@ async def _thread_for(payload: dict) -> dict | None:
         "repo": repo,
         "head": head,
         "pull": str(number),
-        "url": (pull or {}).get("html_url", ""),
+        "url": (pull or {}).get("url", ""),
     }
 
 
@@ -522,6 +492,9 @@ async def _prepare_workspace_impl(payload: dict) -> dict:
 
     凭据在这一步用掉一次,之后容器里就只有文件了。拉不到就如实返回,让工作流
     带着原因收尾——空工作区里跑一个 agent,只会得到一份看着像真的报告。
+
+    代码由**这条投递的来源适配器**给:CNB 的议题进来,工作区里就该是 CNB 那份
+    仓库,而不是拿 GitHub App 去拉一个同名仓库。
     """
     repo = payload.get("repo_full_name") or ""
     if not repo:
@@ -529,10 +502,8 @@ async def _prepare_workspace_impl(payload: dict) -> dict:
 
     from engine.harness import workspace as ws
 
-    adapter = get_adapter()
-    if adapter.config is None:
-        await adapter.on_startup()
-    source = await adapter.workspace_source(repo)
+    adapter = source_adapter(source_of(payload))
+    source = await workspace_source_of(adapter, repo)
     checkout = await ws.prepare(
         source=source,
         root=config.settings.harness_workspace_root,
@@ -799,6 +770,33 @@ def _reply_body(payload: dict, report: dict) -> str:
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# 来源:这条投递来自谁,就由谁来回话、由谁来交代码
+# ---------------------------------------------------------------------------
+
+
+def source_of(payload: dict) -> str:
+    """这条投递的来源。没有来源就没人能认领它 —— 不默认成任何一家。"""
+    source = str(payload.get("source_adapter") or "")
+    if not source:
+        raise LookupError("载荷里没有来源:回评与取代码都得知道这是谁家的仓库")
+    return source
+
+
+def reply_binding(payload: dict) -> str:
+    """回评落到哪个下游目标。每个来源是各是各的账,不能都算到一个目标头上。"""
+    return source_of(payload)
+
+
+async def read_pull(payload: dict, repo: str, number: int) -> dict[str, Any] | None:
+    """问来源"这个编号的合并请求是什么":接着改它,就要知道它的分支与地址。"""
+    adapter = source_adapter(source_of(payload))
+    fn = getattr(adapter, "read_pull", None)
+    if fn is None:
+        raise LookupError(f"{type(adapter).__name__} 读不了合并请求")
+    return await fn(repo, number)
+
+
 async def _already_commented(tenant: str, incident_id: str) -> bool:
     """这一场里 agent 自己回过话了吗。回过就不再补一句——同一个话题上两条机器人。"""
     try:
@@ -817,13 +815,14 @@ async def _already_commented(tenant: str, incident_id: str) -> bool:
 
 
 async def _reply_on_topic_impl(
-    payload: dict, report: dict, binding: str = "github"
+    payload: dict, report: dict, binding: str | None = None
 ) -> dict:
     repo = payload.get("repo_full_name") or ""
     number = payload.get("issue_number")
     if not repo or number is None:
         return {"posted": False, "reason": "没有可回复的话题"}
     tenant = payload.get("tenant_slug", "")
+    binding = binding or reply_binding(payload)
     if await _already_commented(tenant, DBOS.workflow_id):
         return {"posted": False, "reason": "agent 已经回过话"}
 
@@ -855,7 +854,8 @@ async def _reply_on_topic_impl(
 
 
 @DBOS.step()
-async def reply_on_topic_step(payload: dict, report: dict, binding: str = "github") -> dict:
+async def reply_on_topic_step(payload: dict, report: dict, binding: str | None = None) -> dict:
+    """回一句话到原话题。默认落到这条投递的来源上,不默认 GitHub。"""
     return await _reply_on_topic_impl(payload, report, binding)
 
 

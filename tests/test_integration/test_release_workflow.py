@@ -20,6 +20,8 @@ PAYLOAD = {
     "tenant_slug": "default",
     "repo_full_name": "acme/api",
     "issue_number": 42,
+    # 回评落到哪,由这条投递的来源决定:不写就是没有来源,平台不替它猜一家
+    "source_adapter": "github",
     "merge_sha": "0123456789abcdef0123456789abcdef01234567",
     "base_ref": "main",
     "head_ref": "gwei/fix-1",
@@ -225,7 +227,7 @@ class TestPullRequestWebhook:
             captured.append((prefix, workflow.__name__, payload))
             return {"status": "queued"}
 
-        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: Adapter())
+        monkeypatch.setattr(webhook_mod, "source_adapter", lambda source: Adapter())
         monkeypatch.setattr(webhook_mod, "dedup_once", dedup)
         monkeypatch.setattr(webhook_mod, "_enqueue_workflow", enqueue)
 

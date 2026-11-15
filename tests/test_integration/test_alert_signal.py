@@ -145,7 +145,7 @@ def _adapter(token: str):
 def ingress(monkeypatch):
     def bind(token: str = TOKEN):
         adapter = _adapter(token)
-        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: adapter)
+        monkeypatch.setattr(webhook_mod, "source_adapter", lambda source: adapter)
         return adapter
 
     return bind
@@ -170,7 +170,10 @@ def test_ignores_a_payload_without_firing_alerts(ingress):
 
 def test_unknown_source_is_refused(monkeypatch):
     """没装适配器就是 503:不猜一个"默认来源",那比拒绝更糟。"""
-    monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: None)
+    def nobody(source):
+        raise LookupError(f"没有为 {source} 配置 webhook 适配器")
+
+    monkeypatch.setattr(webhook_mod, "source_adapter", nobody)
     resp = _post({"alerts": []}, path="/webhook/nobody")
     assert resp.status_code == 503
     assert "nobody" in resp.json()["detail"]
@@ -210,7 +213,7 @@ def test_a_new_source_needs_no_core_change(monkeypatch):
     async def first_time(key, ttl):
         return True
 
-    monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: CaddyAdapter())
+    monkeypatch.setattr(webhook_mod, "source_adapter", lambda source: CaddyAdapter())
     # 入队的规矩在 workflows/queue.py:DBOS 在那一边,不在路由里
     monkeypatch.setattr(queue_mod, "DBOS", _FakeDBOS(fake_enqueue))
     monkeypatch.setattr(webhook_mod, "dedup_once", first_time)
