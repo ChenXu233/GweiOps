@@ -115,6 +115,7 @@ tasks:
 
 - **同一条注册路径**:发现流程见到 `endpoint` 就建代理,不走 `import`。之后的事件、能力解析、Hook、周期与进程内插件一字不差。
 - **wire 只承载调用**:`proto/plugin.proto` 的 `PluginService` 覆盖 Startup / Shutdown / HealthCheck / RegisterScope / GetScopeConfig / HandleEvent / ExecuteTask / HandleHook。效果不开新 rpc:execute / undo / window / verify 都是"任务名 + JSON 参数"。
+- **连接方向是核心 → 插件**,只有这一面。插件进程监听端口,核心按清单的 `endpoint` 连过去;没有"插件连回控制面注册"的反向面——插件是什么由清单声明,核心不需要在运行时被通知一遍。
 - **载荷是 JSON**,`bytes` 字段里放 UTF-8 的 JSON;返回值同样。
 - **失败隔离**:连不上、超时、远端抛错、远端返回非 JSON,一律在代理里翻成 `GrpcPluginError`——"这个插件这一次没成"。grpc 的异常类型不泄漏给工作流。
 - **超时**:`PLUGINS_GRPC_TIMEOUT_S`(默认 10 秒)统一收口;`health_check` 与 `on_shutdown` 用 2 秒,那是探活与收尾,不该跟着业务超时走。
