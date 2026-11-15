@@ -26,8 +26,9 @@ import asyncio
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 # 一次提交能带多少:多到这个数的改动不是"改一下",该拆成几次。
@@ -156,7 +157,25 @@ def extract(archive: Path, dest: Path) -> None:
             if len(parts) < 2 or not parts[1]:
                 continue
             member.name = parts[1]
-            tar.extract(member, dest, filter="data")
+            # filter="data" 在 3.12 才有:拒绝绝对路径、`..`、设备文件与指向树外的链接。
+            # 3.11 上退回同一套判断,不因为本机解释器旧就把快照当可信的。
+            if sys.version_info >= (3, 12):
+                tar.extract(member, dest, filter="data")
+            elif _unsafe(member):
+                raise WorkspaceError(f"快照里有不安全的路径:{member.name}")
+            else:
+                tar.extract(member, dest)
+
+
+def _unsafe(member: Any) -> bool:
+    """这一项解出来会不会跑到 dest 外面,或者解成一个危险的东西。"""
+    path = PurePosixPath(member.name)
+    if path.is_absolute() or ".." in path.parts:
+        return True
+    if member.issym() or member.islnk():
+        target = PurePosixPath(member.linkname)
+        return target.is_absolute() or ".." in target.parts
+    return not (member.isfile() or member.isdir())
 
 
 async def commit_snapshot(repo_dir: Path) -> str:

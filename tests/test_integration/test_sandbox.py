@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -33,6 +34,16 @@ from engine.harness.sandbox import (
     SandboxResult,
     SshSandbox,
 )
+
+
+@pytest.fixture(autouse=True)
+def unsigned_git(monkeypatch):
+    """用例会在临时仓库里 `git commit`;开发机开着签名又没配密钥时会失败。"""
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "2")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "commit.gpgsign")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "false")
+    monkeypatch.setenv("GIT_CONFIG_KEY_1", "core.hooksPath")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_1", os.devnull)
 
 
 def _py(script_text: str) -> str:
