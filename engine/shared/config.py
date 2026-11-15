@@ -432,9 +432,22 @@ class Settings(BaseSettings):
     api_tokens: str = ""
 
     # ---- Harness ----
-    # 在工作区里跑一条命令,把一次事故交给外部 agent;{workspace} 会被替换成真实路径。
-    # 边界由这条命令决定(docker run / ssh ...),平台不会替你在宿主机上直接跑。留空 = 不用。
+    # 一条命令,把一次事故交给外部 agent;{workspace} 会被替换成沙箱里这一场的目录。
+    # 留空 = 不用外部 harness,回落到进程内的 operator。
     harness_command: str = ""
+    # 它在哪跑:local(默认,就在本机)| cnb | ssh。换地方不改上面的命令。
+    sandbox: str = "local"
+    sandbox_cnb_token: str = ""  # 空 = 回落到 CNB 适配器那份 CNB_TOKEN
+    sandbox_cnb_repo: str = ""  # 承载这一场的仓库,形如 org/repo
+    sandbox_cnb_branch: str = ""  # 空 = 那个仓库的默认分支
+    sandbox_cnb_image: str = "cnbcool/default-npc:latest"
+    sandbox_cnb_event: str = "api_trigger_harness"
+    sandbox_cnb_base_url: str = "https://api.cnb.cool"
+    sandbox_cnb_poll_s: float = 5.0
+    sandbox_ssh_target: str = ""  # user@host 或 ~/.ssh/config 里的别名
+    sandbox_ssh_key_file: str = ""
+    sandbox_ssh_root: str = "/tmp/gwei"
+    sandbox_ssh_options: str = ""  # 额外 ssh 参数,空格分隔
     harness_timeout_s: int = 1800
     harness_workspace_root: str = "var/incidents"
     harness_token: str = ""  # harness 用的控制台令牌,从 api_tokens 里发一个给它
