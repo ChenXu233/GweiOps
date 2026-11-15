@@ -1,0 +1,44 @@
+# CNB 流水线
+#
+# **主场是 CNB,GitHub 上的 ChenXu233/GweiOps 是镜像。**
+# 往 master 推一次,这条流水线就把 master 与 tag 同步过去;GitHub 那边不要再手工推,
+# 下次同步会把分叉覆盖掉。
+#
+# 同步作业不设"没配凭据就跳过":看起来在同步、其实一直停在某个旧提交,比一条红色的
+# 流水线难发现得多。变量缺失时作业直接失败。
+#
+# 密钥:CNB 没有 from_secret,敏感值放密钥仓库用 imports 注入。
+# 密钥仓库 https://cnb.cool/ChenXu233/secrets 的 github-sync.yml 里是
+# GITHUB_USERNAME / GITHUB_TOKEN,与 oh-my-dsh-pack 用的是同一份。
+# 注意那份文件必须是 YAML(GITHUB_USERNAME: "x");dotenv 的 KEY=VALUE 会被判成非法。
+
+master:
+  push:
+    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/github-sync.yml
+      stages:
+        - name: sync to github (mirror)
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/ChenXu233/GweiOps.git
+            auth_type: https
+            username: "${GITHUB_USERNAME}"
+            password: "${GITHUB_TOKEN}"
+            branch: master
+            # 镜像是单向的:GitHub 上被谁改过,这里一律覆盖成 CNB 的样子
+            force: true
+            push_tags: true
+
+"v*":
+  tag_push:
+    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/github-sync.yml
+      stages:
+        - name: sync tag to github
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/ChenXu233/GweiOps.git
+            auth_type: https
+            username: "${GITHUB_USERNAME}"
+            password: "${GITHUB_TOKEN}"
+            branch: master
+            force: true
+            push_tags: true
