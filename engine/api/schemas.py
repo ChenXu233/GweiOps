@@ -112,6 +112,9 @@ class PluginDTO(BaseModel):
     instances: list[str] = []
     # 为什么是这个状态(在 PLUGINS_ENABLED 里 / 清单 default_enabled: false / 运行期停用)
     reason: str = ""
+    # 注册成功但起不来时的原因(如密钥没配)。空 = 没有已知的启动失败。
+    # "已启用"与"能用"是两件事,两者对不上时页面得说得出为什么。
+    error: str = ""
 
 
 # ---------------------------------------------------------------------------

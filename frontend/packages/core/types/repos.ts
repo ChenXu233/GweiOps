@@ -28,6 +28,8 @@ export interface Plugin {
   enabled: boolean
   /** 引擎给出的状态说明:为什么是现在这个状态 */
   reason: string
+  /** 注册成功但起不来时的原因(密钥没配之类)。空 = 没有已知的启动失败。 */
+  error: string
   /** 活着的实例键。同一清单按租户/目标挂多实例时会有多个。 */
   instances: string[]
   version: string

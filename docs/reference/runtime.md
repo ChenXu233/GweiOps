@@ -1,6 +1,6 @@
 # 运行时参考
 
-> 状态:现行 | 日期:2026-11-02
+> 状态:现行 | 日期:2026-11-16
 > 读者:后端、运维
 > 口径:基于当前代码;阈值与 TTL 为代码常量,改动时同步本文。
 
@@ -163,7 +163,9 @@
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
 | DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键;删的是调用方租户那一份,读的时候落回公共值 |
-| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
+| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `reason`)/ 已启用插件的插槽声明 |
+| POST | `/api/plugins/{name}/enable`、`/disable` | 运行期启停一个插件:导入注册、或摘索引,不用重启 |
+| POST | `/api/plugins/rescan` | 重扫插件目录:新出现的按决定启用,删掉的停用 |
 | GET | `/api/metrics` | 指标快照 |
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |
 | GET | `/api/changes/{id}` | 单个单元的全部事件(执行与撤销) |
@@ -228,4 +230,12 @@
 
 ## 插件
 
-清单、注册表、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
+发现、运行期启停、进程外 gRPC 接入、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
+
+进程外插件的部署面(端口、超时、地址从哪来)在这三处:
+
+| 变量 | 作用 |
+| --- | --- |
+| 清单里的 `endpoint` | 这个插件在 `host:port`;发现流程据此建代理,不导入代码 |
+| `PLUGINS_GRPC_TIMEOUT_S` | 调一个远端插件的超时,默认 10 秒 |
+| `PLUGINS_GRPC` | `name=host:port,...`,给"临时接一个没有清单的插件"用;那种接法没有能力声明 |

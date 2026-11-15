@@ -753,6 +753,11 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
           "instances": {
             "default": [],
             "items": {

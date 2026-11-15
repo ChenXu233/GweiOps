@@ -1,6 +1,6 @@
 # 插件系统 v2 参考
 
-> 状态:现行 | 日期:2026-11-02
+> 状态:现行 | 日期:2026-11-16
 > 读者:插件作者、后端
 > 上游:[平台架构](../explanation/platform-architecture.md)
 
@@ -8,7 +8,7 @@
 
 ## 清单字段
 
-必填字段:name、version、type、description、class_name。
+必填字段:name、version、type、description,以及 `class_name` 与 `endpoint` 中的一个——前者是进程内插件,后者是进程外插件,给两个会被拒(同一份声明不该有两个实现)。
 
 ```yaml
 name: example-agent
@@ -47,7 +47,9 @@ ui:
 
 | 字段 | 语义 |
 | --- | --- |
-| `class_name` | `plugin.py` 中要实例化的类名 |
+| `class_name` | 进程内插件:`plugin.py` 中要实例化的类名 |
+| `endpoint` | 进程外插件:`host:port`;写了它就不导入任何代码,见[进程外插件](#进程外grpc插件) |
+| `binding` / `tenant` | 这个实例服务哪个下游目标 / 哪个租户。进程内插件通常用实例属性声明;进程外插件没有实例属性可读,只能落在这里 |
 | `triggers` | `type: event` 的 `events` 进入事件索引;`type: schedule` 在启动时装进 DBOS 调度器,见[周期巡检](#周期巡检) |
 | `capabilities` | 本插件提供的能力名 |
 | `tasks` | 能力名 → `execute_task` 任务名;缺省为能力名下划线形式 |
@@ -62,18 +64,63 @@ ui:
 ## 注册表
 
 - **发现路径**:`plugins/builtin/{adapters,agents,actions}/<plugin>/plugin.yaml`(两级),以及环境变量 `PLUGINS_EXTRA_DIRS`(冒号分隔)下的 `<pkg>/plugin.yaml`(单级,根会加入 `sys.path`)。
-- **启用**:发现不等于加载。`PLUGINS_ENABLED`(逗号或冒号分隔)给定时按白名单加载;否则用 `PLUGINS_DISABLED` 排除;再退回清单里的 `default_enabled`(缺省 true)。未启用的插件不 import、不注册、不进索引。
+- **发现与启用是两件事**:发现只读清单,记进 `available()`;启用的才 import、注册、进索引。`states()` 因此能列出**未启用**的插件——只列已加载的话,页面上没有地方把它们打开。
 - **当前的接入范围**:默认启用的来源适配器只有 GitHub(issue 与 PR)。GitLab、CNB 与 Alertmanager 随包提供但 `default_enabled: false`,是预留位;要用时打开清单里的开关或加进 `PLUGINS_ENABLED`。哪些插件默认开合以各清单为准,本文不维护第二份名单。
 - **导入**:模块名为 `plugins.builtin.<category>.<dir>.plugin` 或 `<pkg>.plugin`;类名来自 `class_name`。
 - **隔离**:单个插件的清单解析、导入、实例化失败只跳过自身,计 `plugin_discovery_errors_total`;同名插件重复注册直接报错。
 - **多实例**:`register(manifest, instance, key=...)` 支持同一清单挂多个实例(每租户 / 每目标一个),实例键默认取清单名;同名清单内容不一致、实例键重复都直接报错。索引里存的是实例键,不是清单名。
-- **三索引**:事件 → 插件列表;能力 → 提供者(按 priority 排序);Hook 扩展点 → 订阅者(按 priority 排序)。
+- **启停的决定从哪来**:运行期显式决定(控制台写入,落在 `plugin-enablement` scope)> `PLUGINS_ENABLED` 白名单 > `PLUGINS_DISABLED` > 清单 `default_enabled`(缺省 true)。人在页面上点过的开关压过部署时写的那行环境变量——否则"关掉一个插件"会在下次滚动重启后悄悄反弹。白名单里写了没人认领的名字会点名告警,不让它长得像"这个部署确实一个插件都不装"。
+- **注册是原子的**:同名清单冲突、实例键重复、`effects` 里的能力没列进 `capabilities`,全部在任何写入之前判掉。注册失败不留半个痕迹——否则会出现"日志说加载失败,插件其实能用"。
+- **三索引**:事件 → 插件列表;能力 → 提供者(按 priority 排序);Hook 扩展点 → 订阅者(按 priority 排序,索引里存的是订阅声明本身,所以同一插件对同一扩展点写两条订阅时两条各有各的 mode)。
 - **生命周期**:`launch()` 逐个调用 `on_startup`,失败隔离;`shutdown()` 逆序;`health_check_all()` 汇总。
 - **能力调用**:`registry.run_capability(capability, params)` 选优先级最高的提供者,按 `tasks` 映射任务名;无提供者抛 `LookupError`。
 - **按目标解析**:传 `tenant=` / `binding=` 时改走 `registry.resolve()`,只做精确匹配,不跨目标回退;实例以 `tenant` / `binding` 属性声明自己服务谁,控制面能力用空值解析。诊断用 `registry.capability_bindings(capability)`。
 - **按来源取适配器**:`engine/ingest/source.py` 的 `source_adapter(source)` 是核心与"有哪些来源"的唯一接触面;取不到一律抛 `LookupError`,不返回默认实现。`engine/shared/runtime.py` 的 `get_adapter(source)` 只是它的转调。
-- **兼容入口**:`get_sensor()` 先查注册表,注册表未加载时回退直连单例。
+- **没有直连兜底**:`get_sensor()` / `get_fixer()` 只查注册表。取不到分两种——注册表还没跑过发现是"还没查",跑过之后取不到是"这个部署没启用它",两者都抛 `LookupError`,调用方如实报告没做这一步。以前这里有一条直连回退,代价是 `PLUGINS_DISABLED` 对主链路只是装饰。
 - **Webhook 来源**:`registry.webhook_adapter(source)` 按实例的 `source` 属性选适配器;该实例必须声明 `webhook.receive`。来源重复直接报错。
+
+## 运行期启停
+
+发现之后,启停不用重启进程:
+
+| 操作 | 做什么 | 端点 |
+| --- | --- | --- |
+| 打开 | 导入 + 实例化 + 注册 + `on_startup` | `POST /api/plugins/{name}/enable` |
+| 关掉 | `on_shutdown` + 从事件/能力/效果/Hook 四个索引里摘掉 | `POST /api/plugins/{name}/disable` |
+| 重扫目录 | 新出现的按决定启用,磁盘上没了的停用,已加载且没变的不动 | `POST /api/plugins/rescan` |
+
+- 权限是 `plugins.write`;`GET /api/plugins` 与 `plugins.read`。
+- 决定写进 `plugin-enablement` scope(`键=插件名`,`值=on/off`),启动时装回。写库失败只告警:开关已经生效,差别只是活不过重启。
+- 摘索引是四个索引一起摘。留着残影就等于它还在流程里——那样的"已停用"没人敢信。
+- `GET /api/plugins` 会列出**未启用**的插件,`enabled` / `instances` / `reason` 说清它此刻的状态与原因。前端不能用"它出现在列表里"当成"它已启用"。
+- `GET /api/plugins/widgets` 只取已启用插件的卡片:卡片要拿得到数,不该在页面上留一个永远"暂时取不到"的格子。
+
+## 进程外 gRPC 插件
+
+插件跑在自己的进程里(自己的依赖、自己的语言),核心只持有一个代理。**声明仍旧在清单里**:
+
+```yaml
+name: remote-scan
+version: 0.1.0
+type: agent
+description: 进程外扫描插件
+endpoint: 10.0.0.5:50051    # 有它就够了,不写 class_name
+binding: prod               # 实例属性无从读取,服务哪个目标只能声明在这里
+capabilities: [scan.dependencies]
+tasks:
+  scan.dependencies: scan   # 任务名映射照旧由核心解释
+```
+
+- **同一条注册路径**:发现流程见到 `endpoint` 就建代理,不走 `import`。之后的事件、能力解析、Hook、周期与进程内插件一字不差。
+- **wire 只承载调用**:`proto/plugin.proto` 的 `PluginService` 覆盖 Startup / Shutdown / HealthCheck / RegisterScope / GetScopeConfig / HandleEvent / ExecuteTask / HandleHook。效果不开新 rpc:execute / undo / window / verify 都是"任务名 + JSON 参数"。
+- **载荷是 JSON**,`bytes` 字段里放 UTF-8 的 JSON;返回值同样。
+- **失败隔离**:连不上、超时、远端抛错、远端返回非 JSON,一律在代理里翻成 `GrpcPluginError`——"这个插件这一次没成"。grpc 的异常类型不泄漏给工作流。
+- **超时**:`PLUGINS_GRPC_TIMEOUT_S`(默认 10 秒)统一收口;`health_check` 与 `on_shutdown` 用 2 秒,那是探活与收尾,不该跟着业务超时走。
+- **握手不阻塞启动**:`on_startup` 连不上只记日志。远端此刻没起来不等于部署错了,`health_check()` 会让它在页面上显示为不健康。
+- **桩生成**:`python scripts/gen_grpc_stubs.py`,生成物在 `engine/plugin_manager/grpc_proto/`,提交进仓库(运行时不依赖 protoc)。`--check` 用来抓"改了 proto 没重生成"。
+- **写服务端**:用 `engine/plugin_manager/grpc_server.py` 的 `serve(plugin)`,只实现 `execute_task` / `handle_event` / `handle_hook`,协议细节它兜住。
+- **示例**:`deploy/grpc-plugin-demo/`(`server.py` + `plugin.yaml` + 说明),e2e 用例在 `tests/test_integration/test_grpc_plugins.py`。
+- `PLUGINS_GRPC="name=host:port,..."` 是给"临时接一个不在插件目录里的插件"用的兜底:那种接法拿不到清单,也就没有任何能力,只能用来确认对面在不在。
 
 ## 周期巡检
 
@@ -100,7 +147,7 @@ triggers:
 - 不持久化、不重试;需要可靠执行的事件链由 DBOS 工作流负责;
 - 单个订阅者 10 秒超时,超时或异常只影响自身;
 - 指标:`plugin_events_published_total{event}`、`plugin_event_handler_errors_total{plugin,kind}`。
-- 现状:核心与内置插件都不发布事件,也没有内置订阅者。总线作为插件扩展面保留;若长期没有真实使用者,应当删除而不是留着当装饰。
+- 现状:核心与内置插件都不 publish 事件,也没有内置订阅者。总线作为插件扩展面保留;若长期没有真实使用者,应当删除而不是留着当装饰。
 
 ## Hook 管线
 
@@ -112,6 +159,16 @@ triggers:
 - `fail_open`:handler 异常跳过,管线继续;`fail_closed`:异常按 veto 处理;
 - veto 审计:`plugin_hook_veto_total{plugin,point}` + WARNING 日志(载荷摘要);
 - 默认 handler 名为 `handle_hook`,基类提供恒等实现。
+
+当前调用点与返回值的使用方式:
+
+| 扩展点 | 在哪 | 返回值怎么用 |
+| --- | --- | --- |
+| `comment.posting` | 应用效果前 | transform 改评论正文;veto 让这个候选记 `vetoed` |
+| `patch.generated` | 补丁生成后 | transform 换掉补丁列表 |
+| `issue.triaged` | triage 落库后、提议意图前 | transform 换掉 `analysis`;veto 让这一场不再提议 |
+
+**调用方必须真的用返回的 payload**。拿到 `hooked` 就丢掉、继续用原始入参,等于订阅者改了也白改——那条通道就是装饰。
 
 红线:租户隔离、认证、配额执行、DBOS 持久化语义不设 Hook 点。
 
@@ -179,7 +236,7 @@ Webhook 的字段名、事件名与验签方式都属于来源,不属于核心�
 - 适配器声明 `produces`:`event`(默认,产 issue / comment / merge 这类事件)或 `signal`(产信号,直接进事故管线)。产信号的适配器实现 `parse_signals(headers, body) -> list[signal]`,入口按 `ref + occurrence` 逐条去重后入队;一条重复不拖累其余。内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.yaml)就是这一种,接 Caddy、云雀、Grafana 也照这个形状写,核心一行不改。
 - `config_hint` 是适配器告诉人"该去填哪个环境变量"的一个字符串;没配密钥时入口按它回 503,核心不维护来源清单。
 
-当前内置:`github-app`(issues / issue_comment / pull_request,`comment.create` + `pr.open`)、`cnb`(议题 / 评论 / 合并请求,`comment.create` + `pr.open`)、`gitlab`(仅合并请求)。GitLab 还没补回评与开 MR 的能力,所以不声明、也不接评论触发 —— 声明了却调不通的效果比不声明更糟。
+当前内置:`github-app`(issues / issue_comment / pull_request,`comment.create` + `pr.open`)、`cnb`(议题 / 评论 / 合并请求,`comment.create` + `pr.open`)、`gitlab`(仅合并请求)。GitHub 来源只有一个适配器:声明 `webhook.receive` 却拿不出 `source` 的插件会被 `source_adapter()` 跳过,那种"装上了但接不上"比没有更费解。GitLab 还没补回评与开 MR 的能力,所以不声明、也不接评论触发 —— 声明了却调不通的效果比不声明更糟。
 
 ## 效果声明
 
@@ -227,12 +284,12 @@ effects:
 
 ## 运行时接线
 
-- `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
-- triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
+- `app.py` lifespan:装回持久化的启停决定 → `registry.discover()` → 接进程外插件 → `registry.launch()`,失败隔离;
+- triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;扩展点的 transform 结果真的进后面的步骤;
 - `@gwei` 评论:配了 `HARNESS_COMMAND` 就直接交给 harness(先开事故、再跑、再收口),没配才走补丁建议那条老路;
 - `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账。跑在进程外沙箱里的 harness 不经过这个接缝,它直接调[出口端点](runtime.md);
 - `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为这次查询付钱。模型拿不准就给空 effects —— 空效果是合法结论,编一个动作不是;
-- fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;
+- fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时**不产出补丁**并点名日志(不回退直连——那样关掉 fixer-agent 等于没关);
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不重复执行。
 
 ## 测试
@@ -241,3 +298,5 @@ effects:
 - `tests/test_integration/test_plugin_api.py`:插件 API、widgets、页面资产与路径穿越防护。
 - `tests/test_integration/test_capability_resolution.py`:按 (租户, 目标) 解析、不跨目标回退、同一清单多实例。
 - `tests/test_integration/test_intent_llm.py`:模型提供者的正常路径、各类降级(不编)、菜单剔除、履历进提示词与 evidence。
+- `tests/test_integration/test_plugin_enablement_runtime.py`:运行期启停改真实行为、未启用的插件也列得出来、决定活过重启、白名单写错点名、内置插件声明的能力真的调得通。
+- `tests/test_integration/test_grpc_plugins.py`:真起一个 gRPC 服务端,覆盖能力解析、Hook 往返、超时隔离、连不上时的行为,以及 `deploy/grpc-plugin-demo` 的端到端跑通。

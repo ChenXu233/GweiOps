@@ -85,12 +85,18 @@ class Discovered:
 
 @dataclass
 class PluginState:
-    """一个清单此刻的状态:声明、启用与否、在哪些实例键上活着、为什么是这个状态。"""
+    """一个清单此刻的状态:声明、启用与否、在哪些实例键上活着、为什么是这个状态。
+
+    `enabled` 与"能用"是两件事:注册成功但 on_startup 抛错的插件(比如密钥没配)
+    实例还在,能力却调不通。`error` 就是这一种——页面上说"已启用"而实际不可用,
+    是最难查的一类。
+    """
 
     manifest: Manifest
     enabled: bool
     instances: list[str] = field(default_factory=list)
     reason: str = ""
+    error: str = ""
 
 
 class PluginRegistry:
@@ -106,6 +112,8 @@ class PluginRegistry:
         self._available: dict[str, Discovered] = {}
         # 运行期显式决定(清单名 -> 启停);由控制台写入,启动时从库里装回来
         self._decisions: dict[str, bool] = {}
+        # 清单名 -> on_startup 的失败原因。注册成功不等于能用。
+        self._startup_errors: dict[str, str] = {}
         self._launched = False
 
     # ------------------------------------------------------------------
@@ -396,6 +404,7 @@ class PluginRegistry:
                 self._hook_index.pop(point, None)
 
     def _reset(self) -> None:
+        self._startup_errors.clear()
         self._manifests.clear()
         self._instances.clear()
         self._instance_names.clear()
@@ -437,6 +446,7 @@ class PluginRegistry:
                     enabled=bool(instances),
                     instances=instances,
                     reason=self._decision_reason(manifest),
+                    error=self._startup_errors.get(name, ""),
                 )
             )
         # 直接 register() 进来的(进程外代理、单测手工挂的):没有目录,不能启停,
@@ -451,6 +461,7 @@ class PluginRegistry:
                     enabled=bool(instances),
                     instances=instances,
                     reason="直接注册(不在插件目录里)",
+                    error=self._startup_errors.get(name, ""),
                 )
             )
         return out
@@ -483,10 +494,12 @@ class PluginRegistry:
                     continue
                 try:
                     await instance.on_startup()
+                    self._startup_errors.pop(name, None)
                     logger.info("Plugin %s started (runtime enable)", key)
                 except Exception as e:
                     metrics.increment("plugin_startup_errors_total", {"plugin": key})
                     logger.error("Plugin %s failed to start: %s", key, e)
+                    self._startup_errors[name] = f"启动失败:{e}"
 
     async def disable(self, name: str) -> None:
         """停用一个插件:关掉它的实例,再从索引里摘掉。已经停了也不报错。"""
@@ -497,12 +510,14 @@ class PluginRegistry:
 
     def _disable_now(self, name: str) -> None:
         """同步摘除(磁盘上已经不在了的那种),不留 on_shutdown 的机会。"""
+        self._startup_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
         for key in keys:
             self._drop_instance(key)
         self._manifests.pop(name, None)
 
     async def _disable_now_async(self, name: str) -> None:
+        self._startup_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
         for key in keys:
             instance = self._instances.get(key)
@@ -696,14 +711,21 @@ class PluginRegistry:
     # ------------------------------------------------------------------
 
     async def launch(self) -> None:
-        """逐插件 on_startup,单插件失败被隔离(日志 + metrics),不中断其他插件。"""
+        """逐插件 on_startup,单插件失败被隔离(日志 + metrics),不中断其他插件。
+
+        失败原因记在清单上,`states()` 会带出去:注册成功但起不来的插件,页面上
+        得说得出"它为什么不能用",不能只留一行日志。
+        """
         for key, instance in self._instances.items():
+            name = self._instance_names.get(key, key)
             try:
                 await instance.on_startup()
+                self._startup_errors.pop(name, None)
                 logger.info("Plugin %s started", key)
             except Exception as e:
                 metrics.increment("plugin_startup_errors_total", {"plugin": key})
                 logger.error("Plugin %s failed to start: %s", key, e)
+                self._startup_errors[name] = f"启动失败:{e}"
         self._launched = True
 
     async def shutdown(self) -> None:

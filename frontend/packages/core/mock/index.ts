@@ -32,6 +32,7 @@ function demoPlugin(
     price,
     enabled,
     reason: reason || (enabled ? '清单默认启用' : '清单声明 default_enabled: false'),
+    error: '',
     instances: enabled ? [id] : [],
     version: '0.1.0',
     type: 'agent',

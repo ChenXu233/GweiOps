@@ -82,8 +82,12 @@ function forgot(reason: string): string {
           >
             <AppIcon :name="plugin.enabled ? 'plugins' : 'box'" :size="16" />
           </span>
-          <span class="chip" :class="plugin.enabled ? 'chip-ok' : ''">
-            {{ plugin.enabled ? '已启用' : '未启用' }}
+          <span
+            class="chip"
+            :class="plugin.error ? 'chip-warn' : plugin.enabled ? 'chip-ok' : ''"
+            :title="plugin.error || plugin.reason"
+          >
+            {{ plugin.error ? '起不来' : plugin.enabled ? '已启用' : '未启用' }}
           </span>
         </div>
 
@@ -92,8 +96,11 @@ function forgot(reason: string): string {
           {{ plugin.description }}
         </p>
 
-        <!-- 为什么是现在这个状态:未启用时那句话就是答案,不该让人去翻日志 -->
-        <p v-if="!plugin.enabled" class="mt-2 font-mono text-[11px] text-ink-faint">
+        <!-- 为什么是现在这个状态:那句话就是答案,不该让人去翻日志 -->
+        <p v-if="plugin.error" class="mt-2 font-mono text-[11px] text-coral">
+          {{ plugin.error }}
+        </p>
+        <p v-else-if="!plugin.enabled" class="mt-2 font-mono text-[11px] text-ink-faint">
           {{ forgot(plugin.reason) }}
         </p>
         <p v-else-if="plugin.instances.length" class="mt-2 font-mono text-[11px] text-ink-faint">

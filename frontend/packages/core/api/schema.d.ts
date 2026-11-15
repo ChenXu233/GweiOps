@@ -1303,6 +1303,11 @@ export interface components {
              */
             enabled: boolean;
             /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
              * Instances
              * @default []
              */

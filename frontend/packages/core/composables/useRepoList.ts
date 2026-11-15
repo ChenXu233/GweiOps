@@ -20,6 +20,7 @@ function toPlugin(m: PluginManifestDTO): Plugin {
     price: null,
     enabled: m.enabled === true,
     reason: m.reason ?? '',
+    error: m.error ?? '',
     instances: m.instances ?? [],
     version: m.version,
     type: m.type,

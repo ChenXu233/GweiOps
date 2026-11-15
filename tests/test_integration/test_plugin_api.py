@@ -133,3 +133,72 @@ def test_widget_live_metric_fills_value():
     assert widgets, "observer widget 缺失"
     llm = next(m for m in widgets[0]["metrics"] if m["label"] == "LLM 调用")
     assert llm["value"] >= 1, "widget 应填充收集器实时值"
+
+# ---------------------------------------------------------------------------
+# 发现 ≠ 启用:接口要把这个差别说出来,并且能改
+# ---------------------------------------------------------------------------
+
+
+def test_list_includes_disabled_plugins_with_reason():
+    """未启用的插件也在列表里,`enabled` 说它此刻在不在流程里。"""
+    client = _client()
+    rows = {p["name"]: p for p in client.get("/api/plugins").json()}
+
+    # 清单里 default_enabled: false 的那几个必须出现,且 enabled 为假
+    for name in ("cnb-adapter", "gitlab-adapter", "alertmanager-adapter"):
+        assert name in rows, f"{name} 在清单里,却没在列表里——页面上就没法把它打开"
+        assert rows[name]["enabled"] is False
+        assert "default_enabled" in rows[name]["reason"]
+
+    assert rows["sensor-agent"]["enabled"] is True
+    assert rows["sensor-agent"]["instances"] == ["sensor-agent"]
+
+
+def test_widgets_only_come_from_enabled_plugins():
+    """卡片要拿得到数:未启用插件的卡片不该出现在插槽里。"""
+    from engine.plugin_manager import registry
+
+    client = _client()
+    widgets = client.get(
+        "/api/plugins/widgets", params={"slot": "issue-board.bento"}
+    ).json()
+    assert any(w["plugin"] == "observer-agent" for w in widgets)
+
+    state = _state_of(registry, "observer-agent")
+    if state is None or not state.enabled:
+        return
+
+    import asyncio
+
+    asyncio.run(registry.disable("observer-agent"))
+    try:
+        widgets = client.get(
+            "/api/plugins/widgets", params={"slot": "issue-board.bento"}
+        ).json()
+        assert not any(w["plugin"] == "observer-agent" for w in widgets)
+    finally:
+        asyncio.run(registry.enable("observer-agent"))
+
+
+def _state_of(registry, name):
+    for state in registry.states():
+        if state.manifest.name == name:
+            return state
+    return None
+
+
+def test_ui_asset_requires_plugins_read_when_auth_is_on(monkeypatch):
+    """同一组接口不能有两种权限口径:资产端点也要 require。"""
+    from engine.api import auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_AUTH_STATE", {"required": True})
+    client = _client()
+    resp = client.get("/api/plugins/observer-agent/ui/index.html")
+    assert resp.status_code == 401
+
+
+def test_enable_unknown_plugin_404():
+    client = _client()
+    resp = client.post("/api/plugins/no-such-plugin/enable")
+    assert resp.status_code == 404
+    assert "no-such-plugin" in resp.json()["detail"]

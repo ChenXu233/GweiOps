@@ -41,6 +41,7 @@ def _plugin_dto(state) -> PluginDTO:
         enabled=state.enabled,
         instances=state.instances,
         reason=state.reason,
+        error=state.error,
     )
 
 

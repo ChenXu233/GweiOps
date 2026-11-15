@@ -332,3 +332,82 @@ def test_register_grpc_plugins_only_takes_unlisted_names():
     assert provider._target == "127.0.0.1:9"
     # 临时接入的那个确实在,但没有任何能力
     assert reg.get("adhoc") is not None
+
+
+# ---------------------------------------------------------------------------
+# 端到端:仓库里那个示例插件真跑一遍
+# ---------------------------------------------------------------------------
+
+
+def test_demo_plugin_end_to_end(tmp_path):
+    """起仓库自带的示例服务端,让注册表发现它的清单、调它的能力。
+
+    这条钉的是"整条线通":清单 → 发现 → 代理 → RPC → 业务实现。中间任何一环
+    错位(任务名对不上、编解码不一致、清单没被认成进程外),这里都会红。
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    demo = root / "deploy" / "grpc-plugin-demo"
+
+    port = _free_port()
+    proc = subprocess.Popen(
+        [sys.executable, str(demo / "server.py"), "--port", str(port)],
+        cwd=str(root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _wait_port(port)
+        # 清单拷进临时插件根,endpoint 换成这次起的端口
+        plug = tmp_path / "demo-remote-scan"
+        plug.mkdir()
+        (plug / "plugin.yaml").write_text(
+            (demo / "plugin.yaml")
+            .read_text(encoding="utf-8")
+            .replace("127.0.0.1:50055", f"127.0.0.1:{port}")
+            .replace("default_enabled: false", "default_enabled: true"),
+            encoding="utf-8",
+        )
+        # 待办标记:让扫描有东西可数
+        (tmp_path / "code").mkdir()
+        (tmp_path / "code" / "x.py").write_text("# TODO: 修\nprint(1)\n", encoding="utf-8")
+
+        reg = PluginRegistry()
+        assert reg.discover(builtin_dir=tmp_path) == 1
+        result = asyncio.run(
+            reg.run_capability("scan.todos", {"path": str(tmp_path / "code")})
+        )
+        assert result["status"] == "ok"
+        assert result["count"] == 1
+        assert result["hits"][0]["path"] == "x.py"
+    finally:
+        proc.terminate()
+        try:
+            proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover
+            proc.kill()
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _wait_port(port: int, timeout_s: float = 15.0) -> None:
+    import socket
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise AssertionError(f"示例插件没在 {timeout_s} 秒内起来")

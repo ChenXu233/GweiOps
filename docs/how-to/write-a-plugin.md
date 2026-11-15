@@ -1,6 +1,6 @@
 # 写一个插件
 
-> 状态:现行 | 日期:2026-11-14
+> 状态:现行 | 日期:2026-11-16
 > 读者:插件作者
 > 上游:[插件系统参考](../reference/plugin-system.md)、[变更单元契约](../explanation/change-unit-contract.md)
 
@@ -85,6 +85,48 @@ class MyPlugin(PluginBase):
             return {"title": params.get("title", "")}
         return {"status": "error", "message": f"Unknown task: {task}"}
 ```
+
+### 4.1 想让插件跑在自己的进程里
+
+把 `class_name` 换成 `endpoint`,其余声明一字不改:
+
+```yaml
+name: my-remote-plugin
+version: 1.0.0
+type: agent
+description: 一句话说清它做什么
+endpoint: 10.0.0.5:50051     # 核心按这个地址连它
+binding: prod                # 服务哪个下游目标:进程外插件没有实例属性可读
+capabilities: [scan.dependencies]
+tasks:
+  scan.dependencies: scan
+```
+
+服务端不用自己写协议:
+
+```python
+from engine.plugin_manager.grpc_server import serve
+
+
+class MyPlugin:
+    async def execute_task(self, task: str, params: dict) -> dict:
+        if task == "scan":
+            return {"status": "ok", "count": 0}
+        raise ValueError(f"Unknown task: {task}")
+
+    async def handle_event(self, event: str, data: dict) -> dict:
+        return {"status": "ignored"}
+
+
+serve(MyPlugin(), host="0.0.0.0", port=50051)
+```
+
+`serve` 兜住 JSON 编解码、生命周期、Hook 回调;你只实现业务方法。任务名映射、
+能力名、Hook 订阅仍旧写在清单里——核心解释声明,wire 只承载调用。
+
+失败语义:远端连不上、超时、抛错,都只让**这一次调用**失败(`GrpcPluginError`),
+不拖垮核心,也不影响其他插件。完整字段与超时配置见[插件系统参考](../reference/plugin-system.md#进程外grpc插件),可跑的示例在
+[deploy/grpc-plugin-demo](../../deploy/grpc-plugin-demo/README.md)。
 
 ## 5 接一个来源:Webhook 适配器
 
@@ -313,3 +355,5 @@ python -m pytest tests/ -q
 | 投递回 200 但没有工作流 | 产事件时返回了 `None`、`kind` 不在这四类里,或信号被去重(同一 `ref + occurrence`) |
 | 效果被记成 `blocked` | 能力没人提供、缺 `binding`、或 intent 点了清单里没声明的参数 |
 | 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉那一项 |
+| 插件在列表里但能力调不通 | 看 `enabled` 是不是 false;清单里没写 `tasks` 而实现的任务名又不是"能力名换下划线",会一路 `Unknown task` |
+| 进程外插件 `endpoint` 连不上 | 看核心日志里的 `gRPC plugin <name> 没有握手成功`;超时由 `PLUGINS_GRPC_TIMEOUT_S` 控制 |

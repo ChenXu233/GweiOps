@@ -75,6 +75,7 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['github-app-adapter'],
     reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'sensor-agent',
@@ -92,6 +93,7 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['sensor-agent'],
     reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'fixer-agent',
@@ -104,6 +106,7 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['fixer-agent'],
     reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'intent-builder',
@@ -116,6 +119,7 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['intent-builder'],
     reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'docker-compose',
@@ -128,6 +132,7 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['docker-compose'],
     reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'observer-agent',
@@ -140,5 +145,6 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     enabled: true,
     instances: ['observer-agent'],
     reason: '清单默认启用',
+    error: '',
   },
 ]
