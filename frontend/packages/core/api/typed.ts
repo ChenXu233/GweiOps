@@ -92,6 +92,14 @@ async function send<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 export const api = {
+  delete<P extends RoutesWith<'delete'>>(
+    path: P,
+    options?: CallOptions<P>,
+  ): Promise<ResponseOf<P, 'delete'>> {
+    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    return send<ResponseOf<P, 'delete'>>(url, { method: 'DELETE', signal: options?.signal })
+  },
+
   get<P extends RoutesWith<'get'>>(path: P, options?: CallOptions<P>): Promise<ResponseOf<P, 'get'>> {
     const url = withQuery(fillPath(path, options?.path as never), options?.query)
     return send<ResponseOf<P, 'get'>>(url, { method: 'GET', signal: options?.signal })

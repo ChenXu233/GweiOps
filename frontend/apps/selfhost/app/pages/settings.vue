@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSettings } from '@gwei/core/composables/useSettings'
 import { useTheme } from '@gwei/core/composables/useTheme'
-import { SettingsScopesApi } from '@gwei/core/api/client'
+import { SettingsScopesApi, ReleaseSettingsApi } from '@gwei/core/api/client'
 
 interface ScopeField {
   name: string
@@ -22,6 +22,102 @@ interface Scope {
 
 const { data, loading, error } = useSettings()
 const { mode, set } = useTheme()
+
+// 发布配置:租户默认与仓库行,一层一份 JSON 声明;生效值由引擎四层合并算好。
+// 页面先给 effective 兜底——没配任何东西时展示的也是「现在实际会怎样」,不是空白。
+interface ReleaseRepoRow {
+  set: boolean
+  values: Record<string, string>
+  effective: Record<string, string>
+}
+interface ReleaseConfig {
+  fields: Record<string, string>
+  modes: string[]
+  compose_required: string[]
+  effective: Record<string, string>
+  tenant_default: { set: boolean; values: Record<string, string> }
+  repos: Record<string, ReleaseRepoRow>
+}
+
+const release = ref<ReleaseConfig | null>(null)
+const releaseLoading = ref(false)
+const releaseError = ref('')
+const releaseSaved = ref<string | null>(null)
+const releaseDrafts = reactive<Record<string, Record<string, string>>>({})
+const newRepo = ref('')
+const releaseExpanded = reactive<Record<string, boolean>>({})
+
+function releaseDraft(key: string, field: string): string {
+  return releaseDrafts[key]?.[field] ?? ''
+}
+
+function setReleaseDraft(key: string, field: string, value: string) {
+  if (!releaseDrafts[key]) releaseDrafts[key] = {}
+  releaseDrafts[key][field] = value
+}
+
+function releaseEffective(key: string): Record<string, string> {
+  if (key === '*') return release.value?.effective ?? {}
+  return release.value?.repos[key]?.effective ?? release.value?.effective ?? {}
+}
+
+async function loadRelease() {
+  releaseLoading.value = true
+  releaseError.value = ''
+  try {
+    release.value = (await ReleaseSettingsApi.get()) as unknown as ReleaseConfig
+  } catch (e) {
+    releaseError.value = friendly(e instanceof Error ? e.message : String(e))
+  } finally {
+    releaseLoading.value = false
+  }
+}
+
+async function saveReleaseRow(key: string) {
+  const values = Object.fromEntries(
+    Object.entries(releaseDrafts[key] || {}).filter(([, v]) => v !== ''),
+  )
+  if (!Object.keys(values).length) return
+  releaseError.value = ''
+  try {
+    if (key === '*') await ReleaseSettingsApi.putTenantDefault(values)
+    else await ReleaseSettingsApi.putRepo(key, values)
+    delete releaseDrafts[key]
+    releaseSaved.value = key
+    await loadRelease()
+    setTimeout(() => {
+      if (releaseSaved.value === key) releaseSaved.value = null
+    }, 2000)
+  } catch (e) {
+    releaseError.value = friendly(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function removeReleaseRow(key: string) {
+  releaseError.value = ''
+  try {
+    if (key === '*') await ReleaseSettingsApi.deleteTenantDefault()
+    else await ReleaseSettingsApi.deleteRepo(key)
+    delete releaseDrafts[key]
+    await loadRelease()
+  } catch (e) {
+    releaseError.value = friendly(e instanceof Error ? e.message : String(e))
+  }
+}
+
+function addRepoRow() {
+  const repo = newRepo.value.trim()
+  if (!repo || !repo.includes('/') || repo in (release.value?.repos ?? {})) return
+  newRepo.value = ''
+  releaseExpanded[repo] = true
+  loadRelease().then(() => {
+    if (!release.value?.repos[repo]) {
+      release.value = release.value
+        ? { ...release.value, repos: { ...release.value.repos, [repo]: { set: false, values: {}, effective: release.value.effective } } }
+        : release.value
+    }
+  })
+}
 
 // 接入层配置:字段、必填、回显规则都由引擎声明,这里不预设任何密钥名。
 const scopes = ref<Scope[]>([])
@@ -54,7 +150,10 @@ async function loadScopes() {
 }
 
 // 只在浏览器里拉数据:渲染期不发起同源请求,SSR 不依赖它。
-onMounted(loadScopes)
+onMounted(() => {
+  loadScopes()
+  loadRelease()
+})
 
 // 没有写权限就只读:按钮禁掉,后端也会拦(403)
 const { can } = useAuth()
@@ -202,6 +301,158 @@ const sections = computed(() => {
           </div>
         </section>
       </div>
+
+      <!-- 发布配置:租户默认与仓库行。生效值兜底展示,填了才产生覆盖 -->
+      <section class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="rocket" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">发布配置</h2>
+          <span class="eyebrow ml-auto">RELEASE</span>
+        </div>
+
+        <div class="border-b border-line/60 px-5 py-4">
+          <p class="text-[12px] text-ink-soft">
+            每个仓库按「出厂默认 → 部署环境 → 租户默认 → 仓库行」逐键合并;下面已显示合并后的生效值,
+            留空的项不产生覆盖。发布模式 off = 合并只记报告,compose = 走发布管道。
+          </p>
+        </div>
+
+        <div v-if="releaseLoading && !release" class="px-5 py-6">
+          <div class="h-4 w-48 skeleton" />
+        </div>
+
+        <template v-if="release">
+          <!-- 生效值:现在实际会怎样 -->
+          <div class="border-b border-line/60 px-5 py-4">
+            <div class="flex items-center gap-2">
+              <span class="text-[12.5px] font-medium">当前生效</span>
+              <span class="chip">{{ release.effective.mode }}</span>
+              <span v-if="release.effective.mode === 'compose' && release.compose_required.some((k) => !release?.effective[k])" class="text-[11.5px] text-coral">
+                compose 必填项缺失
+              </span>
+            </div>
+            <div class="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+              <div
+                v-for="(desc, field) in release.fields"
+                :key="field"
+                class="flex items-baseline justify-between gap-3"
+              >
+                <span class="text-[11.5px] text-ink-faint">{{ desc }}</span>
+                <span class="truncate font-mono text-[11.5px]">{{ releaseEffective('*')[field] || '—' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 租户默认 -->
+          <div class="border-b border-line/60 px-5 py-4">
+            <div class="flex items-center gap-2">
+              <button
+                class="text-[12.5px] font-medium hover:underline"
+                @click="releaseExpanded['*'] = !releaseExpanded['*']"
+              >租户默认</button>
+              <span class="chip" :class="release.tenant_default.set ? '' : 'text-ink-faint/70'">
+                {{ release.tenant_default.set ? '已覆盖' : '未配置(走环境/出厂)' }}
+              </span>
+              <button
+                v-if="release.tenant_default.set"
+                class="ml-auto text-[11.5px] text-coral hover:underline"
+                :disabled="!canWriteSettings"
+                @click="removeReleaseRow('*')"
+              >删除此层</button>
+            </div>
+            <div v-if="releaseExpanded['*']" class="mt-3 grid gap-2 sm:grid-cols-2">
+              <label v-for="(desc, field) in release.fields" :key="field" class="block">
+                <span class="mb-1 block text-[11.5px] text-ink-soft">{{ desc }}</span>
+                <input
+                  :value="releaseDraft('*', field)"
+                  @input="setReleaseDraft('*', field, ($event.target as HTMLInputElement).value)"
+                  :placeholder="release.tenant_default.values[field] || releaseEffective('*')[field] || ''"
+                  class="w-full rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] outline-none focus:border-line-strong"
+                  autocomplete="off"
+                  spellcheck="false"
+                >
+              </label>
+              <div class="sm:col-span-2">
+                <button
+                  class="btn-solid h-8 px-3 text-[12px]"
+                  :disabled="!canWriteSettings"
+                  @click="saveReleaseRow('*')"
+                >保存租户默认</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 仓库行 -->
+          <div
+            v-for="(row, repo) in release.repos"
+            :key="repo"
+            class="border-b border-line/60 px-5 py-4 last:border-0"
+          >
+            <div class="flex items-center gap-2">
+              <button
+                class="font-mono text-[12.5px] font-medium hover:underline"
+                @click="releaseExpanded[repo] = !releaseExpanded[repo]"
+              >{{ repo }}</button>
+              <span class="chip">{{ row.effective.mode }}</span>
+              <span class="chip" :class="row.set ? '' : 'text-ink-faint/70'">
+                {{ row.set ? '已覆盖' : '未配置(继承上层)' }}
+              </span>
+              <button
+                v-if="row.set"
+                class="ml-auto text-[11.5px] text-coral hover:underline"
+                :disabled="!canWriteSettings"
+                @click="removeReleaseRow(repo)"
+              >删除此行</button>
+            </div>
+            <div v-if="releaseExpanded[repo]" class="mt-3 grid gap-2 sm:grid-cols-2">
+              <label v-for="(desc, field) in release.fields" :key="field" class="block">
+                <span class="mb-1 block text-[11.5px] text-ink-soft">{{ desc }}</span>
+                <input
+                  :value="releaseDraft(repo, field)"
+                  @input="setReleaseDraft(repo, field, ($event.target as HTMLInputElement).value)"
+                  :placeholder="row.values[field] || row.effective[field] || ''"
+                  class="w-full rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] outline-none focus:border-line-strong"
+                  autocomplete="off"
+                  spellcheck="false"
+                >
+              </label>
+              <div class="sm:col-span-2">
+                <button
+                  class="btn-solid h-8 px-3 text-[12px]"
+                  :disabled="!canWriteSettings"
+                  @click="saveReleaseRow(repo)"
+                >保存 {{ repo }}</button>
+                <span v-if="releaseSaved === repo" class="ml-2 text-[11.5px] text-ink-faint">已保存</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 新增仓库行 -->
+          <div class="flex items-center gap-2 border-b border-line/60 px-5 py-4 last:border-0">
+            <input
+              v-model="newRepo"
+              placeholder="owner/repo — 给单个仓库加覆盖行"
+              class="w-64 rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] outline-none focus:border-line-strong"
+              autocomplete="off"
+              spellcheck="false"
+              @keyup.enter="addRepoRow"
+            >
+            <button
+              class="btn-solid h-8 px-3 text-[12px]"
+              :disabled="!canWriteSettings || !newRepo.includes('/')"
+              @click="addRepoRow"
+            >展开新仓库行</button>
+            <span class="text-[11.5px] text-ink-faint">行保存后才真正落库</span>
+          </div>
+        </template>
+
+        <div
+          v-if="releaseError"
+          class="mx-5 my-3 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral"
+        >
+          {{ releaseError }}
+        </div>
+      </section>
 
       <!-- 接入与密钥:哪些字段、能不能回显,由引擎的声明决定 -->
       <section class="panel overflow-hidden">

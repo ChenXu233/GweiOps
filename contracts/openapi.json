@@ -1212,6 +1212,22 @@
         "title": "PluginWidgetMetricDTO",
         "type": "object"
       },
+      "ReleaseValuesDTO": {
+        "additionalProperties": true,
+        "description": "一行发布配置。字段由 release.py 的模式决定,这里不逐个点名。",
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "title": "ReleaseValuesDTO",
+        "type": "object"
+      },
       "RepoDTO": {
         "properties": {
           "activeAgents": {
@@ -3380,6 +3396,175 @@
           }
         },
         "summary": "Team Settings"
+      }
+    },
+    "/api/settings/release": {
+      "get": {
+        "description": "这个租户的发布配置:生效值在前,每一层自己配了什么在后。",
+        "operationId": "get_release_config_api_settings_release_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Release Config Api Settings Release Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Release Config"
+      }
+    },
+    "/api/settings/release/repos/{repo_full_name}": {
+      "delete": {
+        "operationId": "delete_repo_row_api_settings_release_repos__repo_full_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo_full_name",
+            "required": true,
+            "schema": {
+              "title": "Repo Full Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Repo Row Api Settings Release Repos  Repo Full Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Repo Row"
+      },
+      "put": {
+        "operationId": "put_repo_row_api_settings_release_repos__repo_full_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo_full_name",
+            "required": true,
+            "schema": {
+              "title": "Repo Full Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseValuesDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Repo Row Api Settings Release Repos  Repo Full Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Repo Row"
+      }
+    },
+    "/api/settings/release/tenant-default": {
+      "delete": {
+        "operationId": "delete_tenant_default_api_settings_release_tenant_default_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Tenant Default Api Settings Release Tenant Default Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Tenant Default"
+      },
+      "put": {
+        "operationId": "put_tenant_default_api_settings_release_tenant_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseValuesDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Tenant Default Api Settings Release Tenant Default Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Tenant Default"
       }
     },
     "/api/settings/scopes": {
