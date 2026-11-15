@@ -63,10 +63,10 @@ node_modules/
 .next/
 out/
 .nuxt/
-dist/
 
-# Claude
+# AI agent 工具目录（各自的 agent/skill 配置，不进仓库）
 .claude/
+.omp/
 
 # workflow
 .spec-workflow
