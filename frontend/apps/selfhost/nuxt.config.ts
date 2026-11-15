@@ -4,7 +4,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-07-23',
 
   // 自己的 main.css(设计令牌 + 组件层)替换模块默认注入的那份
-  tailwindcss: { cssPath: '~/assets/css/main.css' },
+  tailwindcss: { cssPath: '~~/assets/css/main.css' },
 
   // 只装拉丁子集(约 24KB/字重),中文继续用系统字体。
   // 之前 Inter / JetBrains Mono 只在字体栈里挂着、机器上并没有,小字一直落在系统默认字体上。

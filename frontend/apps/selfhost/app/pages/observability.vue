@@ -48,7 +48,10 @@ function formatDelta(delta: number): string {
 
 function sortedLabels(row: MetricRow): Array<[string, string]> {
   const out: Array<[string, string]> = []
-  for (const key of Object.keys(row.labels).sort()) out.push([key, row.labels[key]])
+  for (const key of Object.keys(row.labels).sort()) {
+    const value = row.labels[key]
+    if (value !== undefined) out.push([key, value])
+  }
   return out
 }
 </script>

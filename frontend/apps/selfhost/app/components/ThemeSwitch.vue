@@ -11,7 +11,8 @@ const options = [
   { key: 'system' as const, icon: 'system', label: '跟随系统' },
 ]
 
-const current = computed(() => options.find((o) => o.key === mode.value) ?? options[2])
+const SYSTEM = options[2]!
+const current = computed(() => options.find((o) => o.key === mode.value) ?? SYSTEM)
 
 // 收成图标轨时只留一个按钮:点一下切到下一个模式,当前的模式就是图标本身。
 function cycle() {

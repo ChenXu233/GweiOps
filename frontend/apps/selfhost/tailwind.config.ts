@@ -6,13 +6,12 @@ import type { Config } from 'tailwindcss'
  */
 export default <Partial<Config>>{
   darkMode: ['class'],
+  // Nuxt 4 把页面源码收进 app/;路径要从仓库里实际的物理位置写,
+  // 因为 Tailwind 的 content 是相对本文件解析的,不跟着 srcDir 走。
   content: [
     './app.vue',
-    './layouts/**/*.vue',
-    './pages/**/*.vue',
-    './components/**/*.vue',
-    './composables/**/*.vue',
-    '../../packages/core/components/**/*.vue',
+    './app/**/*.{vue,ts}',
+    '../../packages/core/{components,composables}/**/*.{vue,ts}',
   ],
   theme: {
     extend: {
