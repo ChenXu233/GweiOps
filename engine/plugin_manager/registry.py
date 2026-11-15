@@ -459,6 +459,15 @@ class PluginRegistry:
         """发现到的清单,不管启没启用。"""
         return [self._available[name].manifest for name in sorted(self._available)]
 
+    def is_loaded(self) -> bool:
+        """注册表跑过发现没有。
+
+        这个回答决定了"取不到插件"该怎么理解:注册表没跑过(单测直接调、引擎还没起)
+        是"还没查",而跑过之后取不到是"这个部署确实没启用它"。两件事混在一起,
+        开关就会变成装饰——关掉的插件靠一条直连兜底照常干活。
+        """
+        return bool(self._available) or bool(self._manifests)
+
     async def enable(self, name: str) -> None:
         """启用一个已发现的插件:导入、注册、启动。已经在跑就什么都不做。"""
         found = self._available.get(name)

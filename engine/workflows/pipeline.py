@@ -44,8 +44,23 @@ WORKFLOW_QUEUE = "gwei-agents"
 
 
 async def _analyze_via_sensor(payload: dict) -> dict:
-    """调用 Sensor 智能体做感知分析（规则 + LLM）。"""
-    sensor = get_sensor()
+    """调用 Sensor 智能体做感知分析(规则 + LLM)。
+
+    没有提供者时**不假装做了**:返回一份"没做感知"的结论,让下游的回评与账本
+    都说得出来。拿一个临时实例顶上会把 PLUGINS_DISABLED 变成装饰——那个开关
+    的意义是"这一步不要了",不是"换个方式照做"。
+    """
+    try:
+        sensor = get_sensor()
+    except LookupError as e:
+        logger.warning("感知这一步没有提供者:%s", e)
+        return {
+            "status": "unavailable",
+            "labels": [],
+            "reply": f"没有启用感知插件,这一步没有做:{e}",
+            "llm_analysis": "",
+            "llm_tokens": 0,
+        }
     return await sensor.handle_event(
         "issue.created",
         {"issue": {"title": payload["title"], "body": payload["body"]}},
@@ -153,26 +168,23 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
 
 
 async def _generate_patches_impl(payload: dict) -> list[dict]:
-    """经能力通道调用修复智能体;注册表不可用时回退直连(单测与降级路径)。"""
+    """经能力通道生成补丁。没有提供者就是没有补丁,不直连兜底。
+
+    直连兜底是"让单测和老部署不炸"的权宜:代价是 `PLUGINS_DISABLED=fixer-agent`
+    之后引擎照样生成补丁,人以为自己关掉了。这一步的输出会进回评,所以没有
+    提供者时返回空列表 + 一条点名日志,报告里说得清"这次没生成补丁"。
+    """
     try:
-        result = await registry.run_capability("patch.generate", {
-            "title": payload["title"],
-            "body": payload["body"],
-            "file_path": "",
-        })
-        return list(result.get("patches", []))
-    except LookupError:
-        logger.info("No provider for patch.generate; falling back to direct FixerAgent")
-    except Exception as e:
-        logger.warning("Capability patch.generate failed, falling back: %s", e)
-
-    from plugins.builtin.agents.fixer.plugin import FixerAgent
-
-    fixer = FixerAgent()
-    result = await fixer.execute_task(
-        "generate_patches",
-        {"title": payload["title"], "body": payload["body"], "file_path": ""},
-    )
+        result = await registry.run_capability(
+            "patch.generate",
+            {"title": payload["title"], "body": payload["body"], "file_path": ""},
+        )
+    except LookupError as e:
+        logger.warning("没有补丁生成的提供者,这一场不产出补丁:%s", e)
+        return []
+    except Exception as e:  # noqa: BLE001 - 插件自己的失败,不该让工作流记成成功
+        logger.warning("patch.generate 调用失败,这一场不产出补丁:%s", e)
+        return []
     return list(result.get("patches", []))
 
 
@@ -731,6 +743,17 @@ async def issue_triage_workflow(payload: dict) -> dict:
         "issue": {"title": payload["title"], "body": payload["body"]},
         "analysis": analysis,
     })
+    # 扩展点的返回值必须真的用上:以前这里拿到 hooked 就丢掉,intent 用的还是
+    # 原始的 analysis——订阅者改了 payload 也白改,那条通道等于装饰。
+    if hooked["allowed"]:
+        analysis = hooked["payload"].get("analysis", analysis)
+    else:
+        logger.info("issue.triaged 被扩展点否决,这次不做意图提议")
+        return {
+            "record": record,
+            "intent": "",
+            "applied": {"summary": "被扩展点否决", "applied": []},
+        }
     intent = await propose_intent_step(payload, analysis, [])
     applied = await apply_effects_step(intent, payload)
 

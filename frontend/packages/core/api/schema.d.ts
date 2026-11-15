@@ -442,10 +442,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Plugins */
+        /**
+         * List Plugins
+         * @description 发现到的全部清单。未启用的也在里面——否则页面上没有地方把它打开。
+         */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescan Plugins
+         * @description 重扫插件目录:新出现的按决定启用,已经删掉的停用。已在跑且没变的不动。
+         */
+        post: operations["rescan_plugins_api_plugins_rescan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -469,6 +492,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins/{name}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Plugin */
+        post: operations["disable_plugin_api_plugins__name__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/{name}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Plugin
+         * @description 打开一个已发现但没启用的插件。
+         *
+         *     没有清单就 404:目录里根本没有这个东西,给它记一条"已启用"只会让下次启动
+         *     对着一行谁也对不上的配置发呆。
+         */
+        post: operations["enable_plugin_api_plugins__name__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plugins/{name}/ui/{file_path}": {
         parameters: {
             query?: never;
@@ -481,6 +544,7 @@ export interface paths {
          * @description 服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。
          *
          *     安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
+         *     权限与同组其它端点一致,由 `require` 拦——同一组接口不该有两种口径。
          */
         get: operations["plugin_ui_asset_api_plugins__name__ui__file_path__get"];
         put?: never;
@@ -675,26 +739,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/github/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Github Comment Webhook
-         * @description GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。
-         */
-        post: operations["github_comment_webhook_webhook_github_comment_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/webhook/{source}": {
         parameters: {
             query?: never;
@@ -708,9 +752,9 @@ export interface paths {
          * Source Webhook
          * @description 任何来源的投递。
          *
-         *     核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+         *     核心这里不认识 GitHub、GitLab、CNB、Alertmanager、Caddy、云雀中的任何一个:
          *     它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
-         *     接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+         *     接一个新的来源 = 装一个适配器插件,这里不加分支、不加一家专用的入口。
          */
         post: operations["source_webhook_webhook__source__post"];
         delete?: never;
@@ -1238,7 +1282,13 @@ export interface components {
             /** New Password */
             new_password: string;
         };
-        /** PluginDTO */
+        /**
+         * PluginDTO
+         * @description 一个被发现过的插件。**发现 ≠ 启用**:`enabled` 才是它此刻在不在流程里。
+         *
+         *     只列已加载实例的话,未启用的插件在页面上根本不存在,人就没法把它打开——
+         *     所以这里按"发现的清单"枚举,`enabled` 与 `instances` 说清它此刻的状态。
+         */
         PluginDTO: {
             /**
              * Capabilities
@@ -1247,6 +1297,16 @@ export interface components {
             capabilities: string[];
             /** Description */
             description: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Instances
+             * @default []
+             */
+            instances: string[];
             /** Name */
             name: string;
             /**
@@ -1254,6 +1314,11 @@ export interface components {
              * @default []
              */
             pages: components["schemas"]["PluginPageDTO"][];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
             /** Type */
             type: string;
             /** Version */
@@ -1660,6 +1725,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -2371,6 +2440,28 @@ export interface operations {
             };
         };
     };
+    rescan_plugins_api_plugins_rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_widgets_api_plugins_widgets_get: {
         parameters: {
             query?: {
@@ -2389,6 +2480,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginWidgetDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_plugin_api_plugins__name__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_plugin_api_plugins__name__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
                 };
             };
             /** @description Validation Error */
@@ -2840,26 +2993,6 @@ export interface operations {
         };
     };
     mcp_mcp_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    github_comment_webhook_webhook_github_comment_post: {
         parameters: {
             query?: never;
             header?: never;

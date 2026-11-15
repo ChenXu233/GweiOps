@@ -53,14 +53,33 @@ class SensorAgent(PluginBase):
         return {"status": "ignored"}
 
     async def execute_task(self, task: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """执行任务（调度智能体触发）"""
+        """执行任务（调度智能体触发）。
+
+        任务名由清单的 `tasks` 映射给出,这里只认实现里真实存在的四种。
+        """
         if task == "label":
             labels = self.labeler.generate(params.get("title", ""), params.get("body", ""))
             return {"labels": labels}
-        elif task == "check_completeness":
+        if task == "check_completeness":
             report = self.completeness.check(params.get("body", ""))
             return {"is_complete": report.is_complete, "missing": report.missing_fields}
-        elif task == "analyze":
+        if task == "detect_duplicates":
+            # 判重要有对照物。调用方不给就是不查,而不是拿空列表算出"不重复"
+            # ——那个答案看着像结论,其实是没做。
+            existing = params.get("existing_issues") or []
+            if not existing:
+                return {"status": "skipped", "message": "没有可对比的议题,这次没判重"}
+            result = await self.duplicate.detect_async(
+                params.get("title", ""),
+                params.get("body", ""),
+                existing,
+            )
+            return {
+                "is_duplicate": result.is_duplicate,
+                "similar_issue_id": result.similar_issue_id,
+                "score": result.score,
+            }
+        if task == "analyze":
             return await self._analyze_issue_content(
                 params.get("title", ""),
                 params.get("body", ""),

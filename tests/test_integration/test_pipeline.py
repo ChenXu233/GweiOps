@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import engine.workflows.pipeline as pipeline_module
+
 
 # ============================================================================
 # Redis 增益层：降级行为
@@ -271,26 +273,37 @@ class TestPipelineImpls:
         cached.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_generate_patches_impl(self):
+    async def test_generate_patches_goes_through_capability(self):
+        """补丁生成只走能力通道,由清单的任务名映射决定调哪个任务。"""
         from engine.workflows.pipeline import _generate_patches_impl
 
-        with patch("plugins.builtin.agents.fixer.plugin.FixerAgent") as mock_fixer_cls:
-            fixer = mock_fixer_cls.return_value
-            fixer.execute_task = AsyncMock(
-                return_value={
-                    "patches": [
-                        {"type": "HOTFIX", "diff": "d", "risk": "Low", "description": "x"}
-                    ]
-                }
-            )
-
+        run_capability = AsyncMock(
+            return_value={
+                "patches": [{"type": "HOTFIX", "diff": "d", "risk": "Low", "description": "x"}]
+            }
+        )
+        with patch.object(pipeline_module.registry, "run_capability", run_capability):
             patches = await _generate_patches_impl({"title": "T", "body": "B"})
 
-        assert len(patches) == 1
-        assert patches[0]["type"] == "HOTFIX"
-        fixer.execute_task.assert_awaited_once_with(
-            "generate_patches", {"title": "T", "body": "B", "file_path": ""}
+        assert [p["type"] for p in patches] == ["HOTFIX"]
+        run_capability.assert_awaited_once_with(
+            "patch.generate", {"title": "T", "body": "B", "file_path": ""}
         )
+
+    @pytest.mark.asyncio
+    async def test_generate_patches_does_not_fall_back_to_direct_import(self):
+        """没有提供者就是没有补丁:直连兜底会让 PLUGINS_DISABLED 变成装饰。"""
+        from engine.workflows.pipeline import _generate_patches_impl
+
+        with patch.object(
+            pipeline_module.registry,
+            "run_capability",
+            AsyncMock(side_effect=LookupError("No provider for capability: patch.generate")),
+        ), patch("plugins.builtin.agents.fixer.plugin.FixerAgent") as direct:
+            patches = await _generate_patches_impl({"title": "T", "body": "B"})
+
+        assert patches == []
+        direct.assert_not_called()
 
 # ============================================================================
 # 工作流符号与导出（无需启动 DBOS）
