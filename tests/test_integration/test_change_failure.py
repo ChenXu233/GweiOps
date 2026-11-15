@@ -92,7 +92,12 @@ class FailingProvider:
 def _unit(idempotency_key: str = "") -> ChangeUnit:
     return ChangeUnit(
         intent={"summary": "把 web 扩到 2 副本"},
-        effect=Effect(task="scale", args={"service": "web"}, undo_task="undo_scale"),
+        effect=Effect(
+            task="scale",
+            args={"service": "web"},
+            undo_task="undo_scale",
+            capability="compose.scale",
+        ),
         binding=BINDING,
         idempotency_key=idempotency_key,
     )
@@ -110,7 +115,7 @@ def _latest(ledger: JsonlLedger) -> list[dict]:
 def test_pre_window_error_blocks_without_touching_the_world(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(window_pre=True)
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
 
     assert unit.verdict == VERDICT_BLOCKED
     assert "下游报错" in unit.reason
@@ -127,7 +132,7 @@ def test_execute_error_is_unknown_and_leaves_a_row(tmp_path):
     """说不清的报错一律 unknown:请求可能已经到了对面,得人去核。"""
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(execute=True)
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
 
     assert unit.verdict == VERDICT_UNKNOWN
     assert "不知道动没动" in unit.reason
@@ -139,8 +144,8 @@ def test_execute_error_is_not_retried_into_a_second_effect(tmp_path):
     """DBOS 只保证至少一次。账本里有了这一行,重跑就不能再把效果做一遍。"""
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(execute=True)
-    asyncio.run(apply(_unit(idempotency_key="dup-1"), provider, ledger, at=NOON))
-    again = asyncio.run(apply(_unit(idempotency_key="dup-1"), provider, ledger, at=NOON))
+    asyncio.run(apply(_unit(idempotency_key="dup-1"), provider, ledger))
+    again = asyncio.run(apply(_unit(idempotency_key="dup-1"), provider, ledger))
 
     assert provider.executed == 1
     assert again.verdict == VERDICT_UNKNOWN
@@ -151,7 +156,7 @@ def test_provider_saying_not_applied_is_failed(tmp_path):
     """提供者认得出没碰到下游:记 failed,可重试,不占待审清单。"""
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(not_applied=True)
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
 
     assert unit.verdict == VERDICT_FAILED
     assert "确定没动" in unit.reason
@@ -164,7 +169,7 @@ def test_provider_saying_not_applied_is_failed(tmp_path):
 def test_non_object_result_cannot_yield_a_handle(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     unit = asyncio.run(
-        apply(_unit(), FailingProvider(result="ok"), ledger, at=NOON)
+        apply(_unit(), FailingProvider(result="ok"), ledger)
     )
     assert unit.verdict == VERDICT_IRREVERSIBLE
     assert "不是对象" in unit.reason
@@ -173,7 +178,7 @@ def test_non_object_result_cannot_yield_a_handle(tmp_path):
 def test_post_window_error_keeps_the_handle_on_record(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     unit = asyncio.run(
-        apply(_unit(), FailingProvider(window_post=True), ledger, at=NOON)
+        apply(_unit(), FailingProvider(window_post=True), ledger)
     )
     assert unit.verdict == VERDICT_IRREVERSIBLE
     assert unit.handle == "h-1"
@@ -188,7 +193,7 @@ def test_post_window_error_keeps_the_handle_on_record(tmp_path):
 def test_verify_error_rolls_back_instead_of_claiming_success(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(verify=True)
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
 
     assert unit.verdict == VERDICT_ROLLED_BACK
     assert provider.undone == 1
@@ -198,7 +203,7 @@ def test_verify_error_rolls_back_instead_of_claiming_success(tmp_path):
 def test_undo_error_is_reported_not_swallowed(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
     provider = FailingProvider(undo=True, verify_ok=False)
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
 
     assert unit.verdict == VERDICT_IRREVERSIBLE
     assert "撤销也失败" in unit.reason
@@ -208,7 +213,7 @@ def test_undo_error_is_reported_not_swallowed(tmp_path):
 
 def test_manual_rollback_failure_does_not_pretend_to_have_rolled_back(tmp_path):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
-    kept = asyncio.run(apply(_unit(), FailingProvider(), ledger, at=NOON))
+    kept = asyncio.run(apply(_unit(), FailingProvider(), ledger))
     assert kept.verdict == VERDICT_KEPT
 
     broken = FailingProvider(undo=True)
@@ -235,5 +240,5 @@ def test_manual_rollback_failure_does_not_pretend_to_have_rolled_back(tmp_path):
 )
 def test_every_exit_writes_exactly_one_row(tmp_path, fault):
     ledger = JsonlLedger(tmp_path / "ledger.jsonl")
-    asyncio.run(apply(_unit(), FailingProvider(**fault), ledger, at=NOON))
+    asyncio.run(apply(_unit(), FailingProvider(**fault), ledger))
     assert len(_latest(ledger)) == 1

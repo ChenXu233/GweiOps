@@ -9,7 +9,6 @@ provider 声明自己服务的 binding,与单元不一致时拒绝执行——�
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from .errors import EffectNotApplied
@@ -26,12 +25,9 @@ from .model import (
     VERDICT_UNKNOWN,
     VERDICT_VETOED,
 )
-from .policy import EXECUTE, DEFAULT_HUMAN_RESPONSE_S, Policy
+from .policy import EXECUTE, Policy
 from .record import track_record
 from .undo import undo_state
-
-# 旧的模块级常量,保留给已有调用方;真正的口径在 Policy.human_response_s。
-HUMAN_RESPONSE_S = DEFAULT_HUMAN_RESPONSE_S
 
 
 class EffectProvider(Protocol):
@@ -153,7 +149,6 @@ async def _run(
     ledger: Ledger | None,
     *,
     policy: Policy,
-    now: datetime,
     authorized_by: str,
 ) -> ChangeUnit:
     effect = unit.effect
@@ -170,9 +165,8 @@ async def _run(
     unit.window = pre
 
     if authorized_by:
-        # 人此刻在场的,窗口不需要盖过"睡一觉"的时间。
+        # 人此刻在场:路径判定不再是"要不要等人",它已经有人了。
         _merge(unit, {"authorized_by": authorized_by})
-        response_s = 0
     else:
         # 判定要用到"这类变更以前怎么样",所以先查一次履历;没有账本就是没有证据。
         record = None
@@ -183,14 +177,13 @@ async def _run(
                 binding=unit.binding,
                 capability=effect.capability,
             )
-        decision = policy.decide(unit, pre, now, record=record)
+        decision = policy.decide(unit, pre, record=record)
         if decision.action != EXECUTE:
             unit.verdict = VERDICT_BLOCKED
             unit.reason = decision.reason
             await _record(ledger, unit)
             return unit
         _merge(unit, {"gate": decision.reason})
-        response_s = decision.response_s
 
     try:
         result = await provider.execute(effect.task, effect.args)
@@ -236,8 +229,8 @@ async def _run(
         await _record(ledger, unit)
         return unit
     unit.window = post
-    # 人在场:只问"撤得了吗";人不在:要问"到他能反应过来时还撤得了吗"。
-    still_reversible = post.known if authorized_by else post.covers(response_s)
+    # 执行后只问一件事:此刻还撤得回来吗。读不到窗口就是兑现不了。
+    still_reversible = post.known
     if not still_reversible:
         if post.known:
             return await _revert(
@@ -259,9 +252,24 @@ async def _run(
         return await _revert(unit, provider, ledger, "验证未通过")
 
     unit.verdict = VERDICT_KEPT
-    unit.reason = "人工放行后验证通过,保持运行" if authorized_by else "验证通过,进入待审(可撤)"
+    unit.reason = "人工放行后验证通过,保持运行" if authorized_by else "验证通过,保持运行"
     await _record(ledger, unit)
     return unit
+
+
+def _default_policy() -> Policy:
+    """部署里声明的自动收敛范围。空 = 一律等人:要自动,先点名。
+
+    每次推进读一次配置,人在页面上改完不用重启;代价是一次字符串切分。
+    """
+    from engine.shared.config import config
+
+    raw = config.settings.autonomous_capabilities or ""
+    return Policy(
+        autonomous_capabilities=tuple(
+            part.strip() for part in raw.split(",") if part.strip()
+        )
+    )
 
 
 async def apply(
@@ -271,13 +279,11 @@ async def apply(
     *,
     policy: Policy | None = None,
     authorized_by: str = "",
-    at: datetime | None = None,
     skip_replay: bool = False,
 ) -> ChangeUnit:
     """推进一个单元。target 是已解析的 provider,或一个能 resolve 的注册表。
 
     authorized_by 非空表示人已经当场放手:跳过路径判定,执行后仍照常读窗口、照常验证。
-    at 只在测试里用,给策略一个确定的"现在"。
     skip_replay 只给放行用:被阻断的单元已经有同键记录,照幂等规则会被直接判成"已完成"。
     """
     if not skip_replay:
@@ -290,8 +296,7 @@ async def apply(
         unit,
         provider,
         ledger,
-        policy=policy or Policy(),
-        now=at or datetime.now(timezone.utc),
+        policy=policy or _default_policy(),
         authorized_by=authorized_by,
     )
 
@@ -307,7 +312,7 @@ async def approve(
     """人对一个阻断的单元放手。
 
     放行不等于放宽判定口径:执行后照样读窗口、照样验证,失败照样回滚。
-    它只说明"此刻有人在场",因此响应时延按秒算而不是按小时算。
+    它只说明"此刻有人在场"。
     """
     if unit.verdict != VERDICT_BLOCKED:
         raise ValueError(f"只有阻断的单元需要放行,当前是 {unit.verdict!r}")
@@ -318,7 +323,6 @@ async def approve(
         target,
         ledger,
         authorized_by=by or "人工",
-        at=datetime.now(timezone.utc),
         skip_replay=True,
     )
 

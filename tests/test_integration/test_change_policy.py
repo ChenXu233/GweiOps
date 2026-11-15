@@ -1,17 +1,18 @@
 # tests/test_integration/test_change_policy.py
-"""策略与阻断出口:什么时候可以直接做,阻断之后人怎么接手。"""
+"""策略与阻断出口:什么能自动做,阻断之后人怎么接手。
+
+契约第 4 节:变更分两类——自动收敛(名单里点名、能自己收敛)与人在回路(其余全部)。
+这里的用例只回答第一类怎么判;缺省是"空 = 一律等人"。
+"""
 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from engine.change_unit import (
     BLOCK,
-    EXECUTE,
-    AwayWindow,
     ChangeUnit,
     Effect,
     JsonlLedger,
@@ -28,11 +29,6 @@ from engine.change_unit import (
 )
 
 BINDING = "local"
-
-# 2026-11-04 周三 / 11-06 周五 / 11-09 周一
-WEDNESDAY_NOON = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
-FRIDAY_EVENING = datetime(2026, 11, 6, 19, 0, tzinfo=timezone.utc)
-MONDAY_MORNING = datetime(2026, 11, 9, 8, 0, tzinfo=timezone.utc)
 
 
 class FakeProvider:
@@ -86,101 +82,108 @@ def _unit(capability: str = "compose.scale", verdict: str = "") -> ChangeUnit:
 
 
 # ---------------------------------------------------------------------------
-# 策略:都收敛到"人到能反应过来时,还撤得回来吗"
+# 判定:名单决定"要不要人",窗口决定"能不能自己收敛"
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_window_blocks():
+def test_empty_allow_list_blocks_everything(monkeypatch):
+    """缺省口径:什么都没点名,一律等人。窗口再长也不自动做。"""
+    from engine.shared.config import config
+
+    monkeypatch.setattr(config.settings, "autonomous_capabilities", "")
+
+    provider = FakeProvider(pre=Window(unbounded=True))
+    unit = asyncio.run(apply(_unit(), provider))
+
+    assert unit.verdict == VERDICT_BLOCKED
+    assert "不在自动收敛范围" in unit.reason
+    assert provider.executed == 0
+
+
+def test_listed_capability_runs_without_a_human():
+    policy = Policy(autonomous_capabilities=("compose.scale",))
+    provider = FakeProvider(pre=Window(unbounded=True, source="project_present"))
+
+    unit = asyncio.run(apply(_unit(), provider, policy=policy))
+
+    assert unit.verdict == VERDICT_KEPT
+    assert provider.executed == 1
+    assert unit.facts["gate"].startswith("能力 compose.scale 已列入自动收敛范围")
+
+
+def test_capability_outside_the_list_blocks():
+    policy = Policy(autonomous_capabilities=("compose.scale",))
+    provider = FakeProvider()
+
+    blocked = asyncio.run(apply(_unit("comment.create"), provider, policy=policy))
+
+    assert blocked.verdict == VERDICT_BLOCKED
+    assert "不在自动收敛范围" in blocked.reason
+    assert provider.executed == 0
+
+
+def test_wildcard_allows_every_capability():
+    policy = Policy(autonomous_capabilities=("*",))
+    provider = FakeProvider()
+
+    unit = asyncio.run(apply(_unit("anything.at.all"), provider, policy=policy))
+
+    assert unit.verdict == VERDICT_KEPT
+    assert provider.executed == 1
+
+
+def test_unknown_window_blocks_even_when_listed():
+    """点名了也不够:读不到窗口,就兑现不了撤销。"""
+    policy = Policy(autonomous_capabilities=("compose.scale",))
     provider = FakeProvider(pre=Window())
-    unit = asyncio.run(apply(_unit(), provider, at=WEDNESDAY_NOON))
+
+    unit = asyncio.run(apply(_unit(), provider, policy=policy))
+
     assert unit.verdict == VERDICT_BLOCKED
     assert "读不到" in unit.reason
     assert provider.executed == 0
 
 
-def test_window_shorter_than_human_latency_blocks():
-    provider = FakeProvider(pre=Window(seconds=3600, source="revision"))
-    unit = asyncio.run(apply(_unit(), provider, at=WEDNESDAY_NOON))
-    assert unit.verdict == VERDICT_BLOCKED
-    assert "盖不住" in unit.reason
-    assert provider.executed == 0
+def test_a_short_window_is_enough():
+    """窗口只对验证观察期负责,不再拿去比"人多久会醒"。"""
+    policy = Policy(autonomous_capabilities=("compose.scale",))
+    provider = FakeProvider(pre=Window(seconds=60, source="revision"))
 
+    unit = asyncio.run(apply(_unit(), provider, policy=policy))
 
-def test_window_longer_than_human_latency_runs():
-    provider = FakeProvider(pre=Window(seconds=9 * 3600, source="revision"))
-    unit = asyncio.run(apply(_unit(), provider, at=WEDNESDAY_NOON))
-    assert unit.verdict == VERDICT_KEPT
-    assert provider.executed == 1
-    assert unit.facts["gate"].startswith("窗口 9 小时")
-
-
-def test_weekend_raises_the_bar_for_bounded_windows():
-    """周五傍晚:要盖住的不是 8 小时,是到周一早上。"""
-    provider = FakeProvider(pre=Window(seconds=9 * 3600, source="revision"))
-    unit = asyncio.run(apply(_unit(), provider, at=FRIDAY_EVENING))
-    assert unit.verdict == VERDICT_BLOCKED
-    assert "无人值守" in unit.reason
-    assert provider.executed == 0
-
-
-def test_weekend_still_allows_symmetric_undo():
-    """对称撤销不依赖下游保留任何东西,周末也撤得回来。"""
-    provider = FakeProvider(pre=Window(unbounded=True, source="project_present"))
-    unit = asyncio.run(apply(_unit(), provider, at=FRIDAY_EVENING))
     assert unit.verdict == VERDICT_KEPT
     assert provider.executed == 1
 
 
-def test_allow_list_narrows_the_night_scope():
-    policy = Policy(allow_capabilities=("compose.scale",))
-    blocked = asyncio.run(
-        apply(_unit("comment.create"), FakeProvider(), policy=policy, at=WEDNESDAY_NOON)
+def test_a_count_based_window_does_not_block():
+    """按次数保留的下游(_kubectl rollout undo_)不该被当成不可逆。"""
+    policy = Policy(autonomous_capabilities=("compose.scale",))
+    provider = FakeProvider(
+        pre=Window(unbounded=True, estimated=True, source="revision_history")
     )
-    assert blocked.verdict == VERDICT_BLOCKED
-    assert "不在夜间放行范围" in blocked.reason
 
-    allowed = asyncio.run(
-        apply(_unit("compose.scale"), FakeProvider(), policy=policy, at=WEDNESDAY_NOON)
-    )
-    assert allowed.verdict == VERDICT_KEPT
+    unit = asyncio.run(apply(_unit(), provider, policy=policy))
+
+    assert unit.verdict == VERDICT_KEPT
+    assert "算不出到期" in unit.facts["gate"]
 
 
 def test_policy_decide_is_pure():
-    decision = Policy().decide(_unit(), Window(seconds=60), WEDNESDAY_NOON)
+    decision = Policy().decide(_unit(), Window(seconds=60))
     assert decision.action == BLOCK
-    assert decision.response_s == Policy().human_response_s
+    assert "不在自动收敛范围" in decision.reason
 
 
-# ---------------------------------------------------------------------------
-# 无人值守时段本身
-# ---------------------------------------------------------------------------
+def test_default_policy_reads_the_deployment_setting(monkeypatch):
+    from engine.shared.config import config
+    from engine.change_unit.runner import _default_policy
 
+    monkeypatch.setattr(config.settings, "autonomous_capabilities", " compose.scale , comment.create ")
+    policy = _default_policy()
+    assert policy.autonomous_capabilities == ("compose.scale", "comment.create")
 
-def test_away_window_bounds():
-    away = AwayWindow()  # 周五 18:00 → 周一 09:00
-    assert away.contains(datetime(2026, 11, 6, 17, 59, tzinfo=timezone.utc)) is False
-    assert away.contains(datetime(2026, 11, 6, 18, 0, tzinfo=timezone.utc)) is True
-    assert away.contains(datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)) is True
-    assert away.contains(MONDAY_MORNING) is True
-    assert away.contains(datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)) is False
-    assert away.contains(WEDNESDAY_NOON) is False
-
-
-def test_away_window_ends_at_next_boundary():
-    away = AwayWindow()
-    assert away.ends_at(FRIDAY_EVENING) == datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)
-    assert away.ends_at(MONDAY_MORNING) == datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)
-    # 不在窗口里时,"下一次结束"是下一个周一,而不是本周一(已经过去了)
-    assert away.ends_at(WEDNESDAY_NOON) == datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc)
-
-
-def test_response_seconds_is_constant_outside_away():
-    policy = Policy()
-    assert policy.response_seconds(WEDNESDAY_NOON) == 8 * 3600
-    inside = policy.response_seconds(FRIDAY_EVENING)
-    assert inside == int(
-        (datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc) - FRIDAY_EVENING).total_seconds()
-    )
+    monkeypatch.setattr(config.settings, "autonomous_capabilities", "")
+    assert _default_policy().autonomous_capabilities == ()
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +195,7 @@ def test_approve_runs_even_when_window_is_unknown(tmp_path):
     ledger = JsonlLedger(tmp_path / "units.jsonl")
     provider = FakeProvider(pre=Window(), post=Window(unbounded=True))
 
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=WEDNESDAY_NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
     assert unit.verdict == VERDICT_BLOCKED
 
     unit = asyncio.run(approve(unit, provider, ledger, by="值班人", reason="现在就做"))
@@ -231,7 +234,7 @@ def test_approve_is_not_swallowed_by_idempotency(tmp_path):
 
     unit = _unit()
     unit.idempotency_key = "wf-1:effects:effect:0"
-    unit = asyncio.run(apply(unit, provider, ledger, at=WEDNESDAY_NOON))
+    unit = asyncio.run(apply(unit, provider, ledger))
     assert unit.verdict == VERDICT_BLOCKED
     assert provider.executed == 0
 

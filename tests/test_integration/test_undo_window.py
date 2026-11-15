@@ -50,6 +50,41 @@ def test_symmetric_undo_never_expires():
     assert state.expires_at == ""
 
 
+def test_a_count_based_window_is_still_undoable():
+    """按次数保留:算不出到期,不等于撤不回来。"""
+    state = undo_state(
+        _row(window={"seconds": None, "unbounded": True, "estimated": True, "source": "revisions"}),
+        NOW,
+    )
+    assert state.undoable is True
+    assert state.expires_at == ""
+    assert "算不出到期" in state.reason
+
+
+def test_a_count_based_window_survives_a_round_trip():
+    """从账本读回来还得是"算不出到期",不能变成"窗口不是一个时长"。
+
+    读回来丢掉 estimated,撤销就会凭空拒绝:下游明明按次数留着旧状态。
+    """
+    unit = _unit(
+        Window(unbounded=True, estimated=True, source="revisionHistoryLimit"), NOW.isoformat()
+    )
+    again = ChangeUnit.from_dict(unit.to_dict())
+    assert again.window is not None and again.window.estimated is True
+    assert undo_state(again.to_dict(), NOW).undoable is True
+
+
+def test_rollback_works_on_a_count_evicted_target_read_back_from_the_ledger():
+    from engine.change_unit import rollback
+
+    provider = _Provider()
+    row = _unit(
+        Window(unbounded=True, estimated=True, source="revisionHistoryLimit"), NOW.isoformat()
+    ).to_dict()
+    asyncio.run(rollback(ChangeUnit.from_dict(row), provider))
+    assert provider.undone == 1
+
+
 def test_without_a_handle_nothing_can_be_undone():
     assert undo_state(_row(handle=None), NOW).undoable is False
 

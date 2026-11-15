@@ -36,15 +36,13 @@ class Window:
     seconds: int | None = None
     unbounded: bool = False
     source: str = ""
+    # unbounded 的一个变体:旧状态确实还在,但下游按次数或容量淘汰,
+    # 给不出到期时间(如 revisionHistoryLimit)。它不是"不可撤"。
+    estimated: bool = False
 
     @property
     def known(self) -> bool:
         return self.unbounded or self.seconds is not None
-
-    def covers(self, human_response_s: int) -> bool:
-        if self.unbounded:
-            return True
-        return self.seconds is not None and self.seconds >= human_response_s
 
 
 @dataclass(frozen=True)
@@ -57,6 +55,9 @@ class Effect:
     undo_kind: str = UNDO_RETAINED
     label: str = ""
     capability: str = ""  # 解析提供者用;由插件在声明里给出
+    # 声明里写了"怎么验":[{query, expect}, ...]。执行时没人换它,所以它随单元
+    # 落账——事后读这条变更时不依赖插件还在不在。
+    verify: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if self.undo_kind not in UNDO_KINDS:
@@ -71,6 +72,8 @@ def _window_from_dict(raw: Any) -> Window | None:
         seconds=seconds if isinstance(seconds, int) else None,
         unbounded=bool(raw.get("unbounded")),
         source=str(raw.get("source") or ""),
+        # 丢掉它,读回来就变成"窗口不是一个时长",按次数淘汰的下游会凭空不可撤。
+        estimated=bool(raw.get("estimated")),
     )
 
 
@@ -116,6 +119,9 @@ class ChangeUnit:
                 undo_kind=eff.get("undo_kind", UNDO_RETAINED),
                 label=eff.get("label", ""),
                 capability=eff.get("capability", ""),
+                verify=tuple(
+                    dict(rule) for rule in (eff.get("verify") or ()) if isinstance(rule, dict)
+                ),
             ),
             id=data.get("id") or uuid4().hex,
             created_at=data.get("created_at")
@@ -140,5 +146,6 @@ class ChangeUnit:
             "undo_kind": self.effect.undo_kind,
             "label": self.effect.label,
             "capability": self.effect.capability,
+            "verify": [dict(rule) for rule in self.effect.verify],
         }
         return data

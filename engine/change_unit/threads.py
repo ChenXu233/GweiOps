@@ -46,6 +46,17 @@ async def open_pull_on(
         rows = await ledger.latest(tenant=tenant, limit=limit)
     except Exception:
         return None
+    return open_pull_in(rows, topic)
+
+
+def open_pull_in(rows: list[dict[str, Any]], topic: str) -> dict[str, Any] | None:
+    """在已经取回的一页账本行里找那个 PR。
+
+    列表一次要看很多议题:每个议题各自去读一遍账本,行数一多就把一次列表变成
+    N 次查询。判定规则只有一份,读的人负责把行取回来。
+    """
+    if not topic:
+        return None
 
     dead = {
         str(row.get("id") or "")

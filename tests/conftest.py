@@ -22,6 +22,19 @@ if GATED and not os.environ.get("DATABASE_URL"):
 
 
 @pytest.fixture(autouse=True)
+def _allow_every_capability(monkeypatch):
+    """测试默认把全部能力当成自动收敛。
+
+    生产缺省是"空 = 一律等人",那样每个用例都得先声明一次自己的能力,测的就
+    不是它本来要测的东西了。判定走的是同一条代码路径,只是名单不同;
+    缺省口径本身在 test_change_policy 里有专门的用例。
+    """
+    from engine.shared.config import config
+
+    monkeypatch.setattr(config.settings, "autonomous_capabilities", "*")
+
+
+@pytest.fixture(autouse=True)
 def _reset_plugin_registry():
     """每个测试后清空生产 registry 单例。
 

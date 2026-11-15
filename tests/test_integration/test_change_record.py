@@ -45,10 +45,12 @@ class FakeProvider:
         pre: Window | None = None,
         post: Window | None = None,
         handle: str | None = "h-1",
+        verify_result: tuple[bool, dict] = (True, {"running": 2}),
     ) -> None:
         self.pre = pre or Window(unbounded=True, source="fake")
         self.post = post or Window(unbounded=True, source="fake")
         self.handle = handle
+        self.verify_result = verify_result
         self.executed = 0
         self.undone = 0
 
@@ -64,7 +66,7 @@ class FakeProvider:
         return {}
 
     async def verify(self, effect, handle):
-        return True, {"running": 2}
+        return self.verify_result
 
 
 def _unit(
@@ -206,8 +208,9 @@ def test_track_record_without_ledger_is_unknown_not_clean():
 
 
 def _decide(record: TrackRecord | None, policy: Policy | None = None):
-    return (policy or Policy()).decide(
-        _unit(), Window(unbounded=True, source="fake"), NOON, record=record
+    # 名单只是让判定走到履历那一关;这里测的是履历,不是"要不要人"。
+    return (policy or Policy(autonomous_capabilities=("*",))).decide(
+        _unit(), Window(unbounded=True, source="fake"), record=record
     )
 
 
@@ -235,7 +238,7 @@ def test_two_attempts_are_too_few_to_judge():
 
 
 def test_history_can_be_switched_off():
-    policy = Policy(history_min_attempts=0)
+    policy = Policy(autonomous_capabilities=("*",), history_min_attempts=0)
     assert policy.wants_history() is False
     decision = _decide(TrackRecord(attempts=9, rolled_back=9), policy)
     assert decision.action == EXECUTE
@@ -253,7 +256,7 @@ def test_no_history_means_no_verdict_from_history():
 def test_runner_blocks_after_three_rollbacks(tmp_path):
     ledger = _seed(tmp_path, VERDICT_ROLLED_BACK)
     provider = FakeProvider()
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
     assert unit.verdict == VERDICT_BLOCKED
     assert "失败 3/3" in unit.reason
     assert provider.executed == 0
@@ -262,7 +265,7 @@ def test_runner_blocks_after_three_rollbacks(tmp_path):
 def test_runner_still_runs_when_history_is_good(tmp_path):
     ledger = _seed(tmp_path, VERDICT_KEPT)
     provider = FakeProvider()
-    unit = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(), provider, ledger))
     assert unit.verdict == VERDICT_KEPT
     assert provider.executed == 1
 
@@ -270,7 +273,7 @@ def test_runner_still_runs_when_history_is_good(tmp_path):
 def test_runner_does_not_borrow_another_tenants_history(tmp_path):
     ledger = _seed(tmp_path, VERDICT_ROLLED_BACK, tenant="tenant-b")
     provider = FakeProvider()
-    unit = asyncio.run(apply(_unit(tenant=TENANT), provider, ledger, at=NOON))
+    unit = asyncio.run(apply(_unit(tenant=TENANT), provider, ledger))
     assert unit.verdict == VERDICT_KEPT
     assert provider.executed == 1
 
@@ -288,8 +291,8 @@ def test_a_human_in_the_room_can_still_go(tmp_path):
 def test_rollback_writes_a_row_the_next_decision_can_read(tmp_path):
     """闭环:这一次的结论,是下一次判定的输入。"""
     ledger = _seed(tmp_path, VERDICT_ROLLED_BACK, times=2)
-    provider = FakeProvider(post=Window(seconds=60, source="fake"))
-    rolled = asyncio.run(apply(_unit(), provider, ledger, at=NOON))
+    provider = FakeProvider(verify_result=(False, {"error": "5xx"}))
+    rolled = asyncio.run(apply(_unit(), provider, ledger))
     assert rolled.verdict == VERDICT_ROLLED_BACK
 
     record = asyncio.run(

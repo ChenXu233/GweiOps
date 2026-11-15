@@ -47,6 +47,9 @@ def undo_state(row: dict[str, Any], now: datetime | None = None) -> UndoState:
     if not isinstance(window, dict):
         return UndoState(False, "没有记录窗口")
     if window.get("unbounded"):
+        if window.get("estimated"):
+            # 能撤,只是不知道下游什么时候把旧状态清掉——这不是不可撤。
+            return UndoState(True, "目标还在就能撤(按次数/容量淘汰,算不出到期)")
         return UndoState(True, "对称撤销:目标还在就能撤")
 
     seconds = window.get("seconds")

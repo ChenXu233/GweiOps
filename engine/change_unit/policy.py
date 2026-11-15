@@ -1,31 +1,27 @@
 # engine/change_unit/policy.py
-"""策略即预授权:夜里哪些变更可以直接做,不用先等人点头。
+"""策略即预授权:哪些能力可以不经人直接做。
 
-策略回答两个问题,一个算得出,一个只能查:
+契约见 docs/explanation/change-unit-contract.md 第 4 节:变更分两类——
 
-1. 人到能赶回来的时候,还撤得回来吗。窗口与响应时延相比——三个参数量的是同一件事:
-   响应时延本身(一个人 8 小时,三班倒 15 分钟)、无人值守时段(周五 18:00 之后是到周一早上)、
-   放行范围(哪几类能力允许走这条路;空 = 不按能力限制)。
-2. 这个动作以前在这台下游身上留下过什么。账本里的履历——同一类变更失败得够多,
-   就不再夜间自动做,改为人看一眼。
+- **自动收敛**:不需要人做价值判断,且能自己收敛(有句柄、读得到窗口、验证可判定)。
+  这类做完继续跑,坏了 verify 会撤,没有人守在里面。
+- **人在回路**:其余全部。执行前先阻断等人,而且没有超时。
 
-"沉默默认"没有实现:它需要一个到点就会触发的调度器,而现在没有。
-在调度器出现之前写进策略里,只是一个不会执行的参数。
+这份策略只决定第一类:名单里的能力可以无人执行。**名单为空就是一律等人**——
+要自动,先点名。名单里写 "*" 表示不筛,只给演示与测试用。
+
+第二类不由策略决定:它压根不会被自动执行。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
 
 from .model import ChangeUnit, Window
 from .record import TrackRecord
 
 EXECUTE = "execute"
 BLOCK = "block"
-
-# 一个人的默认值:睡一觉,8 小时。窗口盖不住这 8 小时的,"随时可撤"对睡着的人不成立。
-DEFAULT_HUMAN_RESPONSE_S = 8 * 3600
 
 
 def _duration(seconds: int) -> str:
@@ -47,75 +43,38 @@ def _duration(seconds: int) -> str:
 def window_label(window: Window) -> str:
     """给账本用的窗口说法。读不到就说读不到,不猜。"""
     if window.unbounded:
-        return "无上限"
+        if window.estimated:
+            return "目标还在就能撤(按次数/容量淘汰,算不出到期)"
+        return "目标还在就能撤"
     if window.seconds is not None:
         return _duration(window.seconds)
-    return "未知"
-
-
-@dataclass(frozen=True)
-class AwayWindow:
-    """每周固定无人值守的时段,默认周五 18:00 → 周一 09:00。
-
-    落在窗口里时,人的响应时延不是一个常量,而是"到窗口结束还有多久"。
-    这样周五傍晚那次发布不需要额外一条禁令——它盖不住整整一个周末,自然被阻断。
-    """
-
-    start_weekday: int = 4  # 0=周一
-    start_hour: int = 18
-    end_weekday: int = 0
-    end_hour: int = 9
-
-    @property
-    def start_min(self) -> int:
-        return self.start_weekday * 1440 + self.start_hour * 60
-
-    @property
-    def end_min(self) -> int:
-        return self.end_weekday * 1440 + self.end_hour * 60
-
-    def contains(self, at: datetime) -> bool:
-        minute = at.weekday() * 1440 + at.hour * 60 + at.minute
-        start, end = self.start_min, self.end_min
-        if start == end:
-            return False
-        if start < end:
-            return start <= minute < end
-        # 跨周末:窗口"绕过"周界,周一早上那一段也算在里面
-        return minute >= start or minute < end
-
-    def ends_at(self, at: datetime) -> datetime:
-        """这个时段下一次结束的时刻(本地时区按 at 自己的时区算)。"""
-        base = at.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=at.weekday())
-        end = base + timedelta(minutes=self.end_min)
-        while end <= at:
-            end += timedelta(days=7)
-        return end
+    return "读不到"
 
 
 @dataclass(frozen=True)
 class Decision:
-    """一次路径判定。reason 会被原样写进账本——人早上看到的就是这句话。"""
+    """一次路径判定。reason 会被原样写进账本——人看到的就是这句话。"""
 
     action: str
     reason: str
-    response_s: int = 0
 
 
 @dataclass(frozen=True)
 class Policy:
-    human_response_s: int = DEFAULT_HUMAN_RESPONSE_S
-    away: AwayWindow | None = field(default_factory=AwayWindow)
-    allow_capabilities: tuple[str, ...] = ()
+    """自动收敛的范围,以及"这个动作以前在这台下游身上怎么样"的门槛。"""
+
+    # 允许不经人执行的能力。空 = 一律等人;"*" = 不筛(演示与测试)。
+    autonomous_capabilities: tuple[str, ...] = ()
     # 履历门槛:少于这么多次就先不下结论;0 表示不看履历。
     history_min_attempts: int = 3
     history_max_failure_rate: float = 0.5
 
-    def response_seconds(self, at: datetime) -> int:
-        """此刻人的响应时延。落在无人值守时段里,答案是"到那之后"。"""
-        if self.away is not None and self.away.contains(at):
-            return max(1, int((self.away.ends_at(at) - at).total_seconds()))
-        return self.human_response_s
+    def allows_without_human(self, capability: str) -> bool:
+        if not capability:
+            return False
+        if "*" in self.autonomous_capabilities:
+            return True
+        return capability in self.autonomous_capabilities
 
     def wants_history(self) -> bool:
         return self.history_min_attempts > 0
@@ -130,17 +89,17 @@ class Policy:
         self,
         unit: ChangeUnit,
         window: Window,
-        at: datetime,
         record: TrackRecord | None = None,
     ) -> Decision:
-        """走第一类路径还是阻断。没有第三种答案。"""
+        """自动做,还是先等人。没有第三种答案。"""
         capability = unit.effect.capability
-        if self.allow_capabilities and capability not in self.allow_capabilities:
+        if not self.allows_without_human(capability):
             return Decision(
                 BLOCK,
-                f"能力 {capability or '(未声明)'} 不在夜间放行范围",
+                f"能力 {capability or '(未声明)'} 不在自动收敛范围:这类变更先等人",
             )
 
+        # 窗口是"撤得回来"的唯一依据;读不到就不许自动做。
         if not window.known:
             return Decision(BLOCK, "窗口读不到,按不可逆处理")
 
@@ -153,19 +112,7 @@ class Policy:
                 f"{record.failures}/{record.attempts} 次{tail}",
             )
 
-        response_s = self.response_seconds(at)
-        if not window.covers(response_s):
-            where = ""
-            if self.away is not None and self.away.contains(at):
-                where = f"(无人值守至 {self.away.ends_at(at):%m-%d %H:%M})"
-            return Decision(
-                BLOCK,
-                f"窗口 {window_label(window)} 盖不住人的响应时延 {_duration(response_s)}{where}",
-                response_s,
-            )
-
         return Decision(
             EXECUTE,
-            f"窗口 {window_label(window)} 覆盖响应时延 {_duration(response_s)}",
-            response_s,
+            f"能力 {capability} 已列入自动收敛范围,窗口 {window_label(window)}",
         )

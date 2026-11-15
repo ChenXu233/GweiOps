@@ -61,7 +61,12 @@ class FakeProvider:
 
 
 def _unit(binding: str = "local") -> ChangeUnit:
-    effect = Effect(task="scale", args={"service": "web"}, undo_task="undo_scale")
+    effect = Effect(
+        task="scale",
+        args={"service": "web"},
+        undo_task="undo_scale",
+        capability="compose.scale",
+    )
     return ChangeUnit(intent={"source": "test"}, effect=effect, binding=binding)
 
 
@@ -82,13 +87,6 @@ def test_kept_when_verified_and_ledger_records_binding(tmp_path):
     assert rows[0]["verdict"] == VERDICT_KEPT
     assert rows[0]["binding"] == "local"
     assert rows[0]["effect"]["undo_kind"] == "retained"
-
-
-def test_post_window_shrinks_rolls_back():
-    provider = FakeProvider(pre=Window(unbounded=True), post=Window(seconds=60))
-    unit = asyncio.run(apply(_unit(), provider))
-    assert unit.verdict == VERDICT_ROLLED_BACK
-    assert provider.undone == 1
 
 
 def test_verify_failure_rolls_back():
@@ -211,6 +209,7 @@ def test_apply_requires_capability_when_target_is_registry():
     provider = FakeProvider()
     provider.tenant, provider.binding = "tenant-a", "target-a"
     unit = _unit_with_capability()
+    # 这个用例要的就是"没有 capability":目标是个注册表,却说不清要解析什么。
     unit.effect = Effect(task="scale", args={}, undo_task="undo_scale")
     with pytest.raises(ValueError, match="没有 capability"):
         asyncio.run(apply(unit, _registry_for(provider)))
@@ -445,15 +444,26 @@ def test_real_compose_release_roundtrip(tmp_path):
     )
     try:
         assert unit.verdict == VERDICT_KEPT, unit.reason
-        rows = asyncio.run(plugin._ps(str(tmp_path), "docker-compose.yml"))
+        # 读回来也要带上镜像变量:文件里的 image 是插值出来的,不带就解析不了。
+        rows = asyncio.run(
+            plugin._ps(
+                str(tmp_path), "docker-compose.yml", {"GWEI_RELEASE_IMAGE": "alpine:3.20"}
+            )
+        )
         assert plugin._image_of(rows, "web").endswith("alpine:3.20")
         asyncio.run(rollback(unit, plugin))
-        rows = asyncio.run(plugin._ps(str(tmp_path), "docker-compose.yml"))
+        rows = asyncio.run(
+            plugin._ps(
+                str(tmp_path), "docker-compose.yml", {"GWEI_RELEASE_IMAGE": "alpine:3.19"}
+            )
+        )
         assert plugin._image_of(rows, "web").endswith("alpine:3.19")
     finally:
+        # compose 要插值才能解析这个文件:少了它,down 报"没有 image"并以 1 退出,
+        # 失败被算到用例头上,容器还会留在机器上。
         asyncio.run(plugin._exec([
             "compose", "-f", "docker-compose.yml", "down", "-v",
-        ], str(tmp_path)))
+        ], str(tmp_path), {"GWEI_RELEASE_IMAGE": "alpine:3.19"}))
 
 
 @pytest.mark.skipif(not _docker_ready(), reason="docker daemon 未运行")
