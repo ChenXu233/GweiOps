@@ -919,6 +919,67 @@
         "title": "PluginWidgetMetricDTO",
         "type": "object"
       },
+      "QuotaDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuotaItemDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "tenant": {
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "items"
+        ],
+        "title": "QuotaDTO",
+        "type": "object"
+      },
+      "QuotaItemDTO": {
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "used": {
+            "title": "Used",
+            "type": "integer"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource",
+          "used",
+          "limit",
+          "window_hours",
+          "remaining"
+        ],
+        "title": "QuotaItemDTO",
+        "type": "object"
+      },
       "ReleaseValuesDTO": {
         "additionalProperties": true,
         "description": "一行发布配置。字段由 release.py 的模式决定,这里不逐个点名。",
@@ -976,6 +1037,60 @@
           "lastSyncAt"
         ],
         "title": "RepoDTO",
+        "type": "object"
+      },
+      "ResetCompleteDTO": {
+        "properties": {
+          "code": {
+            "default": "",
+            "maxLength": 12,
+            "title": "Code",
+            "type": "string"
+          },
+          "contact": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Contact",
+            "type": "string"
+          },
+          "method": {
+            "default": "email",
+            "maxLength": 16,
+            "title": "Method",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_password"
+        ],
+        "title": "ResetCompleteDTO",
+        "type": "object"
+      },
+      "ResetRequestDTO": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ResetRequestDTO",
         "type": "object"
       },
       "RoleCreateDTO": {
@@ -1274,6 +1389,34 @@
           "password"
         ],
         "title": "SetupDTO",
+        "type": "object"
+      },
+      "StartDTO": {
+        "description": "发码。contact 是邮箱或手机号,由 method 决定怎么归一。",
+        "properties": {
+          "contact": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Contact",
+            "type": "string"
+          },
+          "method": {
+            "default": "email",
+            "maxLength": 16,
+            "title": "Method",
+            "type": "string"
+          },
+          "purpose": {
+            "default": "register",
+            "maxLength": 16,
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact"
+        ],
+        "title": "StartDTO",
         "type": "object"
       },
       "TimelineBranchDTO": {
@@ -1589,6 +1732,46 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VerifyDTO": {
+        "properties": {
+          "code": {
+            "maxLength": 12,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "contact": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Contact",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "method": {
+            "default": "email",
+            "maxLength": 16,
+            "title": "Method",
+            "type": "string"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact",
+          "code"
+        ],
+        "title": "VerifyDTO",
+        "type": "object"
       }
     }
   },
@@ -1793,6 +1976,82 @@
         "summary": "Me"
       }
     },
+    "/api/auth/oidc/authorize": {
+      "get": {
+        "description": "把人送去身份提供方。state 与 nonce 存在进程里,回来对一次就删。",
+        "operationId": "oidc_authorize_api_auth_oidc_authorize_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Oidc Authorize"
+      }
+    },
+    "/api/auth/oidc/callback": {
+      "get": {
+        "description": "回来:换 token、认人、发会话 cookie,然后回前台。",
+        "operationId": "oidc_callback_api_auth_oidc_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Oidc Callback"
+      }
+    },
     "/api/auth/password": {
       "post": {
         "description": "改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。",
@@ -1832,6 +2091,191 @@
           }
         },
         "summary": "Change Password"
+      }
+    },
+    "/api/auth/password/reset": {
+      "post": {
+        "description": "申请一封重置邮件。\n\n正文里给两样东西:**一次性链接**(已经设过密码的人走它)与**验证码**\n(还没设过密码的账号走它)。两条都发,是因为接口不能按\"这个账号有没有密码\"\n改口吻 —— 那种区分是给攻击者的礼物。",
+        "operationId": "request_reset_api_auth_password_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequestDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Reset Api Auth Password Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Reset"
+      }
+    },
+    "/api/auth/password/reset/complete": {
+      "post": {
+        "description": "两种走法:邮件里的令牌,或者还没设过密码的账号凭验证码。",
+        "operationId": "complete_reset_api_auth_password_reset_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetCompleteDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Reset Api Auth Password Reset Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Reset"
+      }
+    },
+    "/api/auth/register/start": {
+      "post": {
+        "description": "发验证码。这一步**要**说出\"这个联系方式已经注册过\":\n\n注册不是登录,同一个邮箱第二次注册本来就走不下去。含糊其辞只会让人反复试。",
+        "operationId": "register_start_api_auth_register_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Register Start Api Auth Register Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Start"
+      }
+    },
+    "/api/auth/register/verify": {
+      "post": {
+        "description": "核验并建号。要核验时先落 pending 再建号;不要核验就直接建。",
+        "operationId": "register_verify_api_auth_register_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Register Verify Api Auth Register Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Verify"
+      }
+    },
+    "/api/auth/registration/policy": {
+      "get": {
+        "description": "现在能不能注册、能用什么方式。不要求鉴权 —— 登录页要照它画按钮。",
+        "operationId": "registration_policy_api_auth_registration_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Registration Policy Api Auth Registration Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Registration Policy"
       }
     },
     "/api/auth/setup": {
@@ -2762,6 +3206,104 @@
         "summary": "Plugin Ui Asset"
       }
     },
+    "/api/quota": {
+      "get": {
+        "description": "这个租户每条限量的用量。没声明的资源不出现在里面。",
+        "operationId": "get_quota_api_quota_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuotaDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Quota"
+      }
+    },
+    "/api/quota/parse": {
+      "get": {
+        "description": "把 `2000/30d` 拆开看看 —— 页面在保存前先问一次,别让人猜格式。",
+        "operationId": "parse_api_quota_parse_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "title": "Resource",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "spec",
+            "required": true,
+            "schema": {
+              "title": "Spec",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Parse Api Quota Parse Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Parse"
+      }
+    },
     "/api/repos": {
       "get": {
         "operationId": "list_repos_api_repos_get",
@@ -2934,6 +3476,7 @@
     },
     "/api/settings": {
       "get": {
+        "description": "团队设置。配额与注册那两块的现状从真实配置算出来,不是写死的字符串。",
         "operationId": "team_settings_api_settings_get",
         "responses": {
           "200": {

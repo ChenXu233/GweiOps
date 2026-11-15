@@ -90,6 +90,49 @@
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
 - 令牌写错(段数不对、scope 非法、重复)拒绝启动:写错的令牌不能静默降级成"不鉴权"。
 
+## 注册与账号核验
+
+企业账号与自部署用**同一个开关**:注册默认关闭(`REGISTRATION_ENABLED=false`),已经跑起来的实例不会因为升级开始接受陌生人。租户可以在设置页逐键覆盖,生效值是"全局配置 + 公共覆盖 + 租户覆盖"。
+
+开关与方式:
+
+| 配置 | 默认 | 说明 |
+| --- | --- | --- |
+| `REGISTRATION_ENABLED` | `false` | 自助注册总开关 |
+| `REGISTRATION_METHODS` | `email` | 可用方式:`email` / `phone` / `oidc`,逗号分隔;没配好的 `oidc` 不出现在可选项里 |
+| `REGISTRATION_REQUIRES_VERIFICATION` | `true` | 是否必须过验证码 |
+| `REGISTRATION_DEFAULT_ROLE` | `viewer` | 新用户自动接上的角色 key;角色不存在时留一行警告日志,不阻断注册 |
+| `REGISTRATION_PUBLIC_BASE_URL` | 空 | 邮件链接与 OIDC 回跳的前台地址;空则按请求 Host 推 |
+| `REGISTRATION_TEST_CODE` | 空 | 配了就用固定码并在发码响应里回显,只给自部署联调 |
+| `REGISTRATION_MAX_ATTEMPTS` / `REGISTRATION_RATE_LIMIT` | `5` / `5` | 一个码最多试几次 / 同一收件人一小时最多发几条 |
+
+核验通道(`EMAIL_PROVIDER` 取 `console` / `smtp` / `resend` / `webhook`,`SMS_PROVIDER` 取 `console` / `webhook`):
+
+- 没配通道时**拒绝**并说明缺哪一项,不静默跳过核验。
+- `console` 把验证码打进日志——自部署最后一公里,不接外部服务也能跑通。
+- 手机号默认走 webhook:引擎 POST `{channel, to, code, purpose, expires_in}` 到 `SMS_WEBHOOK_URL`。短信商的接口各家不一样,平台不替它猜。
+- 邮箱的 webhook 与短信共用 `SMS_WEBHOOK_URL`,请求体里用 `channel` 区分。
+
+链路:
+
+1. `POST /api/auth/register/start` 发码。已注册的联系方式回 409——注册不是登录,含糊其辞只会让人反复试。
+2. `POST /api/auth/register/verify` 验码建号。要核验时先落 `user_activations`(带密码哈希),验过才进 `users`;不要核验时直接建。
+3. 建号后自动发会话 cookie,与登录同一个会话表。
+
+几条不写会出事的口径:
+
+- 验证码与重置令牌在库里**只有哈希**,哈希绑了收件人与用途,一个码挪不了去干别的事。
+- 试错上限与频率上限都在 `engine/auth/registration.py`;同时有效的码只留一个。
+- 找回密码两边(有账号 / 没账号)回同一句话。邮件正文里给一次性链接与验证码两样,不按账号有没有密码改口吻。
+- **已经设过密码的账号不能靠验证码直接进**:拿到手机号不等于拿到账号,侧门在 `change_with_code` 里关掉。
+- 手机号注册的用户占一行 `<手机号>@phone.local` 的邮箱,唯一身份只有一个字段要查。
+
+OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES` / `OIDC_BUTTON_LABEL` / `OIDC_AUTO_CREATE` / `OIDC_DEFAULT_ROLE`):
+
+- 走授权码 + PKCE,`GET /api/auth/oidc/authorize` → 提供方 → `GET /api/auth/oidc/callback`。
+- 认人先认 `issuer + sub`:同一个人在提供方改了邮箱也不会变成两个人;没绑过就按邮箱对上,再没有就看 `OIDC_AUTO_CREATE`。
+- `id_token` 的 claims 直接解析、不验签:它是后台从提供方直连换回来的,链路可信。**不要**扩展成"前端把 id_token 递进来"的用法,那种场景没有验签就是漏洞。
+
 ## 出口
 
 沙箱里的 agent 唯一能改变外部世界的地方。两件事:问清单,走一次。
@@ -140,6 +183,17 @@
 - `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
 
+## 配额
+
+限量按「主体 × 资源 × 窗口」记账,现在落地的只有租户这一层。
+
+- 写法:`数量/窗口`,`2000/30d`、`500/5h`、`10/2w`。空值 = 不限;写错(缺斜杠、数量不是整数、单位不认识)当场报错,不悄悄当成不限。
+- 三层覆盖:平台默认(`engine/quota/__init__.py` 的 `DEFAULT_LIMITS`)→ 公共配置 scope `quota` → 租户配置 scope `quota`。
+- 用量是**落账**不是计数器:`quota_usage` 每笔一行,判定按窗口求和。计数器迟早会和事实对不上,配额是最不该"差一点"的地方。
+- 判定口径见 `engine/quota/store.py` 的 `check`:超了抛 `QuotaExceeded`,消息里带资源、已用、上限与窗口。
+- 页面:`GET /api/quota` 读用量,设置页读写限量,`/api/settings` 的 `issueQuota` 也取真实值。
+- 还没做的:把判定接到入队入口(工作分解 §6.1)。现在有账本与判定,没有拦人的那道门。
+
 ## Redis
 
 - 只承载可丢失状态;Redis 故障时降级放行,不阻塞主链路。
@@ -169,6 +223,14 @@
 | POST | `/api/issues/{id}/continue` | 接着这条线再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/repos` | 仓库列表 |
 | GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |
+| POST | `/api/auth/register/start` | 发注册验证码 |
+| POST | `/api/auth/register/verify` | 验码建号并登录 |
+| POST | `/api/auth/password/reset` | 申请重置邮件(有没有账号回同一句话) |
+| POST | `/api/auth/password/reset/complete` | 用链接令牌或验证码设新密码 |
+| GET | `/api/auth/oidc/authorize`、`/api/auth/oidc/callback` | OIDC 授权码流程 |
+| GET | `/api/quota` | 租户各资源在窗口内的用量与上限 |
+| GET | `/api/quota/parse` | 把 `2000/30d` 拆开看看 |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
 | DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键;删的是调用方租户那一份,读的时候落回公共值 |

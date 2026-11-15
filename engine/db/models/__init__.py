@@ -10,6 +10,14 @@ from .change_event import ChangeEvent
 from .incident import Incident
 from .plugin_setting import PluginSetting
 from .rbac import AuditLog, Role, User, UserRole, UserSession
+from .registration import (
+    ExternalIdentity,
+    PasswordResetToken,
+    UserActivation,
+    UserContact,
+    VerificationCode,
+)
+from .quota import QuotaUsage
 
 __all__ = [
     "Project",
@@ -27,4 +35,10 @@ __all__ = [
     "UserRole",
     "UserSession",
     "AuditLog",
+    "UserContact",
+    "VerificationCode",
+    "UserActivation",
+    "PasswordResetToken",
+    "ExternalIdentity",
+    "QuotaUsage",
 ]
