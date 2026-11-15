@@ -28,6 +28,8 @@ class GitLabAdapter(PluginBase):
         self.binding = "gitlab"  # 这个适配器服务的目标;效果按它解析
         self.tenant = ""
         self.source = SOURCE
+        # 评论里的触发词。这个适配器还没接评论事件,空着才是实话:不声明就不接。
+        self.mentions: tuple[str, ...] = ()
         # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
         self.config_hint = "GITLAB_WEBHOOK_SECRET"
 

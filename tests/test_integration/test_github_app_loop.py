@@ -304,43 +304,6 @@ class TestWebhookHandlerLogic:
         assert event["type"] == "issues"
         assert event["action"] == "opened"
 
-    def test_extract_issue_info(self):
-        """验证 Issue 信息提取。"""
-        import json
-        import importlib
-
-        handlers_mod = importlib.import_module("plugins.builtin.adapters.github-app.handlers")
-        WebhookHandler = handlers_mod.WebhookHandler
-
-        config = MagicMock()
-        handler = WebhookHandler(config)
-
-        headers = {"X-GitHub-Event": "issues"}
-        payload = {
-            "action": "opened",
-            "issue": {
-                "number": 42,
-                "title": "Bug Report",
-                "body": "Something is broken",
-            },
-            "repository": {
-                "name": "my-repo",
-                "owner": {"login": "my-org"},
-            },
-            "sender": {"login": "test-user"},
-        }
-        body = json.dumps(payload).encode()
-
-        event = handler.parse_event(headers, body)
-        issue_info = handler.extract_issue_info(event)
-
-        assert issue_info is not None
-        assert issue_info["owner"] == "my-org"
-        assert issue_info["repo"] == "my-repo"
-        assert issue_info["issue_number"] == 42
-        assert issue_info["title"] == "Bug Report"
-
-
 # ============================================================================
 # 额外验证：SensorAgent 分析逻辑
 # ============================================================================

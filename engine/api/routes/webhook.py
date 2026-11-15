@@ -6,6 +6,7 @@ GitHub / GitLab / CNB 的字段名、事件名与签名方式都留在各自适�
 工作流只认 `engine/ingest/events.py` 那一种说法。
 
 新增一个来源 = 加一个声明 `webhook.receive` 的适配器插件,这里不加分支。
+"这条评论算不算叫我"也归适配器声明(`mentions`),核心不认识 `@gwei` 这个名字。
 """
 
 import hashlib
@@ -16,9 +17,9 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 
 from engine.ingest.events import header_value
+from engine.ingest.source import mentions_prompt, source_adapter
 from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
 from engine.shared.config import config
-from engine.shared.runtime import get_source_adapter
 from engine.workflows.pipeline import (
     WORKFLOW_QUEUE,
     alert_triage_workflow,
@@ -70,19 +71,12 @@ def _delivery_id(headers: dict, body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()[:16]
 
 
-async def _handle_source_event(
-    source: str, request: Request, *, only_kind: str | None = None
-) -> dict:
+async def _handle_source_event(source: str, request: Request) -> dict:
     """一个来源的 Webhook:验签、归一化、去重、入队。"""
     try:
-        adapter = get_source_adapter(source)
+        adapter = source_adapter(source)
     except LookupError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    if adapter is None:
-        raise HTTPException(
-            status_code=503,
-            detail=f"没有为 {source} 配置 webhook 适配器:装上声明 webhook.receive 的插件再来",
-        )
 
     # 人可能刚在页面上填完密钥:启动时读的是快照,再读一次,不用重启。
     if not adapter.webhook_configured():
@@ -115,8 +109,6 @@ async def _handle_source_event(
 
     if event.get("kind") == "ping":
         return {"status": "ok", "message": "pong"}
-    if only_kind is not None and event.get("kind") != only_kind:
-        return {"status": "ignored", "message": f"Not a {only_kind} event"}
 
     payload = _payload_from_event(event)
     delivery = _delivery_id(headers, body)
@@ -132,8 +124,9 @@ async def _handle_source_event(
     if kind == "merge":
         return await _enqueue_workflow("gwei-release", release_workflow, delivery, payload)
     if kind == "comment":
-        if "@gwei" not in (payload["body"] or "").lower():
-            return {"status": "ignored", "message": "Comment does not mention @gwei"}
+        # 触发词是这个来源自己的事:CNB 上人叫 `@CodeBuddy`,GitHub 上叫 `@gwei`。
+        if not mentions_prompt(adapter, payload["body"]):
+            return {"status": "ignored", "message": f"{source} 上的评论没叫平台"}
         return await _enqueue_workflow("gwei-fix", fix_suggestion_workflow, delivery, payload)
     return await _enqueue_workflow("gwei-triage", issue_triage_workflow, delivery, payload)
 
@@ -195,17 +188,11 @@ async def _enqueue_signals(source: str, adapter, headers: dict, body: bytes) -> 
 async def source_webhook(source: str, request: Request):
     """任何来源的投递。
 
-    核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+    核心这里不认识 GitHub、GitLab、CNB、Alertmanager、Caddy、云雀中的任何一个:
     它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
-    接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+    接一个新的来源 = 装一个适配器插件,这里不加分支、不加一家专用的入口。
     """
     return await _handle_source_event(source, request)
-
-
-@router.post("/webhook/github/comment")
-async def github_comment_webhook(request: Request):
-    """GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。"""
-    return await _handle_source_event("github", request, only_kind="comment")
 
 
 def _safe_id(*parts: str) -> str:

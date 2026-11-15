@@ -82,7 +82,7 @@ class TestWebhookGuard:
                 if after is not None:
                     self.secret = after
 
-        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: Adapter())
+        monkeypatch.setattr(webhook_mod, "source_adapter", lambda source: Adapter())
         app = FastAPI()
         app.include_router(webhook_mod.router)
         return TestClient(app)
@@ -292,24 +292,6 @@ class TestPipelineImpls:
             "generate_patches", {"title": "T", "body": "B", "file_path": ""}
         )
 
-    @pytest.mark.asyncio
-    async def test_post_comment_impl_swallows_failure(self):
-        from engine.workflows.pipeline import _post_comment_impl
-
-        with patch("engine.workflows.pipeline.get_adapter") as mock_get_adapter:
-            adapter = MagicMock()
-            adapter.config = MagicMock()  # 非空则跳过 on_startup
-            adapter.execute_task = AsyncMock(side_effect=Exception("gh down"))
-            mock_get_adapter.return_value = adapter
-
-            result = await _post_comment_impl(
-                {"repo_full_name": "my-org/my-repo", "issue_number": 1}, "hi"
-            )
-
-        assert result["posted"] is False
-        assert "gh down" in result["error"]
-
-
 # ============================================================================
 # 工作流符号与导出（无需启动 DBOS）
 # ============================================================================
@@ -414,8 +396,8 @@ class TestWorkflowEndToEnd:
             session, added = _make_fake_session_factory()
 
             with patch.object(pipeline_module, "get_sensor") as mock_get_sensor, patch.object(
-                pipeline_module, "get_adapter"
-            ) as mock_get_adapter, patch.object(
+                pipeline_module, "reply_on_topic_step", AsyncMock(return_value={})
+            ) as mock_reply, patch.object(
                 pipeline_module, "async_session_factory", return_value=session
             ):
                 sensor = MagicMock()
@@ -429,11 +411,6 @@ class TestWorkflowEndToEnd:
                     }
                 )
                 mock_get_sensor.return_value = sensor
-
-                adapter = MagicMock()
-                adapter.config = MagicMock()
-                adapter.execute_task = AsyncMock(return_value={"success": True})
-                mock_get_adapter.return_value = adapter
 
                 payload = {
                     "tenant_slug": "default",
@@ -470,7 +447,8 @@ class TestWorkflowEndToEnd:
                 assert effects[0]["capability"] == "comment.create"
                 assert effects[0]["verdict"] == "blocked"
                 sensor.handle_event.assert_awaited_once()
-                adapter.execute_task.assert_not_awaited()
+                # 回评走变更单元,不再是一句"调一下适配器的 execute_task"
+                mock_reply.assert_awaited_once()
         finally:
             DBOS.destroy(destroy_registry=True)
 
@@ -505,6 +483,8 @@ def _comment_payload(**extra) -> dict:
         "title": "加一个设置页",
         "body": "@gwei 帮我加一个能填 key 的设置页",
         "source": "comment",
+        # 这条投递来自 GitHub:回评与取代码都按它解析,没有默认来源
+        "source_adapter": "github",
         **extra,
     }
 
@@ -580,12 +560,16 @@ class TestAgentPath:
         monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
 
         class NoCredentials:
-            config = None
+            """配了来源、但拿不到凭据的适配器:快照这一步就该失败。"""
 
-            async def on_startup(self):
+            source = "github"
+
+            async def workspace_source(self, repo):
                 raise RuntimeError("没配 GitHub App")
 
-        monkeypatch.setattr(pipeline_module, "get_adapter", lambda: NoCredentials())
+        monkeypatch.setattr(
+            pipeline_module, "source_adapter", lambda source: NoCredentials()
+        )
 
         report = asyncio.run(pipeline_module._run_agent_impl(_comment_payload()))
 
@@ -670,7 +654,8 @@ class TestReplyOnTheTopic:
 
         out = _asyncio.run(
             pipeline_module._reply_on_topic_impl(
-                {"repo_full_name": "o/r", "issue_number": 6}, {"summary": "x"}
+                {"repo_full_name": "o/r", "issue_number": 6, "source_adapter": "github"},
+                {"summary": "x"},
             )
         )
 

@@ -4,6 +4,7 @@
 from typing import Any, Dict
 
 from engine.change_unit import Effect, EffectNotApplied, Window
+from engine.harness.workspace import Source as WorkspaceSource
 from engine.ingest.events import EventError, header_value
 from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
 from .config import GitHubAppConfig
@@ -53,6 +54,8 @@ class GitHubAppAdapter(PluginBase):
         self.tenant = ""
         # 来源名:核心按它把 /webhook/<source> 的投递交给这个适配器。
         self.source = "github"
+        # 评论里用什么名字叫平台。核心不认识这个字符串,只问适配器。
+        self.mentions = ("@gwei",)
         # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
         self.config_hint = "GITHUB_APP_WEBHOOK_SECRET"
 
@@ -139,9 +142,7 @@ class GitHubAppAdapter(PluginBase):
         return len(errors) == 0
 
     async def handle_event(self, event: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """处理事件。"""
-        if event == "webhook.received":
-            return await self._handle_webhook(data)
+        """这个适配器不订阅进程内事件:投递走 `/webhook/{source}`,不走事件总线。"""
         return {"status": "ignored", "event": event}
 
     async def execute_task(self, task: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -279,7 +280,7 @@ class GitHubAppAdapter(PluginBase):
             "head_sha": (pull.get("head") or {}).get("sha", ""),
         }
 
-    async def workspace_source(self, repo: str) -> Dict[str, Any]:
+    async def workspace_source(self, repo: str) -> WorkspaceSource:
         """拉代码要的三样东西:快照地址、令牌、基线分支。
 
         凭据只交出去这一次,用在哪、怎么用由平台决定;容器永远拿不到。
@@ -289,12 +290,24 @@ class GitHubAppAdapter(PluginBase):
                 "GitHub App 客户端还没建起来(app_id / private_key / installation_id)"
             )
         branch = await self.client.default_branch(repo)
-        return {
+        return WorkspaceSource(
             # 走 API 的 tarball 端点,不走 github.com 的 git 协议:后者在有些网络里连不上
-            "tarball_url": f"https://api.github.com/repos/{repo}/tarball/{branch}",
-            "token": await self.client.installation_token(),
-            "branch": branch,
-        }
+            archive_url=f"https://api.github.com/repos/{repo}/tarball/{branch}",
+            token=await self.client.installation_token(),
+            branch=branch,
+        )
+
+    async def read_pull(self, repo: str, number: int) -> Dict[str, Any] | None:
+        """这个编号的 PR:接着改它,就得知道它的分支与地址。"""
+        if not await self._ensure_ready():
+            raise RuntimeError(
+                "GitHub App 客户端还没建起来(app_id / private_key / installation_id)"
+            )
+        pull = await self.client.get_pull(repo, number)
+        if pull is None:
+            return None
+        head = (pull.get("head") or {}).get("ref") or ""
+        return {"url": pull.get("html_url", ""), "head": {"ref": head}, "state": pull.get("state", "")}
 
     async def undo(self, task: str, args: Dict[str, Any], handle: str) -> Dict[str, Any]:
         await self._ensure_ready()
@@ -340,36 +353,3 @@ class GitHubAppAdapter(PluginBase):
         data = await self.client.get_comment(effect.args["repo"], int(handle))
         return data is not None, {"comment_id": int(handle), "found": data is not None}
 
-    async def _handle_webhook(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """处理 Webhook 事件。"""
-        try:
-            headers = data.get("headers", {})
-            body = data.get("body", b"")
-
-            # 验证签名（如果配置了 webhook_secret）
-            signature = headers.get("X-Hub-Signature-256", "")
-            if self.config.webhook_secret and not self.webhook_handler.verify_signature(body, signature):
-                return {"status": "error", "message": "Invalid webhook signature"}
-
-            # 解析事件
-            event = self.webhook_handler.parse_event(headers, body)
-            if event is None:
-                return {"status": "ignored", "message": "Unsupported event type"}
-
-            # 处理 ping 事件
-            if event["type"] == "ping":
-                return {"status": "ok", "message": "pong"}
-
-            # 提取 issue 信息
-            issue_info = self.webhook_handler.extract_issue_info(event)
-            if issue_info is None:
-                return {"status": "ignored", "message": "Could not extract issue info"}
-
-            return {
-                "status": "ok",
-                "event_type": event["type"],
-                "action": event["action"],
-                "issue_info": issue_info,
-            }
-        except Exception as e:
-            return {"status": "error", "message": f"Webhook 处理失败: {e}"}

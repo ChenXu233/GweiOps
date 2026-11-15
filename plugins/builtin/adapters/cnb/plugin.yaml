@@ -1,20 +1,44 @@
 name: cnb-adapter
-version: 0.1.0
+version: 0.2.0
 type: adapter
 class_name: CNBAdapter
-description: CNB(cnb.cool)适配器:接收 PullRequestEvent,把合并翻译成平台事件
+description: CNB(cnb.cool)适配器:议题/评论/合并事件,回评与开 PR,仓库快照
 
 capabilities:
   - webhook.receive
   - webhook.verify
+  - comment.create
+  - pr.open
+
+tasks:
+  comment.create: create_comment
+  pr.open: open_pull
+
+effects:
+  # CNB 上议题评论和 PR 评论是两个地址(?type=pr),所以 is_pull 要进参数
+  comment.create:
+    label: 在议题 / 合并请求上发一条评论
+    execute: { task: create_comment, args: [repo, issue_number, body, is_pull] }
+    undo: { task: delete_comment, kind: symmetric }
+    window: { read: comment_present }
+    verify:
+      - { query: comment_exists, expect: "true" }
+  pr.open:
+    label: 开一个合并请求
+    execute: { task: open_pull, args: [repo, base, head, title, body] }
+    undo: { task: close_pull, kind: symmetric }
+    window: { read: pull_open }
+    verify:
+      - { query: pull_open, expect: "true" }
 
 config:
   required:
     - CNB_WEBHOOK_TOKEN
   optional:
     - CNB_BASE_URL
+    - CNB_WEB_BASE_URL
     - CNB_TOKEN
     - CNB_WEBHOOK_HEADER
 
-# 预留位:当前只接 GitHub。要用 CNB 时把这里改成 true,或用 PLUGINS_ENABLED 打开。
+# 预留位:要用 CNB 时把这里改成 true,或用 PLUGINS_ENABLED 打开。
 default_enabled: false

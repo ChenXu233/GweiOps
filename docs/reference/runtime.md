@@ -18,7 +18,7 @@
 | 工作流 | 触发 | 链路 |
 | --- | --- | --- |
 | `issue_triage_workflow` | issues opened/edited | Sensor 分析 → 落库 → `issue.triaged` Hook → `intent.propose` → 效果单元(回评,可撤销) |
-| `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 配了 `HARNESS_COMMAND` 就整场交给 harness(它改工作区里的代码,效果仍从出口落成,通常是 `pr.open`),收口后在原话题上回一句结果;没配才退回 补丁建议 → `patch.generated` transform → `intent.propose` → 回评 |
+| `fix_suggestion_workflow` | 评论含来源声明的触发词(GitHub 是 `@gwei`,CNB 是 `@CodeBuddy`) | 落库 → 配了 `HARNESS_COMMAND` 就整场交给 harness(它改工作区里的代码,效果仍从出口落成,通常是 `pr.open`),收口后在原话题上回一句结果;没配才退回 补丁建议 → `patch.generated` transform → `intent.propose` → 回评 |
 | `release_workflow` | 任何来源的合并事件(GitHub PR / GitLab MR / CNB PR) | 合并提交 → 发布意图(`compose.release`)→ 指定下游的变更单元 → 来源支持回评时回帖 |
 | `alert_triage_workflow` | 监控告警 firing | 归化信号 → 有 `incident.handle` 提供者就整场交给 agent,否则 `intent.propose` → 效果单元(没有补丁、没有回评) |
 | `scheduled_scan_workflow` | 清单里声明的周期(DBOS 调度器) | 跑到点的能力 → 有结果就转成 `source=scan` 的信号交给 `alert_triage_workflow`;没结果就什么都不做 |
@@ -27,7 +27,9 @@
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
 - 周期巡检走 DBOS 自己的调度器,不在 `gwei-agents` 队列上:入队的定时执行不带分区键,调度与幂等由系统库里的 `sched-<调度名>-<点火时刻>` 保证。发现与校验规则见[插件系统](plugin-system.md#周期巡检)。
-- 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
+- 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。没有一家专用入口,也没有"默认来源"——没装适配器就是 503。
+- 信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
+- 回评往哪回、工作区里的代码从哪来,都按这条投递的 `source_adapter` 解析:CNB 的议题进来就回 CNB、拉 CNB 的仓库。载荷缺来源直接报错,不拿 GitHub 顶上。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 - PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到那个分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
 
@@ -43,7 +45,7 @@
 - 发布效果打到的下游是 `RELEASE_BINDING`(默认 `local`),不是部署默认的 `DEFAULT_BINDING`;两者要分别配。
 - 这不是金丝雀:一次发布就是一个单元、一步切换。分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
 - 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
-- 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB PR 的适配器是预留位,打开后走同一条链路。
+- 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB 的适配器是预留位(`default_enabled: false`),打开后走同一条链路。
 
 ## MCP
 

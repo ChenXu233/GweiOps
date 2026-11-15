@@ -133,7 +133,7 @@ class TestSourceWebhookRoute:
             captured.append((prefix, workflow.__name__, payload))
             return {"status": "queued"}
 
-        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda name: Adapter())
+        monkeypatch.setattr(webhook_mod, "source_adapter", lambda name: Adapter())
         monkeypatch.setattr(webhook_mod, "dedup_once", dedup)
         monkeypatch.setattr(webhook_mod, "_enqueue_workflow", enqueue)
 

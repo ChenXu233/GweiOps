@@ -68,58 +68,6 @@ class WebhookHandler:
             "payload": payload,
         }
 
-    def extract_issue_info(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """提取 Issue 信息。"""
-        payload = event.get("payload", {})
-
-        if event["type"] == "issues":
-            issue = payload.get("issue", {})
-            repo = payload.get("repository", {})
-            return {
-                "owner": repo.get("owner", {}).get("login", ""),
-                "repo": repo.get("name", ""),
-                "issue_number": issue.get("number"),
-                "title": issue.get("title", ""),
-                "body": issue.get("body", ""),
-                "action": event["action"],
-                "sender": payload.get("sender", {}).get("login", ""),
-            }
-
-        if event["type"] == "issue_comment":
-            issue = payload.get("issue", {})
-            comment = payload.get("comment", {})
-            repo = payload.get("repository", {})
-            return {
-                "owner": repo.get("owner", {}).get("login", ""),
-                "repo": repo.get("name", ""),
-                "issue_number": issue.get("number"),
-                "comment_id": comment.get("id"),
-                "comment_body": comment.get("body", ""),
-                "action": event["action"],
-                "sender": payload.get("sender", {}).get("login", ""),
-            }
-
-        if event["type"] == "pull_request":
-            pull = payload.get("pull_request", {})
-            repo = payload.get("repository", {})
-            base = pull.get("base") or {}
-            head = pull.get("head") or {}
-            return {
-                "owner": repo.get("owner", {}).get("login", ""),
-                "repo": repo.get("name", ""),
-                "issue_number": pull.get("number"),
-                "title": pull.get("title", ""),
-                "body": pull.get("body") or "",
-                "action": event["action"],
-                "sender": payload.get("sender", {}).get("login", ""),
-                "merged": bool(pull.get("merged")),
-                "merge_sha": pull.get("merge_commit_sha") or "",
-                "base_ref": base.get("ref", ""),
-                "head_ref": head.get("ref", ""),
-            }
-
-        return None
-
     def normalize_event(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """GitHub 语法 → 平台归一化事件。核心不再认识 pull_request 这些字段。"""
         event_type = event.get("type", "")

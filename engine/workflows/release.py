@@ -21,6 +21,7 @@ from engine.workflows.pipeline import (
     close_incident_step,
     declarative_report,
     open_incident_step,
+    reply_binding,
     reply_on_topic_step,
 )
 
@@ -135,11 +136,6 @@ def build_release_intent(payload: dict) -> dict | None:
     }
 
 
-def comment_binding(payload: dict) -> str:
-    """回评该落到哪个来源上。GitHub/GitLab/CNB 各是各的,不能都算 GitHub。"""
-    return str(payload.get("source_adapter") or "github")
-
-
 def _can_reply(payload: dict) -> bool:
     """这个来源有没有声明 comment.create 的提供者。
 
@@ -150,7 +146,7 @@ def _can_reply(payload: dict) -> bool:
         registry.effect_decl(
             "comment.create",
             tenant=str(payload.get("tenant_slug") or ""),
-            binding=comment_binding(payload),
+            binding=reply_binding(payload),
         )
     except LookupError:
         return False
@@ -182,7 +178,7 @@ async def _release_impl(payload: dict) -> dict:
     report = declarative_report(intent, applied)
     await close_incident_step(payload, report)
     if _can_reply(payload):
-        await reply_on_topic_step(payload, report, comment_binding(payload))
+        await reply_on_topic_step(payload, report, reply_binding(payload))
     return report
 
 
