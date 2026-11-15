@@ -44,19 +44,20 @@ def check_contract() -> bool:
 
 
 def check_migrations() -> bool:
-    """alembic 的 head 必须只有一个,否则 upgrade 不知道该走哪条。"""
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "heads"],
-        cwd=ROOT / "engine",
-        capture_output=True,
-        text=True,
-    )
-    heads = [line for line in result.stdout.splitlines() if line.strip().startswith("Rev:")]
-    if result.returncode == 0 and len(heads) == 1:
+    """迁移链必须是一条:一个 head,没有断成两支。
+
+    alembic 的 heads 命令只在数据库连得上时才诚实(env.py 会去读配置),
+    CI 里没有 Postgres。`ScriptDirectory` 读的是磁盘上的脚本,纯本地判断。
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(ROOT / "engine" / "alembic.ini")))
+    heads = script.get_heads()
+    if len(heads) == 1:
         return True
 
-    print("::error::alembic 迁移头不是一个")
-    print(result.stdout + result.stderr)
+    print(f"::error::迁移链的 head 不是一个: {heads or '(空)'}")
     return False
 
 
