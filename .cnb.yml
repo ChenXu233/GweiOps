@@ -42,3 +42,45 @@ master:
             branch: master
             force: true
             push_tags: true
+
+# ---------------------------------------------------------------------------
+# 校验作业:PR 与 master 推送都跑,不合就红。
+# 这是合入门槛的唯一实现——GitHub 侧的 workflows 只构建、不校验。
+#
+# 两段各用各的现成镜像,不现建 docker 镜像:
+# - Python 段在 python:3.12 里跑,依赖由 uv 按 engine/uv.lock 装；
+# - 前端段在 node:22 + pnpm 10.15 里跑,依赖由 pnpm 按 frontend/pnpm-lock.yaml 装。
+#
+# 工具链要现装:python:3.12 与 node:22 里都没有 uv / pnpm,阶段里先装再跑脚本。
+# 这一步不能挪进 .ci/*.sh——脚本要能在本地原样跑,而那台机器上 uv 早就有了。
+#
+# 曾经用 `docker.build: .ci/Dockerfile` 现建一个"什么都有"的校验镜像,连挂三次:
+# 平台的 docker build 给的 context 只含 Dockerfile 本身,`COPY engine/...` 一律
+# not found,而报错只说 checksum 算不出来。两段的工具链本来就不一样,分开反而更短。
+#
+# 命令与它为什么这么写,见 CI-CHECKS.md。
+# ---------------------------------------------------------------------------
+
+"$":
+  pull_request:
+    - stages:
+        - name: engine tests
+          image: python:3.12
+          script: bash .ci/engine-tests.sh
+        - name: web checks
+          image: node:22
+          script: |
+            corepack enable
+            corepack prepare pnpm@10.15.0 --activate
+            bash .ci/web-checks.sh
+  push:
+    - stages:
+        - name: engine tests
+          image: python:3.12
+          script: bash .ci/engine-tests.sh
+        - name: web checks
+          image: node:22
+          script: |
+            corepack enable
+            corepack prepare pnpm@10.15.0 --activate
+            bash .ci/web-checks.sh

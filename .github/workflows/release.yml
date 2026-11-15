@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # release notes 里的镜像地址要用它。不定义的话渲染成 `/:v1.0.0`。
+  REGISTRY: ghcr.io
+
 jobs:
   release:
     runs-on: ubuntu-latest

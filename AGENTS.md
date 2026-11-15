@@ -87,6 +87,7 @@ docker compose up
 | API 端点 | `docs/reference/runtime.md` |
 | 架构边界或决策 | `docs/explanation/` 对应文档 |
 | 文档结构或导航 | `docs/README.md` |
+| CI 校验(跑什么、怎么本地复现、依赖锁定) | 根目录 `CI-CHECKS.md` |
 
 ## 6. 文档规则
 
