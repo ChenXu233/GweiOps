@@ -10,8 +10,10 @@ permissions:
   contents: write
 
 env:
-  # release notes 里的镜像地址要用它。不定义的话渲染成 `/:v1.0.0`。
+  # release notes 与日志里的镜像地址要用它。不定义的话渲染成 `/:v1.0.0`。
   REGISTRY: ghcr.io
+  # build.yml 推的就是这个名字:engine 同名,web 带 -web 后缀
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   release:
@@ -42,8 +44,8 @@ jobs:
           echo "" >> notes.md
           echo "---" >> notes.md
           echo "**Docker Images**: " >> notes.md
-          echo "- Engine: \`${{ env.REGISTRY }}/${{ github.repository }}:${{ github.ref_name }}\`" >> notes.md
-          echo "- Web: \`${{ env.REGISTRY }}/${{ github.repository }}-web:${{ github.ref_name }}\`" >> notes.md
+          echo "- Engine: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}\`" >> notes.md
+          echo "- Web: \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web:${{ github.ref_name }}\`" >> notes.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${{ github.ref_name }}" >> notes.md
 
       - name: Create GitHub Release
@@ -58,5 +60,5 @@ jobs:
       - name: Log release info
         run: |
           echo "🎉 Release ${{ github.ref_name }} created!"
-          echo "Engine: ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
-          echo "Web: ghcr.io/${{ github.repository }}-web:${{ github.ref_name }}"
+          echo "Engine: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+          echo "Web: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web:${{ github.ref_name }}"
