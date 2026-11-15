@@ -42,3 +42,51 @@ master:
             branch: master
             force: true
             push_tags: true
+
+"v*":
+  tag_push:
+    # 发布制品:一个 tag = 两个镜像,推完 master 再打 tag。
+    #
+    # tag_push 属于可信事件,${CNB_TOKEN} 带 registry-package:rw,login 后可直接推。
+    # 工作流不通 docker:compose 里 engine/web 写的就是 GHCR 的名字,这里只负责把
+    # 镜像按 tag 送进制品的库,拉取地址见 README 的「发布制品」。
+    #
+    # 两条流水线而不是一条串行:engine 与 web 互不依赖,一个失败不该拦下另一个。
+    - name: release engine image
+      services:
+        - docker
+      env:
+        IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+      stages:
+        - name: docker login
+          script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
+        - name: build and push
+          script: |
+            set -euo pipefail
+            # tag 名带 v 前缀,v0.2.0 也照原样落成 tag,不替人改写版本号
+            docker build \
+              -f engine/Dockerfile \
+              -t "${IMAGE}:${CNB_BRANCH}" \
+              -t "${IMAGE}:latest" \
+              .
+            docker push "${IMAGE}:${CNB_BRANCH}"
+            docker push "${IMAGE}:latest"
+
+    - name: release web image
+      services:
+        - docker
+      env:
+        IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}-web
+      stages:
+        - name: docker login
+          script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
+        - name: build and push
+          script: |
+            set -euo pipefail
+            docker build \
+              -f frontend/Dockerfile \
+              -t "${IMAGE}:${CNB_BRANCH}" \
+              -t "${IMAGE}:latest" \
+              ./frontend
+            docker push "${IMAGE}:${CNB_BRANCH}"
+            docker push "${IMAGE}:latest"
