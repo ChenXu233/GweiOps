@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useSettings } from '@gwei/core/composables/useSettings'
 import { useTheme } from '@gwei/core/composables/useTheme'
-import { ApiKeysApi, SettingsScopesApi } from '@gwei/core/api/client'
+import { SettingsScopesApi } from '@gwei/core/api/client'
 
 interface ScopeField {
   name: string
@@ -88,113 +88,10 @@ const themes = [
   { key: 'system' as const, icon: 'system', label: '跟随系统', hint: '跟着系统切换' },
 ]
 
-// ---- MCP 接入:给外界的 agent 签一把钥匙 ---------------------------------
-// 一把密钥有什么权限,它的 tools/list 里就只有什么工具 —— 这里只签与撤,
-// 不做"先看后给"的两步:签发那一次就能看到明文,之后永远只有 hint。
-
-interface IssuedKey {
-  id: string
-  name: string
-  hint: string
-  permissions: string[]
-  tools: string[]
-  created_at: string
-  last_used_at: string
-  expires_at: string
-  key?: string
-}
-interface PermissionOption { key: string, description: string }
-
-const keys = ref<IssuedKey[]>([])
-const permissionOptions = ref<PermissionOption[]>([])
-const keysError = ref('')
-const issuing = ref(false)
-const revoking = ref<string | null>(null)
-const freshKey = ref<{ name: string, key: string } | null>(null)
-const draft = reactive({ name: '', permissions: [] as string[] })
-
-// 演示模式没有引擎,也就没有可签的凭据:整块不出现,免得点一下报一串 404
-const useMock = useRuntimeConfig().public.useMock === true
-const canManageKeys = computed(() => can('keys.manage'))
-const canReadKeys = computed(() => !useMock && (can('keys.read') || canManageKeys.value))
-
-async function loadKeys() {
-  if (!canReadKeys.value) return
-  try {
-    const [listed, permissions] = await Promise.all([
-      ApiKeysApi.list(),
-      $fetch<{ permissions: PermissionOption[] }>('/api/permissions'),
-    ])
-    keys.value = (listed.items as unknown as IssuedKey[]) ?? []
-    permissionOptions.value = permissions.permissions
-  } catch (e) {
-    keysError.value = friendly(e instanceof Error ? e.message : String(e))
-  }
-}
-
-function toggleKeyPermission(key: string) {
-  const i = draft.permissions.indexOf(key)
-  if (i >= 0) draft.permissions.splice(i, 1)
-  else draft.permissions.push(key)
-}
-
-function keyPermissionLabel(key: string): string {
-  return permissionOptions.value.find(p => p.key === key)?.description ?? key
-}
-
-async function issueKey() {
-  issuing.value = true
-  keysError.value = ''
-  try {
-    const issued = await ApiKeysApi.issue({
-      name: draft.name,
-      permissions: draft.permissions,
-    })
-    const body = issued as unknown as IssuedKey
-    freshKey.value = { name: body.name, key: body.key ?? '' }
-    draft.name = ''
-    draft.permissions = []
-    await loadKeys()
-  } catch (e) {
-    keysError.value = friendly(e instanceof Error ? e.message : String(e))
-  } finally {
-    issuing.value = false
-  }
-}
-
-async function revokeKey(id: string) {
-  revoking.value = id
-  keysError.value = ''
-  try {
-    await ApiKeysApi.revoke(id)
-    await loadKeys()
-  } catch (e) {
-    keysError.value = friendly(e instanceof Error ? e.message : String(e))
-  } finally {
-    revoking.value = null
-  }
-}
-
-// 接入地址:同一个站点,补上 /mcp。复制给自己贴进客户端。
-const mcpUrl = computed(() => {
-  if (!import.meta.client) return '/mcp'
-  return `${window.location.origin}/mcp`
-})
-
-const copied = ref('')
-async function copy(text: string, what: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    copied.value = what
-    setTimeout(() => {
-      if (copied.value === what) copied.value = ''
-    }, 2000)
-  } catch {
-    // 剪贴板不可用(非 https / 拒绝授权):值就在页面上,手动选中即可
-  }
-}
-
-onMounted(loadKeys)
+// MCP 接入有自己的页面:签密钥要挑资源、勾权限、看它拿到什么清单,塞在设置页里
+// 会把"当前租户的运行参数"和"给外界发凭据"混成一件事。
+const hasKeyAccess = computed(() => can('keys.read'))
+const mockMode = useRuntimeConfig().public.useMock === true
 
 const sections = computed(() => {
   const d = data.value
@@ -397,126 +294,27 @@ const sections = computed(() => {
         </div>
       </section>
 
-      <!-- MCP 接入:外界 agent 拿一把密钥接上 /mcp,工具按这把密钥的权限暴露 -->
-      <section v-if="canReadKeys" class="panel overflow-hidden">
+      <!-- MCP 接入在它自己的页面上:那里要挑资源、勾权限、看工具清单 -->
+      <section v-if="hasKeyAccess" class="panel overflow-hidden">
         <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
           <AppIcon name="key-round" :size="14" class="text-ink-faint" />
           <h2 class="text-[13px] font-semibold">MCP 接入</h2>
           <span class="eyebrow ml-auto">AGENT ACCESS</span>
         </div>
-
-        <div class="border-b border-line/60 px-5 py-4">
-          <p class="text-[12.5px] leading-relaxed text-ink-soft">
-            把地址贴进 Claude Code、Cursor 或任何支持 MCP 的客户端,凭据填一把密钥。
-            密钥有什么权限,工具清单里就只有什么工具。
-          </p>
-          <div class="mt-3 grid gap-2 sm:grid-cols-2">
-            <div class="rounded-card border border-line bg-well px-3 py-2">
-              <span class="block text-[11px] text-ink-faint">地址(streamable HTTP)</span>
-              <button class="mt-0.5 block w-full truncate text-left font-mono text-[12px]" @click="copy(mcpUrl, 'url')">
-                {{ mcpUrl }}
-              </button>
-            </div>
-            <div class="rounded-card border border-line bg-well px-3 py-2">
-              <span class="block text-[11px] text-ink-faint">凭据请求头</span>
-              <span class="mt-0.5 block font-mono text-[12px]">X-Gwei-Token: &lt;密钥&gt;</span>
-            </div>
+        <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+          <div class="min-w-0 flex-1">
+            <p class="text-[12.5px] leading-relaxed text-ink-soft">
+              外界的 agent 用一把密钥接上 <code class="font-mono text-[11.5px]">/mcp</code>。
+              密钥有什么权限、能碰哪些资源,它的工具清单里就只有哪些。
+            </p>
+            <p v-if="mockMode" class="mt-1 text-[11.5px] text-ink-faint">
+              演示模式没有引擎,也就没有可签的凭据。
+            </p>
           </div>
-          <div v-if="copied" class="mt-2 text-[11.5px] text-ink-faint">已复制</div>
-        </div>
-
-        <!-- 签发 -->
-        <div v-if="canManageKeys" class="border-b border-line/60 px-5 py-4">
-          <div class="flex flex-wrap items-end gap-2">
-            <label class="min-w-[180px] flex-1">
-              <span class="mb-1 block text-[11.5px] text-ink-soft">这把密钥给谁用</span>
-              <input
-                v-model="draft.name"
-                placeholder="例:claude-code 本机"
-                class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong"
-                autocomplete="off"
-              >
-            </label>
-            <button
-              class="btn-solid h-9 px-3.5 text-[12.5px]"
-              :disabled="issuing || !draft.name.trim()"
-              @click="issueKey"
-            >
-              {{ issuing ? '签发中…' : '签发密钥' }}
-            </button>
-          </div>
-
-          <div class="mt-3">
-            <span class="mb-1.5 block text-[11.5px] text-ink-soft">
-              给它哪些权限
-              <span class="text-ink-faint">(不勾就是一把只能认路的钥匙,调不动任何工具)</span>
-            </span>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="p in permissionOptions"
-                :key="p.key"
-                class="chip transition-colors"
-                :class="draft.permissions.includes(p.key) ? 'border-ink/30 bg-ink text-paper' : 'hover:border-line-strong'"
-                :title="p.key"
-                @click="toggleKeyPermission(p.key)"
-              >
-                {{ p.description }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 明文只出现这一次 -->
-        <div
-          v-if="freshKey"
-          class="mx-5 my-3 rounded-card border border-amber/30 bg-amber/5 px-3 py-3"
-        >
-          <div class="text-[12px] font-medium">「{{ freshKey.name }}」的密钥,现在复制走</div>
-          <p class="mt-1 text-[11.5px] text-ink-soft">
-            这一行只出现这一次,关掉页面就再也拿不到;丢了就吊销重签。
-          </p>
-          <div class="mt-2 flex items-center gap-2">
-            <code class="min-w-0 flex-1 truncate rounded-card border border-line bg-well px-2 py-1.5 font-mono text-[11.5px]">{{ freshKey.key }}</code>
-            <button class="btn-outline h-8 px-3 text-[12px]" @click="copy(freshKey.key, 'key')">复制</button>
-            <button class="btn-ghost h-8 px-2 text-[12px]" @click="freshKey = null">收起</button>
-          </div>
-        </div>
-
-        <!-- 清单 -->
-        <div v-if="keys.length" class="divide-y divide-line/60">
-          <div v-for="k in keys" :key="k.id" class="px-5 py-3">
-            <div class="flex items-center gap-2">
-              <span class="text-[12.5px] font-medium">{{ k.name || '未具名' }}</span>
-              <span class="font-mono text-[11px] text-ink-faint">{{ k.hint }}</span>
-              <span v-if="k.last_used_at" class="chip ml-auto">
-                最近用过 {{ k.last_used_at.slice(0, 16).replace('T', ' ') }}
-              </span>
-              <span v-else class="chip ml-auto">没用过</span>
-              <button
-                v-if="canManageKeys"
-                class="btn-ghost h-7 px-2 text-[11.5px] text-coral"
-                :disabled="revoking === k.id"
-                @click="revokeKey(k.id)"
-              >
-                {{ revoking === k.id ? '吊销中…' : '吊销' }}
-              </button>
-            </div>
-            <div class="mt-1.5 flex flex-wrap gap-1">
-              <span v-for="p in k.permissions" :key="p" class="chip">{{ keyPermissionLabel(p) }}</span>
-              <span v-if="!k.permissions.length" class="chip chip-warn">没有权限</span>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="px-5 py-6 text-[12.5px] text-ink-faint">
-          还没有密钥。签一把,外界的 agent 就能接上来了。
-        </div>
-
-        <div
-          v-if="keysError"
-          class="mx-5 my-3 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral"
-        >
-          {{ keysError }}
+          <NuxtLink to="/mcp" class="btn-outline btn-sm shrink-0">
+            管理密钥
+            <AppIcon name="arrow-right" :size="13" />
+          </NuxtLink>
         </div>
       </section>
 

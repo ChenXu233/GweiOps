@@ -338,6 +338,8 @@ class KeyCreateDTO(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     permissions: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
+    # 这把密钥能在哪些资源(下游目标)上动手。空 = 不限。
+    bindings: list[str] = Field(default_factory=list)
     expires_at: str = Field("", max_length=40)
 
 
@@ -350,10 +352,12 @@ class KeyDTO(BaseModel):
     hint: str = ""
     permissions: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
+    bindings: list[str] = Field(default_factory=list)
     created_at: str = ""
     created_by: str = ""
     last_used_at: str = ""
     expires_at: str = ""
+    status: str = "active"
 
 
 class KeyIssuedDTO(KeyDTO):
@@ -365,3 +369,31 @@ class KeyIssuedDTO(KeyDTO):
 class KeyListDTO(BaseModel):
     items: list[KeyDTO]
     total: int
+
+
+class ResourceDTO(BaseModel):
+    """一个可选的下游目标。签密钥时给人挑,不是权限目录的一部分。"""
+
+    key: str
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class KeyResourceListDTO(BaseModel):
+    """这个部署里出现过的资源,以及每个资源上有哪些能力。"""
+
+    resources: list[ResourceDTO]
+    default: str = ""
+
+
+class KeyToolDTO(BaseModel):
+    """一个可以被授予的工具:它要什么权限、能作用在哪些资源上。"""
+
+    name: str
+    label: str = ""
+    permission: str = ""
+    resources: list[str] = Field(default_factory=list)
+    mutating: bool = False
+
+
+class KeyToolListDTO(BaseModel):
+    tools: list[KeyToolDTO]

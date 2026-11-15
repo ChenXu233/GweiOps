@@ -20,7 +20,16 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 
 from engine.api.auth import actor_of, require, tenant_scope
-from engine.api.schemas import KeyCreateDTO, KeyDTO, KeyIssuedDTO, KeyListDTO
+from engine.api.schemas import (
+    KeyCreateDTO,
+    KeyDTO,
+    KeyIssuedDTO,
+    KeyListDTO,
+    KeyResourceListDTO,
+    KeyToolDTO,
+    KeyToolListDTO,
+    ResourceDTO,
+)
 from engine.auth import PERMISSIONS
 from engine.auth import audit
 from engine.auth import keys as key_store
@@ -74,6 +83,59 @@ def _check_grantable(request: Request, wanted: list[str]) -> list[str]:
     return sorted(set(wanted))
 
 
+@router.get("/api/keys/resources")
+async def list_key_resources(request: Request) -> KeyResourceListDTO:
+    """这个部署里的资源(下游目标)。签密钥时给人挑,不是权限目录。
+
+    资源名由插件实例自己声明(`binding`),平台不认识全集,所以这里是"出现过
+    哪些",不是"允许哪些"。
+    """
+    require(request, "keys.read")
+    from engine.plugin_manager import registry
+    from engine.shared.config import config
+
+    caps = registry.resource_capabilities() if hasattr(registry, "resource_capabilities") else {}
+    return KeyResourceListDTO(
+        resources=[
+            ResourceDTO(key=binding, capabilities=items)
+            for binding, items in sorted(caps.items())
+        ],
+        default=config.settings.default_binding,
+    )
+
+
+@router.get("/api/keys/tools")
+async def list_key_tools(request: Request) -> KeyToolListDTO:
+    """能授予的工具:每个要什么权限、能作用在哪些资源上。
+
+    页面靠它画"资源 × 工具"那张表 —— 前端不再自己猜哪个工具属于哪个目标。
+    """
+    require(request, "keys.read")
+    from engine.agent import tool_specs
+    from engine.auth.keys import permission_for_tool
+    from engine.plugin_manager import registry
+
+    effects = registry.declared_effects()
+    items: list[KeyToolDTO] = []
+    for spec in tool_specs(registry):
+        function = spec.get("function") or {}
+        name = str(function.get("name") or "")
+        if not name:
+            continue
+        items.append(
+            KeyToolDTO(
+                name=name,
+                label=str((effects.get(name) or {}).get("label") or name),
+                permission=permission_for_tool(name),
+                resources=list(registry.tool_bindings(name))
+                if hasattr(registry, "tool_bindings")
+                else [],
+                mutating=name in effects,
+            )
+        )
+    return KeyToolListDTO(tools=items)
+
+
 @router.get("/api/keys")
 async def list_keys(request: Request) -> KeyListDTO:
     require(request, "keys.read")
@@ -95,6 +157,7 @@ async def create_key(payload: KeyCreateDTO, request: Request) -> KeyIssuedDTO:
             name=payload.name,
             permissions=permissions,
             tools=payload.tools,
+            bindings=payload.bindings,
             created_by=(actor.name if actor else ""),
             expires_at=payload.expires_at,
         )
@@ -116,6 +179,7 @@ async def create_key(payload: KeyCreateDTO, request: Request) -> KeyIssuedDTO:
             "hint": record.hint,
             "permissions": sorted(record.permissions),
             "tools": sorted(record.tools),
+            "bindings": sorted(record.bindings),
         },
         ip=request.client.host if request.client else "",
     )

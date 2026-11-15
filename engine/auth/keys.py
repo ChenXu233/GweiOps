@@ -56,6 +56,17 @@ def permission_for_tool(tool: str) -> str:
     return EFFECT_PERMISSION
 
 
+def resource_allowed(binding: str, actor: Any) -> bool:
+    """这个身份能不能在这个资源(下游目标)上动手。
+
+    空集合 = 不限:老密钥没有资源维度,行为不能因为加了这一栏就变。
+    """
+    allowed = getattr(actor, "bindings", frozenset())
+    if not allowed:
+        return True
+    return (binding or "") in allowed
+
+
 def is_scoped(actor: Any) -> bool:
     """这个身份是"权限集说了算"还是"只有一个 scope"?
 
@@ -82,6 +93,24 @@ def tool_allowed(tool: str, actor: Any) -> bool:
         return permission_for_tool(tool) in getattr(actor, "permissions", frozenset())
     # 静态令牌只有 read/operate,没有权限集
     return getattr(actor, "scope", "read") == "operate" or tool.endswith(READ_SUFFIX)
+
+
+def tool_visible(tool: str, actor: Any, bindings_of: Any = None) -> bool:
+    """够不够得着这个工具:权限、白名单、资源三关。
+
+    `bindings_of(tool)` 给出这个工具能作用在哪些资源上。它返回空表示
+    "说不出它在哪个资源上"(只读能力就是这种),资源这一关不适用。
+    """
+    if not tool_allowed(tool, actor):
+        return False
+    allowed = getattr(actor, "bindings", frozenset())
+    if actor is None or not allowed or bindings_of is None:
+        return True
+    try:
+        reachable = set(bindings_of(tool) or ())
+    except Exception:  # noqa: BLE001 - 清单说不出来就别拿资源拦人
+        return True
+    return not reachable or bool(reachable & set(allowed))
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +156,20 @@ def clean_permissions(raw: Iterable[str] | None) -> list[str]:
     return sorted({p for p in (raw or []) if p in ALL_PERMISSIONS})
 
 
+def clean_bindings(raw: Iterable[str] | None) -> list[str]:
+    """资源白名单。这一栏与权限不同:空 = 不限,不是"什么都不行"。
+
+    一个部署里的资源是部署自己的事(哪几台主机、哪个集群),平台不认识全集,
+    所以这里只做形状清洗,不拿一张表去比。
+    """
+    out: list[str] = []
+    for item in raw or []:
+        text = str(item).strip()
+        if text and text not in out:
+            out.append(text[:64])
+    return sorted(out)
+
+
 @dataclass(frozen=True)
 class KeyRecord:
     """一把密钥的事实。不带明文,也不带哈希 —— 调用方不需要它。"""
@@ -137,10 +180,17 @@ class KeyRecord:
     hint: str
     permissions: frozenset[str] = field(default_factory=frozenset)
     tools: frozenset[str] = field(default_factory=frozenset)
+    # 资源白名单:这把密钥能在哪些下游目标上动手。空 = 不限(与"权限为空"不同)
+    bindings: frozenset[str] = field(default_factory=frozenset)
     created_at: str = ""
     created_by: str = ""
     last_used_at: str = ""
     expires_at: str = ""
+    status: str = STATUS_ACTIVE
+
+    @property
+    def active(self) -> bool:
+        return self.status == STATUS_ACTIVE
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,10 +200,12 @@ class KeyRecord:
             "hint": self.hint,
             "permissions": sorted(self.permissions),
             "tools": sorted(self.tools),
+            "bindings": sorted(self.bindings),
             "created_at": self.created_at,
             "created_by": self.created_by,
             "last_used_at": self.last_used_at,
             "expires_at": self.expires_at,
+            "status": self.status,
         }
 
 
@@ -254,6 +306,7 @@ class DbKeyStore:
             "key_hash": row.key_hash,
             "permissions": list(row.permissions or []),
             "tools": list(row.tools or []),
+            "bindings": list(getattr(row, "bindings", None) or []),
             "status": row.status,
             "created_at": row.created_at or "",
             "created_by": row.created_by or "",
@@ -346,10 +399,12 @@ def _record(row: dict[str, Any]) -> KeyRecord:
         hint=str(row.get("hint") or ""),
         permissions=frozenset(row.get("permissions") or []),
         tools=frozenset(row.get("tools") or []),
+        bindings=frozenset(row.get("bindings") or []),
         created_at=str(row.get("created_at") or ""),
         created_by=str(row.get("created_by") or ""),
         last_used_at=str(row.get("last_used_at") or ""),
         expires_at=str(row.get("expires_at") or ""),
+        status=str(row.get("status") or STATUS_ACTIVE),
     )
 
 
@@ -359,6 +414,7 @@ async def create_key(
     name: str,
     permissions: Iterable[str] | None = None,
     tools: Iterable[str] | None = None,
+    bindings: Iterable[str] | None = None,
     created_by: str = "",
     expires_at: str = "",
 ) -> tuple[KeyRecord, str]:
@@ -382,6 +438,7 @@ async def create_key(
         "key_hash": hash_key(plaintext),
         "permissions": clean_permissions(permissions),
         "tools": [str(t) for t in (tools or [])],
+        "bindings": clean_bindings(bindings),
         "status": STATUS_ACTIVE,
         "created_at": _now(),
         "created_by": created_by[:64],
@@ -454,6 +511,7 @@ __all__ = [
     "READ_TOOL_PERMISSION",
     "STATUS_ACTIVE",
     "STATUS_REVOKED",
+    "clean_bindings",
     "clean_permissions",
     "create_key",
     "create_key_store",
@@ -465,7 +523,9 @@ __all__ = [
     "looks_like_key",
     "new_plaintext",
     "permission_for_tool",
+    "resource_allowed",
     "resolve_key",
     "revoke_key",
     "tool_allowed",
+    "tool_visible",
 ]

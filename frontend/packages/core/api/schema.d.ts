@@ -415,6 +415,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/keys/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Key Resources
+         * @description 这个部署里的资源(下游目标)。签密钥时给人挑,不是权限目录。
+         *
+         *     资源名由插件实例自己声明(`binding`),平台不认识全集,所以这里是"出现过
+         *     哪些",不是"允许哪些"。
+         */
+        get: operations["list_key_resources_api_keys_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Key Tools
+         * @description 能授予的工具:每个要什么权限、能作用在哪些资源上。
+         *
+         *     页面靠它画"资源 × 工具"那张表 —— 前端不再自己猜哪个工具属于哪个目标。
+         */
+        get: operations["list_key_tools_api_keys_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/keys/{key_id}": {
         parameters: {
             query?: never;
@@ -1237,6 +1282,8 @@ export interface components {
          *     tools 是可选的第二层收窄:权限够、但这里没点名的工具不给。
          */
         KeyCreateDTO: {
+            /** Bindings */
+            bindings?: string[];
             /**
              * Expires At
              * @default
@@ -1254,6 +1301,8 @@ export interface components {
          * @description 一把密钥的事实。没有明文 —— 它只在签发那一次的响应里。
          */
         KeyDTO: {
+            /** Bindings */
+            bindings?: string[];
             /**
              * Created At
              * @default
@@ -1289,6 +1338,11 @@ export interface components {
             /** Permissions */
             permissions?: string[];
             /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /**
              * Tenant
              * @default
              */
@@ -1301,6 +1355,8 @@ export interface components {
          * @description 签发那一刻的响应:多了明文。之后再也拿不到。
          */
         KeyIssuedDTO: {
+            /** Bindings */
+            bindings?: string[];
             /**
              * Created At
              * @default
@@ -1341,6 +1397,11 @@ export interface components {
             /** Permissions */
             permissions?: string[];
             /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /**
              * Tenant
              * @default
              */
@@ -1354,6 +1415,49 @@ export interface components {
             items: components["schemas"]["KeyDTO"][];
             /** Total */
             total: number;
+        };
+        /**
+         * KeyResourceListDTO
+         * @description 这个部署里出现过的资源,以及每个资源上有哪些能力。
+         */
+        KeyResourceListDTO: {
+            /**
+             * Default
+             * @default
+             */
+            default: string;
+            /** Resources */
+            resources: components["schemas"]["ResourceDTO"][];
+        };
+        /**
+         * KeyToolDTO
+         * @description 一个可以被授予的工具:它要什么权限、能作用在哪些资源上。
+         */
+        KeyToolDTO: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Mutating
+             * @default false
+             */
+            mutating: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Permission
+             * @default
+             */
+            permission: string;
+            /** Resources */
+            resources?: string[];
+        };
+        /** KeyToolListDTO */
+        KeyToolListDTO: {
+            /** Tools */
+            tools: components["schemas"]["KeyToolDTO"][];
         };
         /** LoginDTO */
         LoginDTO: {
@@ -1495,6 +1599,16 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+        };
+        /**
+         * ResourceDTO
+         * @description 一个可选的下游目标。签密钥时给人挑,不是权限目录的一部分。
+         */
+        ResourceDTO: {
+            /** Capabilities */
+            capabilities?: string[];
+            /** Key */
+            key: string;
         };
         /** RoleCreateDTO */
         RoleCreateDTO: {
@@ -2496,6 +2610,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_key_resources_api_keys_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyResourceListDTO"];
+                };
+            };
+        };
+    };
+    list_key_tools_api_keys_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyToolListDTO"];
                 };
             };
         };

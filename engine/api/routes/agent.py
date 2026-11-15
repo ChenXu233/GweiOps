@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 from engine.agent import ToolCall, run_tool, tool_specs
 from engine.api.auth import actor_of, by_of, tenant_scope
-from engine.auth.keys import permission_for_tool, tool_allowed
+from engine.auth.keys import permission_for_tool, resource_allowed, tool_visible
 from engine.change_unit import create_ledger
 from engine.plugin_manager import registry
 from engine.shared.config import config
@@ -100,21 +100,37 @@ async def list_exits(request: Request) -> dict:
     specs = [
         spec
         for spec in tool_specs(registry)
-        if tool_allowed(str((spec.get("function") or {}).get("name") or ""), actor)
+        if tool_visible(
+            str((spec.get("function") or {}).get("name") or ""),
+            actor,
+            getattr(registry, "tool_bindings", None),
+        )
     ]
-    return {"tools": specs}
+    return {
+        "tools": specs,
+        "resources": sorted(getattr(registry, "resources", lambda: [])()),
+    }
 
 
 @router.post("/api/agent/exits/{name}")
 async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
     actor = actor_of(request)
-    if not tool_allowed(name, actor):
+    if not tool_visible(name, actor, getattr(registry, "tool_bindings", None)):
         raise HTTPException(
             status_code=403,
-            detail=f"这个身份没有 {permission_for_tool(name)} 权限,调不动 {name}",
+            detail=f"这个身份没有 {permission_for_tool(name)} 权限,或者够不着它作用的那几个资源,调不动 {name}",
         )
     tenant = tenant_scope(request, call.tenant or None) or ""
     binding = call.binding or config.settings.default_binding
+    if not resource_allowed(binding, actor):
+        reachable = getattr(registry, "tool_bindings", lambda _n: ())(name)
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"这个身份只在 {', '.join(sorted(actor.bindings))} 上有效,够不着 {binding};"
+                + ("带上 binding: " + " 或 ".join(reachable) if reachable else "换一把资源覆盖到它的密钥")
+            ),
+        )
     caller = by_of(request, "")
 
     if name in registry.declared_effects():

@@ -62,6 +62,8 @@ class Actor:
     user_id: str = ""
     # 这把凭据只允许够哪些工具。空 = 不额外收窄(按权限算)。
     tools: frozenset[str] = field(default_factory=frozenset)
+    # 这把凭据只允许在哪些资源(下游目标)上动手。空 = 不限。
+    bindings: frozenset[str] = field(default_factory=frozenset)
     # 库里的密钥会带 id;静态令牌与会话为空
     key_id: str = ""
     # 这是一个只带 read/operate 的静态令牌。默认不是:没有细粒度权限时按 scope 放行
@@ -129,6 +131,7 @@ def _actor_from_key(key: Any) -> Actor:
         scope="operate" if any(is_write_permission(p) for p in key.permissions) else "read",
         permissions=key.permissions,
         tools=key.tools,
+        bindings=key.bindings,
         key_id=key.id,
     )
 

@@ -361,6 +361,43 @@ class PluginRegistry:
             raise LookupError(f"{key} 没有声明 effect {capability}")
         return provider, decl
 
+    def tool_bindings(self, capability: str) -> tuple[str, ...]:
+        """这个能力能在哪些资源(下游目标)上执行。
+
+        资源这一栏的判据来源:提供者实例自己声明的 binding。都空(控制面能力)
+        就返回空 —— "说不出在哪"不等于"哪儿都不能",调用方据此不拿资源拦人。
+        """
+        out: list[str] = []
+        for provider in self._capability_index.get(capability, []):
+            instance = self._instances.get(provider.key)
+            binding = str(getattr(instance, "binding", "") or "")
+            if binding and binding not in out:
+                out.append(binding)
+        return tuple(sorted(out))
+
+    def resource_capabilities(self) -> dict[str, list[str]]:
+        """每个资源上有哪些能力。签密钥时给人挑资源用的那张表。"""
+        out: dict[str, list[str]] = {}
+        for key, instance in self._instances.items():
+            binding = str(getattr(instance, "binding", "") or "")
+            if not binding:
+                continue
+            manifest = self._manifests.get(self._instance_names.get(key, ""))
+            bucket = out.setdefault(binding, [])
+            for capability in getattr(manifest, "capabilities", []) or []:
+                if capability not in bucket:
+                    bucket.append(capability)
+        return {binding: sorted(items) for binding, items in out.items()}
+
+    def resources(self) -> list[str]:
+        """这个部署里出现过的资源名。签密钥时给人挑,不是权限目录。"""
+        out: set[str] = set()
+        for instance in self._instances.values():
+            binding = str(getattr(instance, "binding", "") or "")
+            if binding:
+                out.add(binding)
+        return sorted(out)
+
     def declared_effects(self) -> dict[str, dict[str, Any]]:
         """这个部署里声明了效果的能力 → 标签与参数名。
 

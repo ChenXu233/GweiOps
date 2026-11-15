@@ -4,7 +4,8 @@
 签发、单独吊销、各自不同的权限。这张表存的是密钥的记录:明文只在签发那一次出现,
 库里只留 sha256 与一段可辨识的前后缀。
 
-permissions / tools 都是 JSON 数组:前者贴着权限目录,后者是可选的白名单收窄。
+permissions / tools / bindings 都是 JSON 数组:第一个贴着权限目录,后两个是可选的
+白名单收窄 —— tools 收窄到哪几个工具,bindings 收窄到哪些资源(下游目标)。
 
 Revision ID: 010
 Revises: 009
@@ -29,6 +30,7 @@ def upgrade() -> None:
         sa.Column("key_hash", sa.String(64), nullable=False),
         sa.Column("permissions", sa.JSON(), nullable=False, server_default=sa.text("'[]'::json")),
         sa.Column("tools", sa.JSON(), nullable=False, server_default=sa.text("'[]'::json")),
+        sa.Column("bindings", sa.JSON(), nullable=False, server_default=sa.text("'[]'::json")),
         sa.Column("status", sa.String(16), nullable=False, server_default="active"),
         sa.Column("created_at", sa.String(40), nullable=False, server_default=""),
         sa.Column("created_by", sa.String(64), nullable=False, server_default=""),

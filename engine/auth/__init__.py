@@ -57,7 +57,7 @@ DEFAULT_ROLES: tuple[dict, ...] = (
     {
         "key": "operator",
         "name": "运维",
-        "description": "看账本、放行与撤销变更、读配置",
+        "description": "看账本、放行与撤销变更、读配置、管 MCP 密钥",
         "permissions": sorted(
             {
                 "changes.read",
@@ -68,6 +68,7 @@ DEFAULT_ROLES: tuple[dict, ...] = (
                 "audit.read",
                 "plugins.read",
                 "keys.read",
+                "keys.manage",
             }
         ),
         "is_system": True,

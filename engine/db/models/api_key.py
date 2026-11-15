@@ -37,6 +37,8 @@ class ApiKey(Base):
     permissions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # 工具白名单:空 = 按权限集给,不额外收窄
     tools: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 资源白名单:这把密钥能在哪些下游目标(binding)上动手。空 = 不限
+    bindings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")

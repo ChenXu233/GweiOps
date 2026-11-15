@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, Response
 
 from engine.agent import ToolCall, run_tool, tool_specs
 from engine.api.auth import actor_of, by_of, tenant_scope
-from engine.auth.keys import permission_for_tool, tool_allowed
+from engine.auth.keys import permission_for_tool, resource_allowed, tool_visible
 from engine.change_unit import create_ledger
 from engine.plugin_manager import registry
 from engine.shared.config import config
@@ -45,17 +45,34 @@ INSTRUCTIONS = (
 )
 
 
-def _tools(actor: Any = None) -> list[dict[str, Any]]:
+def _bindings_of(capability: str) -> tuple[str, ...]:
+    """这个能力能在哪些资源上动手。清单说不出来就是空 —— 不拿资源拦人。"""
+    probe = getattr(registry, "tool_bindings", None)
+    if probe is None:
+        return ()
+    try:
+        return tuple(probe(capability) or ())
+    except Exception:  # noqa: BLE001 - 诊断不出资源不该让清单崩掉
+        return ()
+
+
+def _tools(actor: Any = None, binding: str = "") -> list[dict[str, Any]]:
     """出口清单翻译成 MCP 的工具清单,再按身份收窄。
 
     只有一份事实来源 —— `tool_specs`;按密钥暴露只是在这份清单上筛一遍,
-    不另写一份清单。
+    不另写一份清单。资源也一样:声明了资源白名单的凭据,只看得见够得着的目标
+    上的工具(`binding` 非空时按那一个目标算)。
     """
     out: list[dict[str, Any]] = []
     for spec in tool_specs(registry):
         function = spec.get("function") or {}
         name = str(function.get("name") or "")
-        if not name or not tool_allowed(name, actor):
+        if not name:
+            continue
+        reachable = _bindings_of(name)
+        if not tool_visible(name, actor, lambda _n, r=reachable: r):
+            continue
+        if binding and reachable and binding not in reachable:
             continue
         out.append(
             {
@@ -86,7 +103,7 @@ def _text(payload: dict[str, Any], is_error: bool) -> dict[str, Any]:
 async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, Any]:
     """一次工具调用 = 一次出口调用。"""
     actor = actor_of(request)
-    if not tool_allowed(name, actor):
+    if not tool_visible(name, actor, _bindings_of):
         # 看不见的工具调不动:清单外的东西不该因为知道了名字就够得着
         need = permission_for_tool(name)
         return _text(
@@ -98,11 +115,27 @@ async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, A
     incident_id = str(args.pop("_incident_id", "") or "")
     topic = str(args.pop("_topic", "") or "")
     binding = str(args.pop("_binding", "") or "") or config.settings.default_binding
+    if not resource_allowed(binding, actor):
+        # 不替它猜一个目标:绑错目标是配置错误,不是结论。但要说清楚该填什么。
+        scoped = ", ".join(sorted(getattr(actor, "bindings", frozenset()) or frozenset()))
+        reachable = _bindings_of(name)
+        hint = (
+            "带上 _binding: " + " 或 ".join(reachable)
+            if reachable
+            else "换一把资源覆盖到它的密钥"
+        )
+        return _text(
+            {
+                "ok": False,
+                "reason": f"这把凭据只在 {scoped} 上有效,够不着 {binding};{hint}",
+            },
+            True,
+        )
     requested = args.pop("tenant", "")
     tenant = tenant_scope(request, str(requested) if isinstance(requested, str) else None) or ""
 
     is_effect = name in registry.declared_effects()
-    # 只读身份调不动效果这一条已经由上面那次 tool_allowed 判过(效果要 changes.execute,
+    # 只读身份调不动效果这一条已经由上面那次 tool_visible 判过(效果要 changes.execute,
     # 而它是写权限),不在这里再判一遍
     if not is_effect:
         # 只读能力自己不知道租户是谁:把身份上的租户交给它,查询范围才收得住。
@@ -188,11 +221,15 @@ async def mcp_describe(request: Request) -> JSONResponse:
             "endpoint": "/mcp",
             "protocol_version": PROTOCOL_VERSION,
             "tools": [tool["name"] for tool in _tools(actor)],
+            "resources": sorted(registry.resources()) if hasattr(registry, "resources") else [],
             "auth": "X-Gwei-Token",
             "identity": {
                 "name": actor.name if actor else "",
                 "tenant": actor.tenant if actor else "",
                 "permissions": sorted(actor.permissions) if actor else [],
+                "resources": sorted(getattr(actor, "bindings", frozenset()) or frozenset())
+                if actor
+                else [],
             },
         },
         status_code=200,

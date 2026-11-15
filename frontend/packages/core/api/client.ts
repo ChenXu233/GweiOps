@@ -64,11 +64,19 @@ export const SettingsScopesApi = {
 }
 
 // MCP 接入用的密钥。明文只在签发那一次的响应里,列表永远只有 hint。
+// resources / tools 两份清单来自引擎:签密钥时挑的就是它们,前端不自己编。
 export const ApiKeysApi = {
   list: () => api.get('/api/keys'),
-  issue: (body: { name: string; permissions: string[]; tools?: string[]; expires_at?: string }) =>
-    api.post('/api/keys', { body }),
+  issue: (body: {
+    name: string
+    permissions: string[]
+    tools?: string[]
+    bindings?: string[]
+    expires_at?: string
+  }) => api.post('/api/keys', { body }),
   revoke: (id: string) => api.delete('/api/keys/{key_id}', { path: { key_id: id } }),
+  resources: () => api.get('/api/keys/resources'),
+  tools: () => api.get('/api/keys/tools'),
 }
 
 export const HealthApi = {

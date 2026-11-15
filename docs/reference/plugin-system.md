@@ -229,6 +229,8 @@ effects:
 - `*.read` 结尾的能力天然落在 `changes.read` 下;
 - 真要一把单独的权限(例如 `secrets.read`),在 `engine/auth/keys.py` 的 `CAPABILITY_PERMISSIONS` 里点名,再往 `engine/auth/__init__.py` 的 `PERMISSIONS` 里加一条。
 
+资源这一关也在这里:工具能作用在哪些下游目标,由提供者实例自己声明的 `binding` 决定(`registry.tool_bindings`)。插件不需要另写一份资源清单——实例挂在哪,它的能力就在哪;同一能力在 `local` 与 `remote` 上各有一个实例,资源和工具清单里就有两个目标。密钥上勾了哪些资源,就只看得见那些目标上的工具。只读能力通常说不出自己在哪个目标上,资源这一关对它不适用。
+
 只读能力拿到的是平台按身份定下的租户,不是调用方写在参数里的那个:收不住范围,读口就成了越权口。
 
 ## 运行时接线
