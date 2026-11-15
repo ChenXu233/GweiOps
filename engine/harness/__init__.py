@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from engine.shared.config import config
 
-from . import workspace
+from . import sandbox, workspace
 from .adapter import (
     ENV_FILE_NAME,
     REPORT_NAME,
@@ -15,6 +15,14 @@ from .adapter import (
     build_env,
     build_task,
     run_harness,
+)
+from .sandbox import (
+    Entry,
+    LocalSandbox,
+    Sandbox,
+    SandboxError,
+    SandboxResult,
+    SshSandbox,
 )
 from .workspace import WorkspaceError, collect, prepare, repo_of, workspace_of
 
@@ -68,7 +76,13 @@ config.register_model_scope("harness-env", HarnessEnvSettings, prefix="HARNESS_E
 __all__ = [
     "ENV_FILE_NAME",
     "REPORT_NAME",
+    "Entry",
     "HarnessResult",
+    "LocalSandbox",
+    "Sandbox",
+    "SandboxError",
+    "SandboxResult",
+    "SshSandbox",
     "WorkspaceError",
     "build_env",
     "build_task",
@@ -76,6 +90,7 @@ __all__ = [
     "prepare",
     "repo_of",
     "run_harness",
+    "sandbox",
     "workspace",
     "workspace_of",
     "HarnessEnvSettings",
