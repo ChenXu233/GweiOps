@@ -7,9 +7,8 @@ import type { PluginManifestDTO } from '../types/plugin'
 /**
  * engine 清单 DTO → 前端 Plugin 形状。
  *
- * `enabled` 一律取引擎给的值:前端没有任何依据判断一个插件是不是在跑。
- * 以前这里写死 installed: true,于是"已启用"的数量恒等于插件总数,
- * 页面顶上那个比例永远不会变——那不是指标,是装饰。
+ * `enabled` 一律取引擎给的值:前端没有任何依据判断一个插件是不是在跑。在这里
+ * 猜一个 true,页面顶上那个"X / N 已启用"就会恒等于 N/N——那不是指标,是装饰。
  */
 function toPlugin(m: PluginManifestDTO): Plugin {
   return {

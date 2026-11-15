@@ -1,13 +1,11 @@
 # engine/shared/runtime.py
 """插件运行时单例 —— 供 webhook 路由与工作流管道共用。
 
-取插件只有一条路:注册表。**没有直连兜底。**
+取插件只有一条路:注册表。**没有直连兜底**——有兜底时 `PLUGINS_DISABLED`
+对主链路只是装饰:关掉之后工作流照样直连一个临时实例把活干完,日志里一句
+INFO 都不会多。开关看着存在、其实不存在,比没有开关更费解。
 
-以前这里写着"注册表未加载时回退到旧直连单例"。那个兜底让两个开关变成装饰:
-`PLUGINS_DISABLED=sensor-agent` 之后,工作流照样直连 `SensorAgent` 把活干完;
-日志里一句 INFO 都不会多。开关看着存在、其实不存在,比没有开关更费解。
-
-现在分两种"取不到",各自的处理不同:
+两种"取不到",各自的处理不同:
 
 - **注册表还没跑过发现**(单测直接导入、引擎还没起来):这是"还没查",返回
   `None` 或抛 `LookupError`,调用方如实报告没开工——不拿一个临时对象假装插件在;
@@ -29,9 +27,9 @@ def _registry():
 def get_adapter(source: str):
     """按来源取适配器(github / gitlab / cnb ...)。
 
-    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError` ——
-    上一版这里写死返回 GitHub App 适配器,CNB 的投递进来会拿 GitHub 的身份去
-    拉快照、问分支、发评论;错目标比报错糟。
+    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError`,
+    **不返回任何默认实现**:拿 GitHub 的身份去处理 CNB 的投递,会拿错仓库、
+    在别处留评论——错目标比报错糟。
     """
     from engine.ingest.source import source_adapter
 
@@ -60,7 +58,7 @@ def get_sensor():
 
 
 def get_fixer():
-    """取修复智能体。与 get_sensor 同一条规矩:取不到就是没这个能力。"""
+    """取修复智能体。与 `get_sensor` 同一条规矩:取不到就是没这个能力。"""
     registry = _registry()
     instance = registry.get("fixer-agent")
     if instance is not None:

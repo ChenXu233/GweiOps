@@ -743,8 +743,8 @@ async def issue_triage_workflow(payload: dict) -> dict:
         "issue": {"title": payload["title"], "body": payload["body"]},
         "analysis": analysis,
     })
-    # 扩展点的返回值必须真的用上:以前这里拿到 hooked 就丢掉,intent 用的还是
-    # 原始的 analysis——订阅者改了 payload 也白改,那条通道等于装饰。
+    # 扩展点的返回值必须真的用上:intent 用的是扩展点之后的 analysis。
+    # 拿到 hooked 就丢掉、继续用原始入参,订阅者改了也白改。
     if hooked["allowed"]:
         analysis = hooked["payload"].get("analysis", analysis)
     else:
