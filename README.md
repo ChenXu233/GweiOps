@@ -58,6 +58,25 @@ pnpm install
 pnpm dev:selfhost
 ```
 
+## 发布制品
+
+推一个 `v*` tag 就是一次发布:[.cnb.yml](.cnb.yml) 的 `tag_push` 把两个镜像构建出来推进制品的库,
+tag 名与 `latest` 各打一份。拉取地址(`<org>/<repo>` 全小写):
+
+| 镜像 | 拉取地址 |
+|------|----------|
+| engine | `docker.cnb.cool/<org>/<repo>:<tag>` |
+| web | `docker.cnb.cool/<org>/<repo>-web:<tag>` |
+
+本机拉取先登录:
+
+```bash
+docker login docker.cnb.cool -u cnb -p <访问令牌>
+```
+
+镜像只按 tag 发布,`master` 上的每次提交不进制品库。GitHub 侧另有 `build.yml` 把同样的镜像推到
+`ghcr.io/<org>/<repo>`(`-web` 后缀给前端)。
+
 ## 文档
 
 从 [docs/README.md](docs/README.md) 进入。第一次建议按「平台架构 → 运行时参考 → 写插件」的顺序读。
