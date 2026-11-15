@@ -78,21 +78,26 @@ class TestImports:
 # ============================================================================
 
 
-def _webhook_routes() -> dict[str, set[str]]:
-    """路径 → 方法,按 FastAPI 解析之后的样子读。
+def _route_table() -> dict[str, set[str]]:
+    """路径 → 方法,只用 HTTP 的公开面:ASGI 层与实际请求一致。
 
-    `app.routes` 上是没有拼开的路由器(新版本 FastAPI 用 `_IncludedRouter` 占位),
-    直接取 `.path` 只会拿到 AttributeError;`iter_route_contexts` 才是公开的展开方式。
+    不按某个版本的路由对象形状写死。FastAPI 0.116 之后 `app.routes` 里放的是
+    惰性的 `_IncludedRouter`,再往后展开成什么形状是实现细节,直接读属性会拿到
+    一串 None——不是路由没了,是读法过期了。从 OpenAPI 拿路径、拿一条同形状:
+    路由没挂上,`paths` 里就不会有它。
     """
-    from fastapi.routing import iter_route_contexts
-
     from engine.api.app import app
 
+    methods = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
     table: dict[str, set[str]] = {}
-    for ctx in iter_route_contexts(app.routes):
-        if ctx.path and ctx.path.startswith("/webhook"):
-            table[ctx.path] = set(ctx.methods or ())
+    for path, operations in app.openapi().get("paths", {}).items():
+        table[path] = {m.upper() for m in operations if m.upper() in methods}
     return table
+
+
+def _webhook_routes() -> dict[str, set[str]]:
+    """只留 /webhook 下的项。"""
+    return {path: methods for path, methods in _route_table().items() if path.startswith("/webhook")}
 
 
 class TestWebhookRoutes:
@@ -111,7 +116,9 @@ class TestWebhookRoutes:
 
     def test_webhook_routes_methods(self):
         """验证 Webhook 路由支持 POST 方法。"""
-        assert "POST" in _webhook_routes().get("/webhook/{source}", set()), \
+        webhook_routes = _webhook_routes()
+
+        assert "POST" in webhook_routes.get("/webhook/{source}", set()), \
             "/webhook/{source} 路由不支持 POST 方法"
 
 
@@ -386,9 +393,4 @@ class TestHealthRoute:
 
     def test_health_route_registered(self):
         """验证 /api/health 路由存在。"""
-        from fastapi.routing import iter_route_contexts
-
-        from engine.api.app import app
-
-        routes = {ctx.path for ctx in iter_route_contexts(app.routes)}
-        assert "/api/health" in routes, "路由 /api/health 未注册"
+        assert "/api/health" in _route_table(), "路由 /api/health 未注册"

@@ -10,6 +10,7 @@ permissions:
   contents: write
 
 env:
+  # release notes 与日志里的镜像地址要用它。不定义的话渲染成 `/:v1.0.0`。
   REGISTRY: ghcr.io
   # build.yml 推的就是这个名字:engine 同名,web 带 -web 后缀
   IMAGE_NAME: ${{ github.repository }}

@@ -14,6 +14,7 @@
 | 查当前运行行为 | [运行时参考](reference/runtime.md) → [插件系统](reference/plugin-system.md) |
 | 想知道一次自动变更的边界 | [变更单元契约](explanation/change-unit-contract.md) |
 | 改界面、对齐交互 | [议题工作台](explanation/issue-workspace.md) |
+| 提交 PR 前想知道 CI 会查什么 | [CI 校验](../CI-CHECKS.md) |
 | 看接下来做什么 | [工作分解](plan/wbs.md) → [Harness 执行层](explanation/harness-execution-layer.md) |
 
 ## 文档地图

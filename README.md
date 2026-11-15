@@ -47,10 +47,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ### 手动安装
 
 ```bash
-# 后端(仓库根目录)
-cd engine && pip install -e ".[dev]" && cd ..
-pytest tests/ -q
-uvicorn engine.api.app:app --reload
+# 后端(仓库根目录;uv 按 engine/uv.lock 装,避免同一份代码装出不同的依赖树)
+cd engine && uv sync --extra dev && cd ..
+uv run --project engine python .ci/engine-tests.py   # 契约、迁移、测试一起查
+uv run --project engine uvicorn engine.api.app:app --reload
 
 # 前端
 cd frontend
