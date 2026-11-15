@@ -21,6 +21,9 @@ service PluginService {
 
     // 任务执行
     rpc ExecuteTask(TaskRequest) returns (TaskResponse);
+
+    // Hook 回调：插件在清单里订阅了扩展点，核心按优先级调到这里
+    rpc HandleHook(HookRequest) returns (HookResponse);
 }
 
 // ============================================================
@@ -149,9 +152,29 @@ message EventResponse {
 }
 
 // ============================================================
+# Hook 回调消息
+// ============================================================
+
+message HookRequest {
+    string point = 1;          // 扩展点，如 "comment.posting"
+    string mode = 2;           // observe | transform | veto
+    bytes payload = 3;         // 当前载荷(JSON)
+}
+
+message HookResponse {
+    bool allowed = 1;          // veto 模式下 false 即短路
+    bytes payload = 2;         // transform 模式下替换后的载荷(JSON)
+    string error = 3;
+}
+
+// ============================================================
 # 任务执行消息
 # ============================================================
 
+// 效果(execute / undo / window / verify)复用 ExecuteTask，不单独开 rpc：
+//   task   = 清单 effects 块里声明的任务名
+//   params = 效果参数；undo / verify 额外带 handle(JSON 编码在 bytes params 里)
+//   result = JSON；window 返回 {"seconds": n} 或 {"unbounded": true}
 message TaskRequest {
     string task = 1;
     bytes params = 2;

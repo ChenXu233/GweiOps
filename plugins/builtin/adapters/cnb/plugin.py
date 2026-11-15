@@ -25,6 +25,8 @@ class CNBAdapter(PluginBase):
         self.binding = "cnb"
         self.tenant = ""
         self.source = SOURCE
+        # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
+        self.config_hint = "CNB_WEBHOOK_TOKEN"
 
     def info(self) -> PluginInfo:
         return PluginInfo(

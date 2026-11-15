@@ -15,3 +15,6 @@ config:
     - CNB_BASE_URL
     - CNB_TOKEN
     - CNB_WEBHOOK_HEADER
+
+# 预留位:当前只接 GitHub。要用 CNB 时把这里改成 true,或用 PLUGINS_ENABLED 打开。
+default_enabled: false

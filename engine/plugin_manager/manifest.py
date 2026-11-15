@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from .base import PluginType
+from .slots import known_slot, slot_hint
 
 HOOK_MODES = ("observe", "transform", "veto")
 HOOK_FAILURE_MODES = ("fail_open", "fail_closed")
@@ -52,7 +53,23 @@ class EffectDecl:
             undo_kind=self.undo_kind,
             label=self.label,
             capability=self.capability,
+            verify=tuple(dict(rule) for rule in self.verify),
         )
+
+
+SCHEDULE_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+@dataclass(frozen=True)
+class ScheduleDecl:
+    """清单里的一条周期声明:到点跑哪个能力。
+
+    周期写成 `every`(如 "6h"),不收 cron:cron 的 * 与步长读不出"多久一次",
+    也读不出"会不会漏"。核心里只保留秒数,换算成调度器认的表达式是调度层的事。
+    """
+
+    capability: str
+    every_s: int
 
 
 @dataclass
@@ -111,7 +128,8 @@ class Manifest:
     description: str
     class_name: str
     default_enabled: bool = True  # 部署未显式选择时是否加载;false 表示备选项
-    triggers: list[dict[str, Any]] = field(default_factory=list)
+    triggers: list[dict[str, Any]] = field(default_factory=list)  # 原样保留,索引见下
+    schedules: tuple[ScheduleDecl, ...] = ()  # triggers 里 type: schedule 的解析结果
     capabilities: list[str] = field(default_factory=list)
     hooks_offered: list[str] = field(default_factory=list)
     hooks_subscribed: list[HookSubscription] = field(default_factory=list)
@@ -174,6 +192,11 @@ class Manifest:
         for w in ui_raw.get("widgets", []):
             if not w.get("slot"):
                 raise ManifestError(f"{path}: ui.widget 缺少 slot")
+            # 槽位由核心声明:写错的名字不会在页面上"什么都不显示",而是当场被拒。
+            if not known_slot(str(w["slot"])):
+                raise ManifestError(
+                    f"{path}: ui.widget 的槽位 {w['slot']!r} 不存在;已知槽位:{slot_hint()}"
+                )
             if w.get("kind", "metric") not in UI_WIDGET_KINDS:
                 raise ManifestError(f"{path}: 非法 widget kind {w.get('kind')}")
             span = int(w.get("span", 1))
@@ -210,6 +233,9 @@ class Manifest:
             pages.append(UiPage(title=p["title"], entry=entry))
 
         effects = _parse_effects(path, raw.get("effects") or {})
+        schedules = _parse_schedules(
+            path, list(raw.get("triggers") or []), list(raw.get("capabilities") or [])
+        )
 
         return cls(
             name=raw["name"],
@@ -219,6 +245,7 @@ class Manifest:
             class_name=raw["class_name"],
             default_enabled=bool(raw.get("default_enabled", True)),
             triggers=list(raw.get("triggers") or []),
+            schedules=schedules,
             capabilities=list(raw.get("capabilities") or []),
             hooks_offered=list(hooks_raw.get("offered") or []),
             hooks_subscribed=subscriptions,
@@ -230,6 +257,71 @@ class Manifest:
             ui_pages=pages,
             effects=effects,
         )
+
+
+def _parse_every(path: Path, value: Any) -> int:
+    """周期转秒数。写不清的周期在加载期就拒,不让它拖到调度器第一次点火。"""
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        raise ManifestError(f"{path}: schedule.every 必须是秒数或带单位的时长: {value!r}")
+
+    if isinstance(value, int):
+        seconds = value
+    else:
+        text = value.strip().lower()
+        unit = text[-1:] if text else ""
+        if unit in SCHEDULE_UNITS:
+            number, factor = text[:-1], SCHEDULE_UNITS[unit]
+        else:
+            number, factor = text, 1
+        try:
+            seconds = int(float(number) * factor)
+        except ValueError:
+            raise ManifestError(f"{path}: schedule.every 读不出时长: {value!r}") from None
+
+    if seconds <= 0:
+        raise ManifestError(f"{path}: schedule.every 必须大于 0: {value!r}")
+    return seconds
+
+
+def _parse_schedules(
+    path: Path, triggers: list[Any], capabilities: list[str]
+) -> tuple[ScheduleDecl, ...]:
+    """`triggers: [{type: schedule, every: 6h, capability: scan.dependencies}]`。
+
+    周期必须整除它所在的那一档(分钟 / 小时 / 天):不整除的"每 45 分钟"在
+    任何按整点对齐的调度器上都会走成 45 分钟、15 分钟、45 分钟。与其跑出一个
+    看着像均匀的假象,不如在加载期说清楚。
+    """
+    out: list[ScheduleDecl] = []
+    for trigger in triggers:
+        if not isinstance(trigger, dict) or trigger.get("type") != "schedule":
+            continue
+
+        capability = str(trigger.get("capability") or "").strip()
+        if not capability:
+            raise ManifestError(f"{path}: schedule 触发缺少 capability")
+        if capability not in capabilities:
+            raise ManifestError(
+                f"{path}: schedule 声明了能力 {capability},但它不在 capabilities 里"
+            )
+
+        seconds = _parse_every(path, trigger.get("every"))
+        if seconds < 60:
+            fits = 60 % seconds == 0
+        elif seconds < 3600:
+            fits = seconds % 60 == 0 and 3600 % seconds == 0
+        elif seconds == 86400:
+            fits = True
+        else:
+            fits = seconds % 3600 == 0 and 86400 % seconds == 0
+        if not fits:
+            raise ManifestError(
+                f"{path}: schedule.every={seconds}s 不整除分钟/小时/天,"
+                "排出来的周期会忽长忽短;改成能整除的时长"
+            )
+
+        out.append(ScheduleDecl(capability=capability, every_s=seconds))
+    return tuple(out)
 
 
 def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:

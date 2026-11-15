@@ -1,0 +1,18 @@
+name: alertmanager-adapter
+version: 0.1.0
+type: adapter
+class_name: AlertmanagerAdapter
+description: 把 Alertmanager 的告警翻译成信号;一条 firing 告警就是一个信号
+
+# 产出信号而不是事件:入口按 produces = "signal" 走事故管线,不走 issue/comment/merge 那三条。
+capabilities:
+  - webhook.receive
+  - webhook.verify
+
+config:
+  optional:
+    - ALERTMANAGER_WEBHOOK_TOKEN
+
+# 预留位:告警类来源后续实现。这个适配器同时是"接一个告警系统"的样板,
+# 照它写 Caddy / 云雀 / Grafana 的适配器,核心不需要改。
+default_enabled: false

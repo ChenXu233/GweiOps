@@ -9,10 +9,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-SOURCES = ("github", "alertmanager")
 SEVERITIES = ("critical", "medium", "low")
+
+# 来源名是个标识,不是产品目录:小写字母、数字与 . _ -,最长 64。
+# 不列白名单——列了就等于每接一个告警系统都要改一次核心。
+_SOURCE_NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 class SignalError(ValueError):
@@ -27,11 +31,18 @@ def normalize(
     detail: str = "",
     severity: str = "medium",
     ref: str = "",
+    occurrence: str = "",
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """组装一条信号。畸形直接抛,不做猜测性修补。"""
-    if source not in SOURCES:
-        raise SignalError(f"未知信号来源: {source!r}")
+    """组装一条信号。畸形直接抛,不做猜测性修补。
+
+    `occurrence` 是"这一次发作"的身份:同一个 fingerprint 再次 firing 是另一件事。
+    没有它的来源留空,入口按 ref 去重。
+    """
+    if not _SOURCE_NAME.match(source or ""):
+        raise SignalError(
+            f"来源名不合规: {source!r}(小写字母、数字与 . _ -,最长 64)"
+        )
     if not subject:
         raise SignalError("信号缺少 subject")
     if not title:
@@ -44,6 +55,7 @@ def normalize(
         "detail": detail,
         "severity": severity if severity in SEVERITIES else "medium",
         "ref": ref,
+        "occurrence": occurrence,
     }
     signal.update(extra or {})
     return signal

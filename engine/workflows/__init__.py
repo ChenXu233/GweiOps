@@ -5,10 +5,12 @@ from .pipeline import (
     issue_triage_workflow,
 )
 from .release import release_workflow
+from .scan import scheduled_scan_workflow
 
 __all__ = [
     "WORKFLOW_QUEUE",
     "issue_triage_workflow",
     "fix_suggestion_workflow",
     "release_workflow",
+    "scheduled_scan_workflow",
 ]

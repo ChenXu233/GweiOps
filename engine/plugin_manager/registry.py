@@ -226,6 +226,10 @@ class PluginRegistry:
     def names(self) -> list[str]:
         return sorted(self._instances)
 
+    def manifests(self) -> list[Manifest]:
+        """已注册的清单,每个清单一次——实例可能有很多个,声明只有一份。"""
+        return [self._manifests[name] for name in sorted(self._manifests)]
+
     def webhook_adapter(self, source: str) -> PluginBase | None:
         """哪个实例负责这个来源的 Webhook。
 

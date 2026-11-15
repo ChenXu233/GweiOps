@@ -45,7 +45,7 @@ async def list_plugins(request: Request) -> list[PluginDTO]:
 
 @router.get("/api/plugins/widgets")
 async def list_widgets(
-    request: Request, slot: str = Query("dashboard.bento")
+    request: Request, slot: str = Query("issue-board.bento")
 ) -> list[PluginWidgetDTO]:
     require(request, "plugins.read")
     widgets: list[dict] = []

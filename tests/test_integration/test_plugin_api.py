@@ -1,6 +1,7 @@
 # tests/test_integration/test_plugin_api.py
 """插件清单 API 测试 —— 使用真实 builtin 目录发现(无需数据库)。"""
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -26,21 +27,57 @@ def test_list_plugins_contains_builtin_agents():
 
 def test_widgets_slot_query_returns_observer_demo():
     client = _client()
-    resp = client.get("/api/plugins/widgets", params={"slot": "dashboard.bento"})
+    resp = client.get("/api/plugins/widgets", params={"slot": "issue-board.bento"})
     assert resp.status_code == 200
 
     widgets = resp.json()
     observer_widgets = [w for w in widgets if w["plugin"] == "observer-agent"]
-    assert observer_widgets, "observer 的演示 widget 应出现在 dashboard.bento 槽位"
+    assert observer_widgets, "observer 的演示 widget 应出现在 issue-board.bento 槽位"
     assert observer_widgets[0]["kind"] == "metric"
     assert observer_widgets[0]["metrics"]
 
 
 def test_widgets_unknown_slot_returns_empty():
+    """查询一个不存在的槽位:没有卡片,不是错误。
+
+    槽位名写错在**清单加载期**就被拒(见下一条),所以走到这里的只可能是调用方
+    写了个还不存在的槽——返回空,让页面照常渲染。
+    """
     client = _client()
     resp = client.get("/api/plugins/widgets", params={"slot": "no.such.slot"})
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_slot_catalogue_is_owned_by_core():
+    from engine.plugin_manager.slots import SLOTS
+
+    assert "issue-board.bento" in SLOTS
+
+
+def test_widget_slot_must_be_declared_by_core(tmp_path):
+    """插件不能自己开洞:写一个没人渲染的槽位,加载期就拒。"""
+    from engine.plugin_manager.manifest import Manifest, ManifestError
+
+    path = tmp_path / "plugin.yaml"
+    path.write_text(
+        "name: bad-slot\n"
+        "version: 1.0.0\n"
+        "type: dashboard_component\n"
+        "description: x\n"
+        "class_name: X\n"
+        "ui:\n"
+        "  widgets:\n"
+        "    - slot: nobody.renders.this\n"
+        "      kind: metric\n"
+        "      title: t\n"
+        "      metrics: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ManifestError) as exc:
+        Manifest.from_yaml(path)
+    assert "槽位" in str(exc.value)
 
 
 def test_plugin_manifest_exposes_observer_page():
@@ -91,7 +128,7 @@ def test_widget_live_metric_fills_value():
 
     collector.increment("gwei_llm_calls_total")
     client = _client()
-    resp = client.get("/api/plugins/widgets", params={"slot": "dashboard.bento"})
+    resp = client.get("/api/plugins/widgets", params={"slot": "issue-board.bento"})
     widgets = [w for w in resp.json() if w["plugin"] == "observer-agent"]
     assert widgets, "observer widget 缺失"
     llm = next(m for m in widgets[0]["metrics"] if m["label"] == "LLM 调用")

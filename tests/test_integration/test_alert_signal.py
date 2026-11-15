@@ -11,9 +11,12 @@ import pytest
 from fastapi import FastAPI
 
 from engine.api.routes import webhook as webhook_mod
-from engine.ingest import SignalError, from_github, parse_alerts
+from engine.ingest import SignalError, from_github
 from engine.shared.config import config
 from engine.workflows import pipeline
+from engine.workflows import queue as queue_mod
+
+am_mod = importlib.import_module("plugins.builtin.adapters.alertmanager.plugin")
 
 TOKEN = "test-token"
 
@@ -40,7 +43,7 @@ def _alert(**overrides):
 
 
 def test_alertmanager_payload_becomes_signals():
-    signals = parse_alerts({"alerts": [_alert()]})
+    signals = am_mod.signals_from_payload({"alerts": [_alert()]})
     assert len(signals) == 1
 
     signal = signals[0]
@@ -54,15 +57,15 @@ def test_alertmanager_payload_becomes_signals():
 
 def test_resolved_alerts_are_not_signals():
     """resolved 说的是"事情过去了",不是"哪里出了事"。"""
-    assert parse_alerts({"alerts": [_alert(status="resolved")]}) == []
+    assert am_mod.signals_from_payload({"alerts": [_alert(status="resolved")]}) == []
 
 
 def test_duplicate_fingerprints_collapse():
-    assert len(parse_alerts({"alerts": [_alert(), _alert()]})) == 1
+    assert len(am_mod.signals_from_payload({"alerts": [_alert(), _alert()]})) == 1
 
 
 def test_severity_and_title_fallbacks():
-    signal = parse_alerts(
+    signal = am_mod.signals_from_payload(
         {"alerts": [_alert(labels={"alertname": "DiskFull", "severity": "warning"}, annotations={})]}
     )[0]
     assert signal["severity"] == "medium"
@@ -71,7 +74,7 @@ def test_severity_and_title_fallbacks():
 
 
 def test_alert_without_any_name_is_skipped():
-    assert parse_alerts({"alerts": [_alert(labels={}, annotations={})]}) == []
+    assert am_mod.signals_from_payload({"alerts": [_alert(labels={}, annotations={})]}) == []
 
 
 def test_github_payload_keeps_the_handle_for_commenting():
@@ -100,36 +103,128 @@ def test_malformed_github_payload_raises():
 # ---------------------------------------------------------------------------
 
 
-def _post(payload: dict, headers: dict | None = None):
+class _FakeDBOS:
+    """只做一件事:收下 enqueue_workflow_async 的调用。"""
+
+    def __init__(self, enqueue):
+        self.enqueue_workflow_async = enqueue
+
+
+def _post(payload: dict, headers: dict | None = None, path: str = "/webhook/alertmanager"):
     async def run():
         app = FastAPI()
         app.include_router(webhook_mod.router)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.post("/webhook/alertmanager", json=payload, headers=headers or {})
+            return await client.post(path, json=payload, headers=headers or {})
 
     return asyncio.run(run())
 
 
-def test_rejects_when_no_token_is_configured(monkeypatch):
-    monkeypatch.setattr(config.settings, "alertmanager_webhook_token", "")
+class _AdapterConfig:
+    """适配器眼里只有一个令牌;入口不该从测试里读到真实环境。"""
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+
+def _adapter(token: str):
+    adapter = am_mod.AlertmanagerAdapter()
+    adapter.config = _AdapterConfig(token)
+
+    async def reload_config():
+        adapter.config = _AdapterConfig(token)
+
+    # 入口在"没配密钥"时会重载一次配置;这里让它重载成同一个值,
+    # 免得测试结果取决于这台机器上的环境变量。
+    adapter.on_startup = reload_config
+    return adapter
+
+
+@pytest.fixture
+def ingress(monkeypatch):
+    def bind(token: str = TOKEN):
+        adapter = _adapter(token)
+        monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: adapter)
+        return adapter
+
+    return bind
+
+
+def test_rejects_when_no_token_is_configured(ingress):
+    ingress("")
     assert _post({"alerts": []}).status_code == 503
 
 
-def test_rejects_a_bad_token(monkeypatch):
-    monkeypatch.setattr(config.settings, "alertmanager_webhook_token", TOKEN)
+def test_rejects_a_bad_token(ingress):
+    ingress(TOKEN)
     assert _post({"alerts": []}, {"X-Gwei-Token": "nope"}).status_code == 401
 
 
-def test_ignores_a_payload_without_firing_alerts(monkeypatch):
-    monkeypatch.setattr(config.settings, "alertmanager_webhook_token", TOKEN)
+def test_ignores_a_payload_without_firing_alerts(ingress):
+    ingress(TOKEN)
     resp = _post({"alerts": [_alert(status="resolved")]}, {"X-Gwei-Token": TOKEN})
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
 
 
-def test_enqueues_one_workflow_per_alert(monkeypatch):
-    monkeypatch.setattr(config.settings, "alertmanager_webhook_token", TOKEN)
+def test_unknown_source_is_refused(monkeypatch):
+    """没装适配器就是 503:不猜一个"默认来源",那比拒绝更糟。"""
+    monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: None)
+    resp = _post({"alerts": []}, path="/webhook/nobody")
+    assert resp.status_code == 503
+    assert "nobody" in resp.json()["detail"]
+
+
+def test_a_new_source_needs_no_core_change(monkeypatch):
+    """接一个新告警系统 = 一个声明 produces=signal 的适配器,入口一个字都不用改。"""
+    calls: list[tuple] = []
+
+    class CaddyAdapter:
+        source = "caddy"
+        produces = "signal"
+        config_hint = "CADDY_WEBHOOK_TOKEN"
+
+        def webhook_configured(self):
+            return True
+
+        def verify_webhook(self, headers, body):
+            return True
+
+        def parse_signals(self, headers, body):
+            return [
+                {
+                    "source": "caddy",
+                    "subject": "api.example.com",
+                    "title": "证书 3 天后过期",
+                    "detail": "",
+                    "severity": "medium",
+                    "ref": "api.example.com",
+                    "occurrence": "2026-11-14",
+                }
+            ]
+
+    async def fake_enqueue(queue, workflow, payload):
+        calls.append((queue, workflow.__name__, payload))
+
+    async def first_time(key, ttl):
+        return True
+
+    monkeypatch.setattr(webhook_mod, "get_source_adapter", lambda source: CaddyAdapter())
+    # 入队的规矩在 workflows/queue.py:DBOS 在那一边,不在路由里
+    monkeypatch.setattr(queue_mod, "DBOS", _FakeDBOS(fake_enqueue))
+    monkeypatch.setattr(webhook_mod, "dedup_once", first_time)
+
+    resp = _post({}, path="/webhook/caddy")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["count"] == 1
+    assert calls[0][1] == "alert_triage_workflow"
+    assert calls[0][2]["signal"]["source"] == "caddy"
+
+
+def test_enqueues_one_workflow_per_alert(ingress, monkeypatch):
+    ingress(TOKEN)
     calls: list[tuple] = []
 
     async def fake_enqueue(queue, workflow, payload):
@@ -138,7 +233,8 @@ def test_enqueues_one_workflow_per_alert(monkeypatch):
     async def first_time(key, ttl):
         return True
 
-    monkeypatch.setattr(webhook_mod.DBOS, "enqueue_workflow_async", fake_enqueue)
+    # 入队的规矩在 workflows/queue.py:DBOS 在那一边,不在路由里
+    monkeypatch.setattr(queue_mod, "DBOS", _FakeDBOS(fake_enqueue))
     monkeypatch.setattr(webhook_mod, "dedup_once", first_time)
 
     resp = _post(
@@ -151,8 +247,8 @@ def test_enqueues_one_workflow_per_alert(monkeypatch):
     assert calls[0][2]["tenant_slug"] == config.settings.default_tenant_slug
 
 
-def test_a_repeated_delivery_is_deduped(monkeypatch):
-    monkeypatch.setattr(config.settings, "alertmanager_webhook_token", TOKEN)
+def test_a_repeated_delivery_is_deduped(ingress, monkeypatch):
+    ingress(TOKEN)
 
     async def already_seen(key, ttl):
         return False

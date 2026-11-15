@@ -121,7 +121,11 @@ class DockerComposeAction(PluginBase):
 
     async def verify(self, effect: Effect, handle: str) -> tuple[bool, dict[str, Any]]:
         state = json.loads(handle)
-        rows = await self._ps(state["project_dir"], state["compose_file"])
+        rows = await self._ps(
+            state["project_dir"],
+            state["compose_file"],
+            self._release_env(state) if effect.capability == "compose.release" else None,
+        )
         running = self._running(rows, state["service"])
         if effect.capability == "compose.release":
             images = [
@@ -184,11 +188,19 @@ class DockerComposeAction(PluginBase):
             return False
         return left == right or left.endswith("/" + right) or right.endswith("/" + left)
 
-    async def _ps(self, project_dir: str, compose_file: str) -> list[dict[str, Any]]:
-        out = await asyncio.to_thread(
-            self._run,
+    async def _ps(
+        self, project_dir: str, compose_file: str, env: dict[str, str] | None = None
+    ) -> list[dict[str, Any]]:
+        """读这个项目现在跑着什么。
+
+        compose 文件多半用 `${GWEI_RELEASE_IMAGE}` 取镜像:不带那个变量,compose
+        连项目都解析不出来,ps 直接报"没有 image"而不是报"没在跑"。所以发布路径
+        必须把镜像变量一起带上,和 up / pull 用同一份环境。
+        """
+        out = await self._exec(
             [*self._host_args(), "compose", "-f", compose_file, "ps", "--format", "json"],
             project_dir,
+            env,
         )
         return self._parse_ps(out)
 
@@ -282,7 +294,9 @@ class DockerComposeAction(PluginBase):
         if compose_file is None:
             raise EffectNotApplied(f"{project_dir} 下没有 compose 文件,不发布")
 
-        rows = await self._ps(project_dir, compose_file.name)
+        rows = await self._ps(
+            project_dir, compose_file.name, {self.image_env: target_image}
+        )
         before_image = self._image_of(rows, service)
         if not before_image:
             # 读不到当前镜像就撤不回来;没有撤销承诺的发布不进第一类路径。
@@ -319,6 +333,14 @@ class DockerComposeAction(PluginBase):
             }
         )
         return {"handle": handle, "before_image": before_image, "target_image": target_image}
+
+    @staticmethod
+    def _release_env(state: dict[str, Any]) -> dict[str, str] | None:
+        """从句柄里取回那次发布用的镜像变量。没有目标镜像就不带,免得传一个空 image。"""
+        target = str(state.get("target_image") or "")
+        if not target:
+            return None
+        return {str(state.get("image_env") or DEFAULT_IMAGE_ENV): target}
 
     async def _undo_release(self, params: dict[str, Any]) -> dict[str, Any]:
         state = json.loads(params["handle"])

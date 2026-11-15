@@ -5,7 +5,7 @@ description: UI 扩展示例：声明式 widget + iframe 页面（不提供能�
 class_name: ObserverAgent
 ui:
   widgets:
-  - slot: dashboard.bento
+  - slot: issue-board.bento
     kind: metric
     span: 2
     title: 观测总览

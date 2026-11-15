@@ -14,3 +14,6 @@ config:
   optional:
     - GITLAB_BASE_URL
     - GITLAB_TOKEN
+
+# 预留位:当前只接 GitHub。要用 GitLab 时把这里改成 true,或用 PLUGINS_ENABLED 打开。
+default_enabled: false

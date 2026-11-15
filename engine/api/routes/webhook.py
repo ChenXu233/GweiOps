@@ -13,10 +13,8 @@ import logging
 import re
 import uuid
 
-from dbos import DBOS, SetEnqueueOptions, SetWorkflowID
 from fastapi import APIRouter, HTTPException, Request
 
-from engine.ingest import parse_alerts
 from engine.ingest.events import header_value
 from engine.shared.cache import WEBHOOK_DEDUP_TTL_S, dedup_once
 from engine.shared.config import config
@@ -27,6 +25,7 @@ from engine.workflows.pipeline import (
     fix_suggestion_workflow,
     issue_triage_workflow,
 )
+from engine.workflows.queue import enqueue_workflow
 from engine.workflows.release import release_workflow
 
 router = APIRouter()
@@ -94,11 +93,7 @@ async def _handle_source_event(
 
     # 没配密钥就是不设防:这个端点会起工作流(容器、模型、PR),不能默认敞开。
     if not adapter.webhook_configured():
-        hint = {
-            "github": "GITHUB_APP_WEBHOOK_SECRET",
-            "gitlab": "GITLAB_WEBHOOK_SECRET",
-            "cnb": "CNB_WEBHOOK_TOKEN",
-        }.get(source, f"{source.upper()}_WEBHOOK_SECRET")
+        hint = getattr(adapter, "config_hint", "") or f"{source.upper()}_WEBHOOK_SECRET"
         raise HTTPException(
             status_code=503,
             detail=f"未配置 {hint},拒绝接收 {source} webhook 投递:这个端点会起工作流,不能默认敞开",
@@ -108,6 +103,11 @@ async def _handle_source_event(
     headers = dict(request.headers)
     if not adapter.verify_webhook(headers, body):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    # 适配器可以产出信号,而不是"issue/comment/merge"那种事件:告警类来源走这条路,
+    # 和 GitHub 类来源共用同一个入口、同一套验签与去重。
+    if getattr(adapter, "produces", "event") == "signal":
+        return await _enqueue_signals(source, adapter, headers, body)
 
     event = adapter.parse_webhook(headers, body)
     if event is None:
@@ -139,17 +139,9 @@ async def _handle_source_event(
 
 
 async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: dict) -> dict:
-    """以投递 ID 为幂等键、租户为分区键入队。
-
-    分区队列的入队必须携带 partition_key（Spike 实测：缺 key 的工作流行会被
-    静默创建且永不被执行），因此三个上下文管理器缺一不可：
-    SetWorkflowID 幂等 + SetEnqueueOptions 分区 + enqueue_workflow_async。
-    """
-    workflow_id = f"{prefix}-{delivery_id}"
-    with SetWorkflowID(workflow_id), SetEnqueueOptions(
-        queue_partition_key=payload["tenant_slug"]
-    ):
-        await DBOS.enqueue_workflow_async(WORKFLOW_QUEUE, workflow, payload)
+    """入队,并为这次投递留一行日志。入队的规矩本身在 engine/workflows/queue.py。"""
+    queued = await enqueue_workflow(prefix, workflow, delivery_id, payload)
+    workflow_id = queued["workflow_id"]
     subject = (
         f"{payload['repo_full_name']}#{payload['issue_number']}"
         if payload.get("repo_full_name")
@@ -158,66 +150,29 @@ async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: di
     logger.info(
         "Enqueued workflow %s (tenant=%s %s)", workflow_id, payload["tenant_slug"], subject
     )
-    return {"status": "queued", "workflow_id": workflow_id}
+    return queued
 
 
-@router.post("/webhook/github")
-async def github_webhook(request: Request):
-    """GitHub Webhook(issues / issue_comment / pull_request / ping)。"""
-    return await _handle_source_event("github", request)
-
-
-@router.post("/webhook/github/comment")
-async def github_comment_webhook(request: Request):
-    """GitHub 评论专用入口:只接 issue_comment。"""
-    return await _handle_source_event("github", request, only_kind="comment")
-
-
-@router.post("/webhook/gitlab")
-async def gitlab_webhook(request: Request):
-    """GitLab Webhook(当前接合并请求的合并事件)。"""
-    return await _handle_source_event("gitlab", request)
-
-
-@router.post("/webhook/cnb")
-async def cnb_webhook(request: Request):
-    """CNB Webhook(当前接 PullRequestEvent 的合并事件)。"""
-    return await _handle_source_event("cnb", request)
-
-
-@router.post("/webhook/alertmanager")
-async def alertmanager_webhook(request: Request):
-    """监控信号入口。
-
-    Alertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,
-    不应该默认敞开。
-    """
-    token = config.settings.alertmanager_webhook_token
-    if not token:
-        raise HTTPException(
-            status_code=503, detail="未配置 ALERTMANAGER_WEBHOOK_TOKEN,拒绝接收监控信号"
-        )
-    if request.headers.get("X-Gwei-Token", "") != token:
-        raise HTTPException(status_code=401, detail="Invalid webhook token")
-
+async def _enqueue_signals(source: str, adapter, headers: dict, body: bytes) -> dict:
+    """一次投递里的若干条信号:各自去重、各自入队,一条重复不拖累其余。"""
     try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload") from None
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
-    signals = parse_alerts(payload)
-    if not signals:
-        return {"status": "ignored", "message": "没有 firing 的告警"}
+        signals = adapter.parse_signals(headers, body)
+    except Exception as exc:  # noqa: BLE001 - 解析失败是 400,不是 500
+        raise HTTPException(
+            status_code=400, detail=f"{source} 投递解析失败: {exc}"
+        ) from exc
 
     tenant = config.settings.default_tenant_slug
     queued: list[dict] = []
-    for signal in signals:
-        # 同一条告警会被重复投递;fingerprint + 起始时间是它这一次发作的身份
-        occurrence = "".join(ch for ch in signal.get("started_at", "") if ch.isalnum())
-        delivery = _safe_id(signal["ref"] or signal["title"], occurrence)
-        if not await dedup_once(f"gwei:{tenant}:alert-dedup:{delivery}", WEBHOOK_DEDUP_TTL_S):
+    for signal in signals or []:
+        if not isinstance(signal, dict) or not signal.get("title"):
+            continue
+        # 同一个 fingerprint 再次 firing 是另一次发作,所以去重键带上 occurrence。
+        delivery = _safe_id(
+            str(signal.get("ref") or signal.get("subject") or ""),
+            str(signal.get("occurrence") or ""),
+        )
+        if not await dedup_once(f"gwei:{tenant}:signal-dedup:{delivery}", WEBHOOK_DEDUP_TTL_S):
             continue
         queued.append(
             await _enqueue_workflow(
@@ -229,8 +184,28 @@ async def alertmanager_webhook(request: Request):
         )
 
     if not queued:
-        return {"status": "duplicate", "message": "告警已经处理过"}
+        return {
+            "status": "duplicate" if signals else "ignored",
+            "message": "这次投递里的信号都处理过了" if signals else "没有需要处理的信号",
+        }
     return {"status": "queued", "count": len(queued), "workflows": queued}
+
+
+@router.post("/webhook/{source}")
+async def source_webhook(source: str, request: Request):
+    """任何来源的投递。
+
+    核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+    它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
+    接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+    """
+    return await _handle_source_event(source, request)
+
+
+@router.post("/webhook/github/comment")
+async def github_comment_webhook(request: Request):
+    """GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。"""
+    return await _handle_source_event("github", request, only_kind="comment")
 
 
 def _safe_id(*parts: str) -> str:
