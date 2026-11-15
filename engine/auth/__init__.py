@@ -38,6 +38,7 @@ PERMISSIONS: dict[str, str] = {
     "roles.manage": "增删角色、改角色权限",
     "audit.read": "看审计日志",
     "plugins.read": "看插件与能力",
+    "plugins.write": "启停插件、重扫插件目录",
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSIONS)

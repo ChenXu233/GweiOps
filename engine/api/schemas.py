@@ -93,6 +93,12 @@ class PluginWidgetDTO(BaseModel):
 
 
 class PluginDTO(BaseModel):
+    """一个被发现过的插件。**发现 ≠ 启用**:`enabled` 才是它此刻在不在流程里。
+
+    只列已加载实例的话,未启用的插件在页面上根本不存在,人就没法把它打开——
+    所以这里按"发现的清单"枚举,`enabled` 与 `instances` 说清它此刻的状态。
+    """
+
     name: str
     version: str
     type: str
@@ -100,6 +106,12 @@ class PluginDTO(BaseModel):
     capabilities: list[str] = []
     widgets: list[PluginWidgetDTO] = []
     pages: list[PluginPageDTO] = []
+    # 此刻能不能被解析到。false 时下面的 capabilities 只是声明,不是可用能力。
+    enabled: bool = False
+    # 活着的实例键。同一清单按租户/目标挂多实例时这里会有多个。
+    instances: list[str] = []
+    # 为什么是这个状态(在 PLUGINS_ENABLED 里 / 清单 default_enabled: false / 运行期停用)
+    reason: str = ""
 
 
 # ---------------------------------------------------------------------------

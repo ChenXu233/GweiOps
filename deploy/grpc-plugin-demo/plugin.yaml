@@ -1,0 +1,20 @@
+# 进程外插件示例:自己的进程,自己的依赖,核心只通过 gRPC 调它。
+#
+# 与进程内插件的差别只有一个:`endpoint` 代替 `class_name`。能力、任务名映射、
+# Hook 订阅、周期这些声明照旧写在这里——声明留在清单,wire 只承载调用。
+name: demo-remote-scan
+version: 0.1.0
+type: agent
+description: 进程外扫描插件示例,演示 gRPC 接入形状(读一个目录里的待办标记)
+default_enabled: false
+
+# 核心按这个地址连它;编排里可用 PLUGINS_GRPC=name=host:port 覆盖
+endpoint: 127.0.0.1:50055
+
+# 这个实例服务哪个下游目标。进程外插件没有 Python 实例属性可读,声明只能落在这里。
+binding: local
+
+capabilities:
+  - scan.todos
+tasks:
+  scan.todos: scan_todos

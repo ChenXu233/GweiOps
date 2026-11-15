@@ -59,8 +59,29 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
         logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
 
-    # Startup: 发现并启动全部插件(失败隔离,单插件故障不阻止引擎启动)
+    # Startup: 先装回"人在控制台上点过的启停决定",再发现与启动。
+    # 顺序反了就是一个真 bug:控制台上关掉的插件会在重启后照常跑回来,而没人记得为什么。
+    from engine.plugin_manager import enablement
+
+    registry.set_decisions(await enablement.load_decisions())
+
+    # 发现 ≠ 启用:发现记录全部清单,决定为启用的才导入、注册、进索引
     registry.discover()
+
+    # 进程外插件(PLUGINS_GRPC)也走同一条注册路径,只是实例换成一个远程代理:
+    # 声明仍在清单里(见 grpc_loader),能力解析与进程内插件没有区别。
+    # 远端连不上只影响它自己,不该拦住本机这一批已经能用的插件。
+    from engine.plugin_manager.grpc_loader import register_grpc_plugins
+
+    try:
+        registered = register_grpc_plugins()
+    except Exception:  # noqa: BLE001 - 远端插件接不上不等于平台起不来
+        logger.warning("gRPC 插件没装上", exc_info=True)
+    else:
+        if registered:
+            logger.info("gRPC plugins registered: %d", registered)
+
+    # 全部实例就位之后统一 on_startup:进程内与进程外一视同仁
     await registry.launch()
 
     # 插件自己声明的配置有缺项就说出来:声明了却没人填,比没声明更糟——

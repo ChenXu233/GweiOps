@@ -126,7 +126,15 @@ class Manifest:
     version: str
     type: PluginType
     description: str
-    class_name: str
+    # 进程内插件的类名。进程外插件(endpoint 非空)不导入代码,可以省掉。
+    class_name: str = ""
+    # 进程外插件的 gRPC 地址(host:port)。声明留在清单里:控制台在进程没连上时
+    # 也能说明它是什么,加载期就能校验,两边走同一条注册路径。
+    endpoint: str = ""
+    # 这个实例服务哪个下游目标 / 哪个租户。进程内插件通常用实例属性声明,
+    # 进程外插件没有实例属性可读,声明只能落在清单里。
+    binding: str = ""
+    tenant: str = ""
     default_enabled: bool = True  # 部署未显式选择时是否加载;false 表示备选项
     triggers: list[dict[str, Any]] = field(default_factory=list)  # 原样保留,索引见下
     schedules: tuple[ScheduleDecl, ...] = ()  # triggers 里 type: schedule 的解析结果
@@ -155,9 +163,19 @@ class Manifest:
         if not isinstance(raw, dict):
             raise ManifestError(f"{path}: 清单必须是 YAML 映射")
 
-        for key in ("name", "version", "type", "description", "class_name"):
+        for key in ("name", "version", "type", "description"):
             if not raw.get(key):
                 raise ManifestError(f"{path}: 缺少必填字段 {key}")
+        # 进程内插件要类名来实例化,进程外插件要地址来连。两个都没有就无从加载,
+        # 两个都给则是自相矛盾的两份实现,同样拒掉。
+        class_name = str(raw.get("class_name") or "").strip()
+        endpoint = str(raw.get("endpoint") or "").strip()
+        if not class_name and not endpoint:
+            raise ManifestError(f"{path}: 缺少必填字段 class_name(或进程外插件的 endpoint)")
+        if class_name and endpoint:
+            raise ManifestError(
+                f"{path}: class_name 与 endpoint 只能给一个:同一份声明不该有两个实现"
+            )
         try:
             plugin_type = PluginType(raw["type"])
         except ValueError:
@@ -242,7 +260,10 @@ class Manifest:
             version=str(raw["version"]),
             type=plugin_type,
             description=raw["description"],
-            class_name=raw["class_name"],
+            class_name=class_name,
+            endpoint=endpoint,
+            binding=str(raw.get("binding") or ""),
+            tenant=str(raw.get("tenant") or ""),
             default_enabled=bool(raw.get("default_enabled", True)),
             triggers=list(raw.get("triggers") or []),
             schedules=schedules,
