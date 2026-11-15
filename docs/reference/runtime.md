@@ -98,12 +98,21 @@
 
 外部 agent 在**自己的沙箱**里处理一次事故,平台只负责交进去、收回来。
 
-- `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成这一场的工作区(`HARNESS_WORKSPACE_ROOT/<incident_id>`)。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
-- 边界由那条命令决定:`docker run --rm -v {workspace}:/w …` 或 `ssh box …`。平台不会替你在宿主机上直接起进程。
+- `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成沙箱里这一场的目录。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
+- `SANDBOX` 决定它**在哪跑**,三选一,换地方不改上面那条命令:
+
+  | 值 | 边界 | 代码怎么进去 |
+  | --- | --- | --- |
+  | `local`(默认) | 本机进程;隔离靠命令自己(`docker run` / `ssh box`) | 直接写进工作区 |
+  | `cnb` | CNB 托管执行面,一次 `api_trigger` 构建 | 整包交上去,改动只带回来 |
+  | `ssh` | 一个常开的会话(例如云原生开发环境) | `scp` 上去 |
+
 - **工作区里有代码**:载荷带仓库时,平台用 App 安装令牌取一份快照——走 API 的 tarball 端点(`api.github.com`),不走 `git clone`:`github.com` 在有些网络里连不上,API 通常还行,而且这条路不在命令行里带凭据。快照解开后在 `.repos/<incident_id>` 里变成一个本地提交,再把文件铺进工作区并放开到其他用户可写(引擎与 harness 镜像的 uid 不同)。容器看到的没有 `.git`:提交、分支、PR 由平台做,容器里没有可用的 git 凭据。拉不到代码时这一场不开工,报告直接写原因。
-- 交进去:工作区里的 `task.md`(信号、仓库与基线分支、出口地址**与认证方式**、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_WORKSPACE`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
-- **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式进入引擎进程的环境变量,并额外写成工作区里的 `.harness-env`(0600,不进工作区改动)。`docker run` 只转发被点名的变量,所以命令里要么逐个 `-e NAME`,要么 `--env-file {workspace}/.harness-env` 一次带进去 —— 用后者,新加的键才不用改命令。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 接入与密钥」写的就是这个 scope,密钥永不回显。
-- 收回来:工作区里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
+- 交进去:工作区里的 `task.md`(信号、仓库与基线分支、出口地址**与认证方式**、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
+- **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式进入引擎进程的环境变量,并额外写成沙箱里的 `.harness-env`(0600,不进工作区改动)。`docker run` 只转发被点名的变量,所以命令里要么逐个 `-e NAME`,要么 `--env-file {workspace}/.harness-env` 一次带进去 —— 用后者,新加的键才不用改命令。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 接入与密钥」写的就是这个 scope,密钥永不回显。
+- 收回来:沙箱里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
+- **改了什么由平台数**:工作区对着基线比一遍,结果写进报告里的 `diff`;沙箱自报的改动不进 PR。
+- 报告里带 `sandbox`:`{provider, id, url}` 就是这一场跑在哪。`cnb` 给的是构建号与构建页地址;`local` 给的是进程号。
 - 它改世界仍然只能走[出口](#出口),所以变更、账本、可撤销性和进程内 agent 完全一样。
 - `dsh` 这类 harness 自带一次任务一次退出的入口(`dsh --profile headless "<task>"`);平台不认识它,只认那条命令。可直接用的那条命令与对应镜像见 [deploy/harness](../../deploy/harness/README.md)。
 

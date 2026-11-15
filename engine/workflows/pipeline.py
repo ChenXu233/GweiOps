@@ -520,25 +520,29 @@ def harness_configured() -> bool:
 async def _run_harness_impl(payload: dict) -> dict | None:
     """有外部 harness 就交给它;没有就返回 None,往下回落到进程内或声明式。
 
-    harness 在自己的工作区里跑,平台只负责交进去、收回来。它改世界仍然走出口,
-    所以变更与账本跟进程内 agent 一模一样。
+    交进去、收回来这件事与"它在哪跑"无关:换一台机器就是换一个沙箱提供者,
+    出口、账本、撤销承诺一行不变。
     """
     command = (config.settings.harness_command or "").strip()
     if not command:
         return None
 
-    from engine.harness import build_task, run_harness
+    from engine.harness import build_task, workspace as ws, run_harness
+    from engine.harness.sandbox import build_from_settings
 
     incident_id = DBOS.workflow_id
-    workspace = Path(config.settings.harness_workspace_root) / incident_id
+    root = config.settings.harness_workspace_root
+    workspace = Path(root) / incident_id
     exit_url = config.settings.platform_base_url.rstrip("/") + "/api/agent/exits"
 
     repo = payload.get("repo_full_name") or ""
     branch = ""
+    checkout_repo = None
     if repo:
         try:
             prepared = await _prepare_workspace_impl(payload)
             branch = prepared.get("branch", "")
+            checkout_repo = ws.repo_of(root, incident_id)
         except Exception as exc:  # noqa: BLE001 - 拉不到代码也是一种要人看的结论
             logger.warning("workspace not prepared for %s: %s", incident_id, exc)
             return {
@@ -548,6 +552,17 @@ async def _run_harness_impl(payload: dict) -> dict | None:
                 "counts": {},
                 "exhausted": False,
             }
+
+    try:
+        provider = build_from_settings()
+    except Exception as exc:  # noqa: BLE001 - 配错了要说出来,不是悄悄回落到别处跑
+        return {
+            "source": "harness",
+            "summary": f"沙箱没配好,这一场没开工:{type(exc).__name__}: {exc}",
+            "steps": [],
+            "counts": {},
+            "exhausted": False,
+        }
 
     thread = await _thread_for(payload)
 
@@ -574,10 +589,15 @@ async def _run_harness_impl(payload: dict) -> dict | None:
         },
         tenant=payload.get("tenant_slug", ""),
         timeout_s=config.settings.harness_timeout_s,
+        sandbox=provider,
+        checkout_repo=checkout_repo,
     )
     if result.stderr:
         logger.info("harness %s: %s", incident_id, result.stderr[-400:])
     report = dict(result.report or {})
+    # 这一场跑在哪:一个编号、一个能点开的地址。人问"它在哪干的活"要有答案。
+    if result.entry is not None:
+        report["sandbox"] = result.entry.to_dict()
     # 这一轮改了什么是工作区的事实:平台自己数,不靠 harness 自报(自报的没法核)。
     report["diff"] = await _round_diff(incident_id, payload)
     return report

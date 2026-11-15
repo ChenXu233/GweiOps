@@ -15,11 +15,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .sandbox import Sandbox
+
+logger = logging.getLogger(__name__)
 
 REPORT_NAME = "report.json"
 # harness 要用到的环境变量也落一份在盘上:命令里逐个 -e 点名太容易漏,
@@ -36,6 +41,7 @@ class HarnessResult:
     stderr: str = ""
     timed_out: bool = False
     workspace: str = ""
+    entry: Any = None  # 这一场跑在哪;形状见 sandbox.Entry
 
 
 def build_task(
@@ -191,10 +197,10 @@ def build_env(
     return {**stored, **(extra or {})}
 
 
-def _write_env_file(root: Path, values: dict[str, str]) -> Path:
-    """把这一场要用的环境变量写成 docker --env-file 能读的样子。
+def env_file_text(values: dict[str, str]) -> str:
+    """docker --env-file 与沙箱里那份 `.harness-env` 共用的写法。
 
-    带换行的值(整段 PEM)写不进去,跳过——那种东西该走 -e 或者挂文件,不该塞进
+    带换行的值(整段 PEM)写不进去,跳过 —— 那种东西该走 -e 或者挂文件,不该塞进
     env 文件里假装成功。
     """
     usable = {
@@ -202,8 +208,14 @@ def _write_env_file(root: Path, values: dict[str, str]) -> Path:
         for key, value in values.items()
         if str(value) and "\n" not in str(value) and "\r" not in str(value)
     }
+    return "".join(f"{k}={v}\n" for k, v in sorted(usable.items()))
+
+
+def _write_env_file(root: Path, values: dict[str, str]) -> Path:
+    """把这一场要用的环境变量写成 docker --env-file 能读的样子。"""
+
     path = root / ENV_FILE_NAME
-    path.write_text("".join(f"{k}={v}\n" for k, v in sorted(usable.items())), encoding="utf-8")
+    path.write_text(env_file_text(values), encoding="utf-8")
     try:
         os.chmod(path, 0o600)  # 只有引擎这一侧要读它(docker CLI 在引擎里)
     except OSError:
@@ -219,77 +231,157 @@ async def run_harness(
     extra_env: dict[str, str] | None = None,
     tenant: str = "",
     timeout_s: int = 1800,
+    sandbox: "Sandbox | None" = None,
+    checkout_repo: str | Path | None = None,
 ) -> HarnessResult:
-    """在工作区里跑一条命令,等它结束,读回报告。
+    """把这一场交给沙箱,拿回一份报告。
 
-    命令里的 {workspace} 会被替换成真实路径(容器里挂载要用);其余信息走环境变量,
-    免得引号与转义在命令模板里打架。
+    五步,与"在哪跑"无关:`prepare` 交进去 → `handshake` 认一下 → `invoke` 跑
+    → `fetch` 取产物 → 平台自己对着基线算改动。换一个地方跑,只换 `sandbox`。
+
+    `command` 里的 `{workspace}` 会被替换成沙箱里的目录。`checkout_repo` 给了
+    才算得出"它改了哪些文件"—— 算不出来的时候,出口也不会拿一份凭空的改动去开 PR。
     """
+
+    from . import blobs as blobs_mod
+    from . import sandbox as sandbox_mod
+    from .sandbox import Entry
+
+    provider: Sandbox = sandbox or sandbox_mod.LocalSandbox()
     root = Path(workspace)
     root.mkdir(parents=True, exist_ok=True)
-    # 工作区两边都要写:引擎写 task.md,harness 容器写 report.json。
-    # 两个容器里的 uid 不一样(引擎 gwei / 镜像里的 node),又改不动对方镜像,
-    # 所以把这一场的目录放开写权限 —— 只放开这一层,不碰工作区以外。
-    try:
-        os.chmod(root, 0o777)
-    except OSError:  # 卷可能挂在只读的地方;那种情况报错留给下面那次写
-        pass
+
+    harness_env = build_env(extra_env, tenant)
     (root / "task.md").write_text(task, encoding="utf-8")
     report_path = root / REPORT_NAME
+    # 告诉 agent 报告落在哪:local 是这台机器上的绝对路径,别的沙箱是相对目录。
+    env_report = report_path if provider.name == "local" else REPORT_NAME
 
-    resolved = command.replace("{workspace}", str(root))
-    harness_env = build_env(extra_env, tenant)
-    _write_env_file(root, harness_env)
-    env = {**os.environ, **harness_env}
-    env.update(
-        {
-            "GWEI_WORKSPACE": str(root),
-            "GWEI_REPORT": str(report_path),
-            "GWEI_TASK_FILE": str(root / "task.md"),
-        }
-    )
+    # 沙箱里的路径由提供者定,这里给的是"这一场"的名字,不是宿主机路径:
+    # 同一个 task.md 在 local 是绝对路径,在 CNB 是容器里的另一处,agent 不必知道。
+    # 与机器无关的那几项从 extra_env 来 —— 它们本来就是"这一场"的事实。
+    env = {
+        **(extra_env or {}),
+        **harness_env,
+        "GWEI_REPORT": env_report,
+        "GWEI_TASK_FILE": "task.md",
+    }
 
-    proc = await asyncio.create_subprocess_shell(
-        resolved,
-        cwd=str(root),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    files: dict[str, bytes] = {
+        "task.md": task.encode("utf-8"),
+        ENV_FILE_NAME: env_file_text(harness_env).encode("utf-8"),
+    }
 
-    timed_out = False
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-    except asyncio.TimeoutError:
-        timed_out = True
-        proc.kill()
-        out, err = await proc.communicate()
+        handle = await provider.prepare(workspace=root, files=files)
+    except Exception as exc:  # noqa: BLE001 - 起不来也是一种要人看的结论
+        return HarnessResult(
+            report=_fallback_report(
+                HarnessResult(report={}, exit_code=None, stderr=f"{type(exc).__name__}: {exc}")
+            ),
+            exit_code=None,
+            stderr=f"{type(exc).__name__}: {exc}",
+            workspace=str(root),
+            entry=Entry(provider=provider.name),
+        )
 
-    stdout = (out or b"").decode("utf-8", "replace")
-    stderr = (err or b"").decode("utf-8", "replace")
+    try:
+        await provider.handshake(handle)
+    except Exception:  # noqa: BLE001 - 认一下失败不该让这一场直接死,run 会自己说
+        logger.warning("sandbox handshake failed", exc_info=True)
 
-    report = _read_report(root) or {}
+    result = await provider.invoke(
+        handle, command=command.replace("{workspace}", str(root)), env=env, timeout_s=timeout_s
+    )
+
+    fetched: dict[str, bytes] = {}
+    try:
+        fetched = await provider.fetch(handle, [REPORT_NAME, blobs_mod.CHANGES_ARCHIVE])
+    except Exception as exc:  # noqa: BLE001 - 取不回来就是没有,别让它盖掉 run 的结论
+        logger.warning("sandbox fetch failed: %s", exc)
+
+    report = _report_from(fetched, result)
     if report:
         report.setdefault("source", "harness")
 
-    result = HarnessResult(
+    entry = result.entry
+    if entry is None:
+        try:
+            entry = await provider.entries(handle)
+        except Exception:  # noqa: BLE001
+            entry = Entry(provider=provider.name)
+
+    if checkout_repo is not None:
+        await _bring_changes(Path(checkout_repo), root, fetched.get(blobs_mod.CHANGES_ARCHIVE))
+
+    final = HarnessResult(
         report=report,
-        exit_code=proc.returncode,
-        stdout=stdout,
-        stderr=stderr,
-        timed_out=timed_out,
+        exit_code=result.exit_code,
+        stdout=result.output,
+        stderr=result.error,
+        timed_out=result.timed_out,
         workspace=str(root),
+        entry=entry,
     )
     if not report:
-        result = HarnessResult(
-            report=_fallback_report(result),
-            exit_code=result.exit_code,
-            stdout=stdout,
-            stderr=stderr,
-            timed_out=timed_out,
-            workspace=str(root),
+        final = HarnessResult(
+            report=_fallback_report(final),
+            exit_code=final.exit_code,
+            stdout=final.stdout,
+            stderr=final.stderr,
+            timed_out=final.timed_out,
+            workspace=final.workspace,
+            entry=entry,
         )
-    return result
+    return final
+
+
+def _report_from(fetched: dict[str, bytes], result: HarnessResult) -> dict[str, Any]:
+    """报告有两个来源:沙箱直接交的,或者跟着改动包回来的。"""
+
+    raw = fetched.get(REPORT_NAME)
+    if raw is None and result.report:
+        return dict(result.report)
+    if raw is None:
+        return {}
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+async def _bring_changes(repo: Path, workspace: Path, archive: bytes | None) -> None:
+    """把沙箱里的改动落到本地工作区,好让"改了哪些、多少行"由平台自己数。
+
+    取不到包就不落:本地工作区保持原样,`diff_stat` 说的就是"没有改动"——
+    那是对的,平台确实没看见任何改动。
+    """
+
+    if not archive:
+        return
+    from . import blobs, workspace as ws
+
+    try:
+        files = blobs.read_changes(archive)
+    except ws.WorkspaceError as exc:
+        logger.warning("改动包读不出来: %s", exc)
+        return
+    for item in files:
+        path = str(item.get("path") or "")
+        if not path:
+            continue
+        target = workspace / path
+        try:
+            ws._inside(workspace, path)  # noqa: SLF001 - 同一个包,同一条路径规则
+        except ws.WorkspaceError:
+            logger.warning("改动包里有跑出工作区的路径: %s", path)
+            continue
+        if item.get("delete"):
+            target.unlink(missing_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(str(item.get("content") or ""), encoding="utf-8")
 
 
 __all__ = [
@@ -297,6 +389,7 @@ __all__ = [
     "run_harness",
     "build_task",
     "build_env",
+    "env_file_text",
     "ENV_FILE_NAME",
     "REPORT_NAME",
 ]

@@ -88,3 +88,31 @@ EOF
 | `ssh box …` | 另一台机器;最接近"不和宿主机跑在一起" |
 
 不管哪种,容器里都不该有生产凭据——它要改生产,只能走出口。
+
+## 换成云原生环境 / CNB 托管执行面
+
+边界由 `SANDBOX` 决定,`HARNESS_COMMAND` 不用改:
+
+```bash
+# 本机(默认):命令自己决定隔离(docker run / ssh box)
+SANDBOX=local
+
+# CNB 托管执行面:一次 api_trigger 构建,代码整包交进去,改动只带回来
+SANDBOX=cnb
+GWEI_SANDBOX_CNB_REPO=ChenXu233/gweiops     # 承载这一场的仓库
+GWEI_SANDBOX_CNB_IMAGE=cnbcool/default-npc:latest
+GWEI_SANDBOX_CNB_EVENT=api_trigger_harness
+# 令牌留空则用 CNB 适配器那份 CNB_TOKEN(权限 repo-cnb-trigger:rw)
+GWEI_SANDBOX_CNB_TOKEN=
+
+# 一个常开的会话:云原生开发环境给的地址与私钥
+SANDBOX=ssh
+GWEI_SANDBOX_SSH_TARGET=cnb-xxxx-001.xxxx-gv6@cnb.space
+GWEI_SANDBOX_SSH_KEY_FILE=/run/secrets/cnb_dev_key
+```
+
+`cnb` 这条路不需要往仓库里写 `.cnb.yml`:构建配置随请求交上去。它也不需要平台先把代码
+clone 一遍 —— 构建天然会把仓库检出到 `/workspace`,平台交进去的那份覆盖在上面。
+
+两种远端沙箱都只把**改动过的文件**带回来,行数由平台对着基线自己数。报告里会多一个
+`sandbox` 字段(`{provider, id, url}`):`cnb` 给的是构建号与构建页地址。
