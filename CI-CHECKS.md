@@ -11,7 +11,7 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 
 | 阶段 | 运行镜像 | 缺的工具谁装 | 命令 | 失败意味着 |
 | --- | --- | --- | --- | --- |
-| engine tests | `python:3.12` | `engine-tests.sh` 自己装 uv | `bash .ci/engine-tests.sh` | lock 与 `engine/pyproject.toml` 不一致,`contracts/openapi.json` 过期,alembic 迁移头不止一个,或 `tests/` 有红 |
+| engine tests | `python:3.12` | `engine-tests.sh` 自己装 uv | `bash .ci/engine-tests.sh` | lock 与 `engine/pyproject.toml` 不一致,`contracts/openapi.json` 过期,迁移不是一条链(头不止一个、父版本指不到、revision 重复),或 `tests/` 有红 |
 | web checks | `node:22` | `.cnb.yml` 里 `corepack prepare pnpm@10.15.0` | `bash .ci/web-checks.sh` | 前端构建失败,或 `vue-tsc` 报类型错 |
 
 两段各用各的现成镜像,不现建校验镜像。`engine-tests.sh` 自带 uv 的安装(版本由
@@ -19,7 +19,7 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 本地已有 uv 时那段直接跳过。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
 
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
-是否与 `app.openapi()` 一致、再查 alembic 迁移头是否唯一,最后跑 `pytest tests/`。
+是否与 `app.openapi()` 一致、再查迁移是不是一条链,最后跑 `pytest tests/`。
 比对只是重复断言,不是第二套判据——`tests/test_integration/test_openapi_contract.py`
 测的是同一件事;单拎出来是因为跑静态检查只要一份装好的依赖,几十毫秒就能红,
 不必等整轮测试跑完。
@@ -50,7 +50,16 @@ python scripts/dump_openapi.py                      # 改完响应模型就重�
 pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生成
 ```
 
-`alembic heads` 也必须只有一个,否则 `upgrade` 不知道该走哪条。
+## 迁移也得是一条链
+
+`engine/migrations/versions/` 里每个文件写一个 `revision`,用 `down_revision` 指向上一个。
+`.ci/engine-tests.py` 读这个目录自己走一遍,判据是 `upgrade` 从根走到头会怎样:头必须唯一,
+每个 `down_revision` 都得指得到,`revision` 不能重。两个头升级不知走哪条,父版本拼错的那条
+永远升不上去。
+
+这一步读源码的顶层赋值,不 import 迁移文件、也不调 alembic CLI。不调 `alembic heads` 的理由在输出格式:
+默认打印 `009 (head)`,没有 `Rev:` 前缀(`--verbose` 才有),按 `Rev:` 过滤只会数出 0 个头,
+于是仓库什么状态都判失败。
 
 ## Python 依赖是锁住的
 
