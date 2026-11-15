@@ -96,7 +96,7 @@ function onKey(e: KeyboardEvent) {
         <ul class="max-h-[52vh] overflow-auto p-1.5">
           <template v-for="(row, i) in rows" :key="row.item.to">
             <li
-              v-if="i === 0 || rows[i - 1].group !== row.group"
+              v-if="i === 0 || rows[i - 1]?.group !== row.group"
               class="px-3 pb-1 pt-2.5 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-faint"
             >
               {{ row.group }}

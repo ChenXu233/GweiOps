@@ -40,7 +40,7 @@ const ALLOWED_PREFIXES = ['/api/plugins', '/api/metrics', '/api/health']
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
 function bridgeAllowed(path: string): boolean {
-  const [pathname] = path.split('?')
+  const pathname = path.split('?')[0] ?? ''
   return ALLOWED_PREFIXES.some(prefix => pathname.startsWith(prefix))
 }
 

@@ -233,8 +233,8 @@ function formatSync(value: string): string {
             <span class="grid h-9 w-9 place-items-center rounded-tile bg-well text-ink-soft">
               <AppIcon name="repos" :size="16" />
             </span>
-            <span class="chip" :class="statusMeta[repo.status].cls">
-              {{ statusMeta[repo.status].label }}
+            <span class="chip" :class="statusMeta[repo.status]?.cls">
+              {{ statusMeta[repo.status]?.label }}
             </span>
           </div>
 
