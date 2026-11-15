@@ -193,8 +193,18 @@ def test_a_read_only_identity_cannot_use_an_effect(env):
     body = response.json()["result"]
 
     assert body["isError"] is True
-    assert "只读" in json.loads(body["content"][0]["text"])["reason"]
+    # 说清缺的是哪一条:只读凭据看不见这个工具,连名字都不该出现在它的清单里
+    assert "changes.execute" in json.loads(body["content"][0]["text"])["reason"]
     assert env.stub.provider.executed == 0
+
+
+def test_a_read_only_identity_does_not_see_effects_in_the_list(env):
+    """工具按凭据暴露:只读令牌的 tools/list 里没有改世界的工具。"""
+    only_operate = _rpc(env.client, "tools/list").json()["result"]["tools"]
+    read_only = _rpc(env.client, "tools/list", token="t-read").json()["result"]["tools"]
+
+    assert "compose.scale" in [tool["name"] for tool in only_operate]
+    assert [tool["name"] for tool in read_only] == ["changes.read"]
 
 
 def test_an_unknown_tool_comes_back_as_a_result_not_a_crash(env):

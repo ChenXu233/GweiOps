@@ -51,6 +51,28 @@ def _reset_plugin_registry():
 
 
 @pytest.fixture(autouse=True)
+def _reset_release_settings_rows():
+    """每个测试前后清掉 config 内存覆盖里的发布配置行。
+
+    release 的三层解析读的是 config 单例的内存覆盖;测试写进去的
+    (tenant, "release", key) 行不清掉会泄漏到后续测试。
+    """
+    from engine.shared.config import config
+
+    def _drop_release_rows():
+        stored = config.all_stored()
+        for tenant in list(stored):
+            stored[tenant].pop("release", None)
+            if not stored[tenant]:
+                stored.pop(tenant)
+        config.apply_stored(stored)
+
+    _drop_release_rows()
+    yield
+    _drop_release_rows()
+
+
+@pytest.fixture(autouse=True)
 def _dispose_async_engine():
     """每个测试后释放全局 async 引擎连接池。
 
