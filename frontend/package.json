@@ -12,7 +12,19 @@
       "esbuild"
     ],
     "overrides": {
-      "@nuxt/devtools": "3.3.1"
+      "@nuxt/devtools": "3.4.4",
+      "brace-expansion@^2": "2.1.8",
+      "brace-expansion@^5": "5.0.13",
+      "nanoid@^3": "3.3.20",
+      "postcss@^8": "8.5.33",
+      "shell-quote@^1": "1.12.0",
+      "source-map-js@^1": "1.2.2",
+      "svgo@^4": "4.1.0",
+      "node-forge@^1": "1.4.3",
+      "vite@^7": "7.3.8",
+      "postcss-selector-parser@^7": "7.2.1",
+      "serialize-javascript@^7": "7.1.4",
+      "launch-editor@^2": "2.14.2"
     }
   },
   "devDependencies": {
