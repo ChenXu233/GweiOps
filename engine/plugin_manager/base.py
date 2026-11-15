@@ -1,7 +1,6 @@
 # engine/plugin_manager/base.py
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+from typing import Dict, Any
 from enum import Enum
 
 
@@ -13,25 +12,14 @@ class PluginType(str, Enum):
     DASHBOARD_COMPONENT = "dashboard_component"
 
 
-@dataclass
-class PluginInfo:
-    """插件信息"""
-    name: str
-    version: str
-    type: PluginType
-    description: str
-    triggers: List[Dict[str, Any]] = field(default_factory=list)
-    capabilities: List[str] = field(default_factory=list)
-    config: Dict[str, Any] = field(default_factory=dict)
-
-
 class PluginBase(ABC):
-    """插件基类，所有插件必须实现此接口"""
+    """插件基类。
 
-    @abstractmethod
-    def info(self) -> PluginInfo:
-        """返回插件信息"""
-        pass
+    **没有 `info()`**:插件是什么由清单(`plugin.yaml`)唯一声明,核心在加载期
+    就校验过。再让插件用代码回答一遍"我叫什么、我有什么能力",等于把同一个事实
+    存两份——两份会漂移,而漂移的那份在页面上看不出是错的。这里只留"做事"的
+    那几个方法。
+    """
 
     @abstractmethod
     async def on_startup(self):

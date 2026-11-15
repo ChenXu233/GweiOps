@@ -1,7 +1,7 @@
 # plugins/builtin/agents/sensor/plugin.py
 from typing import Dict, Any, List
 
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 from engine.llm.client import LLMService
 from .labeler import LabelGenerator
 from .completeness import CompletenessChecker
@@ -16,23 +16,6 @@ class SensorAgent(PluginBase):
         self.labeler = LabelGenerator()
         self.completeness = CompletenessChecker()
         self.duplicate = DuplicateDetector()
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="sensor-agent",
-            version="2.0.0",
-            type=PluginType.AGENT,
-            description="感知智能体，使用 LLM 分析 Issue 内容并提供智能回复",
-            triggers=[
-                {"type": "event", "events": ["issue.created", "issue.edited"]},
-            ],
-            capabilities=[
-                "issue.label",
-                "issue.completeness_check",
-                "issue.duplicate_detection",
-                "issue.llm_analysis",
-            ],
-        )
 
     async def on_startup(self):
         """启动时初始化"""

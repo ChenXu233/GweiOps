@@ -6,7 +6,7 @@ from typing import Any, Dict
 from engine.change_unit import Effect, EffectNotApplied, Window
 from engine.harness.workspace import Source as WorkspaceSource
 from engine.ingest.events import EventError, header_value
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 from .config import GitHubAppConfig
 from .client import GitHubAppClient
 from .handlers import WebhookHandler
@@ -58,24 +58,6 @@ class GitHubAppAdapter(PluginBase):
         self.mentions = ("@gwei",)
         # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
         self.config_hint = "GITHUB_APP_WEBHOOK_SECRET"
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="github-app-adapter",
-            version="1.0.0",
-            type=PluginType.ADAPTER,
-            description="GitHub App 适配器，通过 GitHub App 进行认证和交互",
-            capabilities=[
-                "issue.read", "issue.write",
-                "comment.read", "comment.write",
-                "label.write",
-                "webhook.receive", "webhook.verify",
-            ],
-            config={
-                "required": ["GITHUB_APP_APP_ID", "GITHUB_APP_PRIVATE_KEY"],
-                "optional": ["GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_INSTALLATION_ID"],
-            },
-        )
 
     async def on_startup(self):
         """启动时初始化并验证配置。"""

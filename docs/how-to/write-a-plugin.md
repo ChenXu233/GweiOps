@@ -55,17 +55,13 @@ tasks:
 
 类名必须与 `class_name` 一致,直接 `from engine.plugin_manager.base import ...` 导入——**不要**再改 `sys.path`,加载器已经注入包路径。
 
+实现里**没有 `info()`**:插件叫什么、有什么能力、订阅什么,全在 `plugin.yaml` 里声明过一遍了。让代码再回答一次等于把同一个事实存两份,而两份一定会在某次改动后漂移。
+
 ```python
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 
 class MyPlugin(PluginBase):
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="my-plugin", version="1.0.0", type=PluginType.ADAPTER,
-            description="一句话说清它做什么", capabilities=["issue.read"],
-        )
-
     async def on_startup(self):
         """读配置、建客户端。抛异常只停掉自己,不阻止引擎启动。"""
 

@@ -28,7 +28,7 @@ import logging
 import os
 from typing import Any
 
-from .base import PluginBase, PluginInfo, PluginType
+from .base import PluginBase, PluginType
 from .manifest import Manifest
 from .registry import PluginRegistry, registry as default_registry
 
@@ -68,15 +68,6 @@ class GrpcPluginProxy(PluginBase):
         self._stub = None
 
     # -- 与进程内插件相同的形状 ---------------------------------------
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name=self.manifest.name,
-            version=self.manifest.version,
-            type=self.manifest.type,
-            description=self.manifest.description,
-            capabilities=list(self.manifest.capabilities),
-        )
 
     def __repr__(self) -> str:  # 日志里认得出它是进程外的
         return f"GrpcPluginProxy({self._name} @ {self._target})"

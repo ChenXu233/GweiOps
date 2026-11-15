@@ -20,13 +20,10 @@ from engine.plugin_manager.registry import PluginRegistry
 
 
 PLUGIN_PY = """
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginType
 
 
 class Demo(PluginBase):
-    def info(self):
-        return PluginInfo(name="demo", version="1", type=PluginType.ACTION,
-                          description="d", capabilities=["demo.read"])
 
     async def on_startup(self):
         self.started = True
@@ -220,3 +217,18 @@ def test_sensor_declares_task_mapping_for_every_capability(builtin_registry):
             continue
         for capability in manifest.capabilities:
             assert capability in manifest.tasks, f"{capability} 没有任务名映射"
+
+
+def test_plugin_declarations_have_one_source(builtin_registry):
+    """清单是唯一声明源:插件类里不该再有一个 info() 回答同样的问题。
+
+    这条不是风格检查,是"同一事实只有一处"的可判形态:一旦有人把声明写回代码,
+    两份就会在下次改清单时漂移,而漂移的那份没人会去看。
+    """
+    for manifest in builtin_registry.manifests():
+        instance = builtin_registry.get(manifest.name)
+        if instance is None:
+            continue
+        assert not hasattr(instance, "info"), (
+            f"{manifest.name} 上还有一个 info() 方法:插件声明只该写在 plugin.yaml 里"
+        )

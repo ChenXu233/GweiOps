@@ -10,6 +10,8 @@
 
 必填字段:name、version、type、description,以及 `class_name` 与 `endpoint` 中的一个——前者是进程内插件,后者是进程外插件,给两个会被拒(同一份声明不该有两个实现)。
 
+清单是唯一声明源。插件代码里没有 `info()`,也不该有:名称、能力、订阅再写一遍就是两份事实,两份会漂移,而漂移的那份在页面上看不出是错的。
+
 ```yaml
 name: example-agent
 version: 1.0.0
@@ -260,7 +262,7 @@ effects:
 - 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
 - 同名效果由多个插件声明时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
 
-效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
+效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。进程外插件不必实现这四个方法名:`execute_task` 认清单 `effects` 里那四个任务名即可(handle 与窗口查询走 `params`)。
 
 适配器还负责"这场运行的代码从哪来",三件事各有各的方法:
 

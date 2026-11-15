@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional
 
 from engine.change_unit.intent import Intent, parse_intent
 from engine.llm.client import LLMService
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 SYSTEM_PROMPT = """你是运维变更的意图提供者。你只提出意图,不执行任何操作,也拿不到下游凭据。
 
@@ -152,15 +152,6 @@ class LLMIntentPlanner(PluginBase):
         self.menu_provider = menu_provider or _registry_menu
         self.binding = ""
         self.tenant = ""
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="intent-llm",
-            version="0.1.0",
-            type=PluginType.AGENT,
-            description="让模型起草 intent;拿不准就给空 effects",
-            capabilities=["intent.propose"],
-        )
 
     async def on_startup(self) -> None:
         pass

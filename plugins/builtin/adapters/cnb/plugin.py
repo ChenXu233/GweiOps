@@ -17,7 +17,7 @@ from typing import Any, Dict
 from engine.change_unit import EffectNotApplied
 from engine.harness.workspace import Source as WorkspaceSource
 from engine.ingest.events import EventError, event as normalized_event, header_value
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 from .client import CNBClient, CNBError
 from .config import CNBConfig
@@ -41,29 +41,6 @@ class CNBAdapter(PluginBase):
         self.mentions = DEFAULT_MENTIONS
         # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
         self.config_hint = "CNB_WEBHOOK_TOKEN"
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="cnb-adapter",
-            version="0.2.0",
-            type=PluginType.ADAPTER,
-            description="CNB(cnb.cool)适配器:议题/评论/合并事件,回评与开 PR,仓库快照",
-            capabilities=[
-                "webhook.receive",
-                "webhook.verify",
-                "comment.create",
-                "pr.open",
-            ],
-            config={
-                "required": ["CNB_WEBHOOK_TOKEN"],
-                "optional": [
-                    "CNB_BASE_URL",
-                    "CNB_WEB_BASE_URL",
-                    "CNB_TOKEN",
-                    "CNB_WEBHOOK_HEADER",
-                ],
-            },
-        )
 
     async def on_startup(self) -> None:
         self.config = CNBConfig()

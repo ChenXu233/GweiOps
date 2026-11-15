@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 from .generator import PatchGenerator
 from .reviewer import CodeReviewer
 
@@ -10,15 +10,6 @@ class FixerAgent(PluginBase):
     def __init__(self):
         self.patch_generator = PatchGenerator()
         self.reviewer = CodeReviewer()
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="fixer-agent",
-            version="1.0.0",
-            type=PluginType.AGENT,
-            description="修复智能体，生成修复补丁",
-            capabilities=["patch.generate", "code.review"],
-        )
 
     async def on_startup(self):
         pass

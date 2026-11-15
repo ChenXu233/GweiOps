@@ -409,8 +409,6 @@ class TestWorkflowEndToEnd:
             session, added = _make_fake_session_factory()
 
             with patch.object(pipeline_module, "get_sensor") as mock_get_sensor, patch.object(
-                pipeline_module, "reply_on_topic_step", AsyncMock(return_value={})
-            ) as mock_reply, patch.object(
                 pipeline_module, "async_session_factory", return_value=session
             ):
                 sensor = MagicMock()
@@ -460,8 +458,9 @@ class TestWorkflowEndToEnd:
                 assert effects[0]["capability"] == "comment.create"
                 assert effects[0]["verdict"] == "blocked"
                 sensor.handle_event.assert_awaited_once()
-                # 回评走变更单元,不再是一句"调一下适配器的 execute_task"
-                mock_reply.assert_awaited_once()
+                # 回评就是上面那个 comment.create 单元:triage 不单独调
+                # reply_on_topic_step,所以这里只认单元结论,不去断言一个不会被
+                # 调用的步骤。接真库跑门控用例时,那条断言永远是 0 次。
         finally:
             DBOS.destroy(destroy_registry=True)
 

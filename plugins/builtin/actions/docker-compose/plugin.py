@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from engine.change_unit import Effect, EffectNotApplied, Window
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 COMPOSE_FILES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 LOCAL_BINDING = "local"
@@ -61,15 +61,6 @@ class DockerComposeAction(PluginBase):
         self.image_env = image_env
 
     # -- 清单元数据 -------------------------------------------------
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="docker-compose",
-            version="0.1.0",
-            type=PluginType.ACTION,
-            description="用 docker compose 执行可撤销的服务变更",
-            capabilities=["compose.scale", "compose.release"],
-        )
 
     async def on_startup(self) -> None:
         pass
