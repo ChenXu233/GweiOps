@@ -1,5 +1,5 @@
 # .ci/engine-tests.py
-"""引擎校验的判据:契约与迁移各再比一次,然后跑测试。
+"""引擎校验的判据:契约、迁移、gRPC 桩各再比一次,然后跑测试。
 
 两件静态检查和 pytest 都跑在同一份已装好的依赖里,合进一条命令省一次
 uv run 的启动开销。真的红了各自给出人话,不用退出码去猜是哪一件。
@@ -45,6 +45,25 @@ def check_contract() -> bool:
 
     print(f"::error::{OUT.relative_to(ROOT)} 与当前接口不一致")
     print(f"   运行 {REGEN} 后重新提交")
+    return False
+
+
+def check_grpc_stubs() -> bool:
+    """仓库里的 gRPC 桩必须与 proto/ 当前内容一致。
+
+    桩是提交进仓库的(运行时不依赖 protoc),所以它和 openapi.json 一样会过期。
+    过期不会立刻报错:远端插件照样注册得上,只是调用时字段对不上——那是最难查的
+    一类。这里用生成脚本自己的 --check,不另写一份判据。
+    """
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "gen_grpc_stubs.py"), "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True
+    print(result.stdout.strip() or "::error::gRPC 桩与 proto 不一致")
     return False
 
 
@@ -108,7 +127,11 @@ def check_migrations() -> bool:
 
 
 def main() -> int:
-    checks = [("契约", check_contract), ("迁移", check_migrations)]
+    checks = [
+        ("契约", check_contract),
+        ("迁移", check_migrations),
+        ("gRPC 桩", check_grpc_stubs),
+    ]
     failed = [name for name, fn in checks if not fn()]
 
     if "--no-tests" in sys.argv[1:]:

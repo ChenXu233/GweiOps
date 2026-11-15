@@ -11,7 +11,7 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 
 | 阶段 | 运行镜像 | 缺的工具谁装 | 命令 | 失败意味着 |
 | --- | --- | --- | --- | --- |
-| engine tests | `python:3.12` | `engine-tests.sh` 自己装 uv | `bash .ci/engine-tests.sh` | lock 与 `engine/pyproject.toml` 不一致,`contracts/openapi.json` 过期,迁移不是一条链(头不止一个、父版本指不到、revision 重复),或 `tests/` 有红 |
+| engine tests | `python:3.12` | `engine-tests.sh` 自己装 uv | `bash .ci/engine-tests.sh` | lock 与 `engine/pyproject.toml` 不一致,`contracts/openapi.json` 过期,迁移不是一条链(头不止一个、父版本指不到、revision 重复),`engine/plugin_manager/grpc_proto/` 与 `proto/` 不一致,或 `tests/` 有红 |
 | web checks | `node:22` | `.cnb.yml` 里 `corepack prepare pnpm@10.15.0` | `bash .ci/web-checks.sh` | 前端构建失败,或 `vue-tsc` 报类型错 |
 
 两段各用各的现成镜像,不现建校验镜像。`engine-tests.sh` 自带 uv 的安装(版本由
@@ -19,7 +19,7 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 本地已有 uv 时那段直接跳过。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
 
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
-是否与 `app.openapi()` 一致、再查迁移是不是一条链,最后跑 `pytest tests/`。
+是否与 `app.openapi()` 一致、再查迁移是不是一条链、再比 gRPC 桩,最后跑 `pytest tests/`。
 比对只是重复断言,不是第二套判据——`tests/test_integration/test_openapi_contract.py`
 测的是同一件事;单拎出来是因为跑静态检查只要一份装好的依赖,几十毫秒就能红,
 不必等整轮测试跑完。
@@ -31,7 +31,7 @@ bash .ci/engine-tests.sh
 bash .ci/web-checks.sh
 ```
 
-只查静态的两件(依赖已装好时):
+只查静态的三件(依赖已装好时):
 
 ```bash
 python .ci/engine-tests.py --no-tests
@@ -60,6 +60,20 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 这一步读源码的顶层赋值,不 import 迁移文件、也不调 alembic CLI。不调 `alembic heads` 的理由在输出格式:
 默认打印 `009 (head)`,没有 `Rev:` 前缀(`--verbose` 才有),按 `Rev:` 过滤只会数出 0 个头,
 于是仓库什么状态都判失败。
+
+## gRPC 桩也要跟着 proto
+
+`proto/plugin.proto` 是进程外插件的 wire 契约,桩生成后提交进仓库(`engine/plugin_manager/grpc_proto/`)——
+运行时不依赖 protoc,部署镜像里也不必装编译器。桩过期不会立刻炸:远端插件照样注册得上,
+只是调用时字段对不上,那是最难查的一类。
+
+改了 proto 就重跑:
+
+```bash
+python scripts/gen_grpc_stubs.py
+```
+
+判据由生成脚本自己给(`--check`):重新生成一份、逐字节比。不另写一份比对逻辑。
 
 ## Python 依赖是锁住的
 
