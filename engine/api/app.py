@@ -19,6 +19,7 @@ from engine.api.routes.mcp import router as mcp_router
 from engine.api.routes.mcp import router as mcp_router
 from engine.api.routes.console import router as console_router
 from engine.api.routes.rbac import router as rbac_router
+from engine.api.routes.release_settings import router as release_settings_router
 from engine.api.routes.settings_scopes import router as settings_scopes_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
@@ -145,6 +146,7 @@ app.include_router(agent_router)
 app.include_router(incidents_router)
 app.include_router(issues_router)
 app.include_router(settings_scopes_router)
+app.include_router(release_settings_router)
 app.include_router(rbac_router)
 app.include_router(webhook_router)
 app.include_router(mcp_router)

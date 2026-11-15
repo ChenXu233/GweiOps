@@ -403,3 +403,117 @@ def test_off_mode_repo_gets_intent_none_and_honest_report(monkeypatch):
     assert ("close", report) in seen or any(item[0] == "close" for item in seen)
     assert report["counts"] == {}
     assert "mode=off" in report["summary"]
+
+
+# ---- 发布配置的页面读写口:租户默认与仓库行在控制台就能改 ----
+
+
+def _api_client(monkeypatch, store):
+    """挂上发布配置路由 + file 后端的 settings store,走完整的读写链。"""
+    monkeypatch.setattr(config.settings, "change_ledger_backend", "file")
+    monkeypatch.setattr(
+        config.settings, "change_ledger_path", str(store / "ledger.jsonl")
+    )
+    from engine.api.app import app
+
+    return TestClient(app)
+
+
+def test_release_api_lists_effective_and_layers(monkeypatch, tmp_path):
+    _configure(monkeypatch, release_binding="staging", release_project_dir="")
+    _put_release_row("default", "acme/api", {"mode": "compose", "service": "api"})
+
+    client = _api_client(monkeypatch, tmp_path)
+    body = client.get("/api/settings/release").json()
+
+    assert body["modes"] == ["off", "compose"]
+    assert body["effective"]["mode"] == "off"  # 出厂默认兜底,页面有值可显示
+    assert body["effective"]["binding"] == "staging"  # 环境层透出
+    assert body["tenant_default"]["set"] is False
+    assert body["repos"]["acme/api"]["set"] is True
+    assert body["repos"]["acme/api"]["values"]["mode"] == "compose"
+    assert body["repos"]["acme/api"]["effective"]["mode"] == "compose"
+
+
+def test_release_api_writes_tenant_default_and_repo_row(monkeypatch, tmp_path):
+    client = _api_client(monkeypatch, tmp_path)
+
+    resp = client.put(
+        "/api/settings/release/tenant-default",
+        json={"values": {"mode": "compose", "service": "svc"}},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["effective"]["mode"] == "compose"
+
+    resp = client.put(
+        "/api/settings/release/repos/acme/libx",
+        json={"values": {"mode": "off"}},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["effective"]["mode"] == "off"
+
+    # 写进去的行真的活着:解析读回同一份,重启也活(store 落了盘)
+    assert resolve_release_config("default", "acme/api")["service"] == "svc"
+    assert resolve_release_config("default", "acme/libx")["mode"] == "off"
+    assert json.loads(config.stored("release", "default")["*"])["service"] == "svc"
+
+
+def test_release_api_rejects_bad_mode_and_template(monkeypatch, tmp_path):
+    client = _api_client(monkeypatch, tmp_path)
+
+    resp = client.put(
+        "/api/settings/release/repos/acme/api", json={"values": {"mode": "k8s"}}
+    )
+    assert resp.status_code == 422
+    assert "off" in resp.json()["detail"] and "compose" in resp.json()["detail"]
+
+    resp = client.put(
+        "/api/settings/release/repos/acme/api",
+        json={"values": {"image_template": "ghcr.io/{branch}:{sha}"}},
+    )
+    assert resp.status_code == 422
+    assert "branch" in resp.json()["detail"]
+
+    # 坏值没落库
+    assert "acme/api" not in config.stored("release", "default")
+
+
+def test_release_api_rejects_unknown_keys_and_malformed_repo_key(monkeypatch, tmp_path):
+    client = _api_client(monkeypatch, tmp_path)
+
+    resp = client.put(
+        "/api/settings/release/repos/acme/api", json={"values": {"portal": "x"}}
+    )
+    assert resp.status_code == 422
+    assert "portal" in resp.json()["detail"]
+
+    assert (
+        client.put(
+            "/api/settings/release/repos/not-a-repo", json={"values": {"mode": "off"}}
+        ).status_code
+        == 400
+    )
+
+
+def test_release_api_deletes_rows(monkeypatch, tmp_path):
+    """删的是落库那行:先经 API 写入,file store 落盘,再删才真的删掉。"""
+    client = _api_client(monkeypatch, tmp_path)
+    assert (
+        client.put(
+            "/api/settings/release/repos/acme/api", json={"values": {"mode": "off"}}
+        ).status_code
+        == 200
+    )
+
+    resp = client.delete("/api/settings/release/repos/acme/api")
+    assert resp.status_code == 200
+    assert resolve_release_config("default", "acme/api")["mode"] == "off"  # 落回出厂默认
+    assert client.delete("/api/settings/release/repos/acme/api").status_code == 404
+
+
+def test_release_api_refuses_an_empty_write(monkeypatch, tmp_path):
+    client = _api_client(monkeypatch, tmp_path)
+    assert (
+        client.put("/api/settings/release/tenant-default", json={"values": {}}).status_code
+        == 400
+    )

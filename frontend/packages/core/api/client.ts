@@ -63,6 +63,24 @@ export const SettingsScopesApi = {
     }),
 }
 
+// 发布配置:租户默认(key=*)与仓库行(key=owner/repo),value 是一份 JSON 声明。
+// 生效值(effective)由引擎按四层合并算好,页面只展示、不自己拼。
+export const ReleaseSettingsApi = {
+  get: () => api.get('/api/settings/release'),
+  putTenantDefault: (values: Record<string, string>) =>
+    api.put('/api/settings/release/tenant-default', { body: { values } }),
+  putRepo: (repo: string, values: Record<string, string>) =>
+    api.put('/api/settings/release/repos/{repo_full_name}', {
+      path: { repo_full_name: repo },
+      body: { values },
+    }),
+  deleteTenantDefault: () => api.delete('/api/settings/release/tenant-default'),
+  deleteRepo: (repo: string) =>
+    api.delete('/api/settings/release/repos/{repo_full_name}', {
+      path: { repo_full_name: repo },
+    }),
+}
+
 export const HealthApi = {
   get: () => api.get('/api/health'),
 }

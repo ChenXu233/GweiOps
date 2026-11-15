@@ -62,6 +62,7 @@ import {
   Siren,
   Sparkles,
   Sun,
+  Rocket,
   Terminal,
   Timer,
   TrendingUp,
@@ -150,6 +151,7 @@ const icons: Record<string, Component> = {
   terminal: Terminal,
   scale: Scale,
   webhook: Webhook,
+  rocket: Rocket,
 }
 
 const props = withDefaults(

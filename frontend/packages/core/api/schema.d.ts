@@ -561,6 +561,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Release Config
+         * @description 这个租户的发布配置:生效值在前,每一层自己配了什么在后。
+         */
+        get: operations["get_release_config_api_settings_release_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/release/repos/{repo_full_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Repo Row */
+        put: operations["put_repo_row_api_settings_release_repos__repo_full_name__put"];
+        post?: never;
+        /** Delete Repo Row */
+        delete: operations["delete_repo_row_api_settings_release_repos__repo_full_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/release/tenant-default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Tenant Default */
+        put: operations["put_tenant_default_api_settings_release_tenant_default_put"];
+        post?: never;
+        /** Delete Tenant Default */
+        delete: operations["delete_tenant_default_api_settings_release_tenant_default_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/scopes": {
         parameters: {
             query?: never;
@@ -675,26 +731,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/github/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Github Comment Webhook
-         * @description GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。
-         */
-        post: operations["github_comment_webhook_webhook_github_comment_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/webhook/{source}": {
         parameters: {
             query?: never;
@@ -708,9 +744,9 @@ export interface paths {
          * Source Webhook
          * @description 任何来源的投递。
          *
-         *     核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+         *     核心这里不认识 GitHub、GitLab、CNB、Alertmanager、Caddy、云雀中的任何一个:
          *     它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
-         *     接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+         *     接一个新的来源 = 装一个适配器插件,这里不加分支、不加一家专用的入口。
          */
         post: operations["source_webhook_webhook__source__post"];
         delete?: never;
@@ -1334,6 +1370,21 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * ReleaseValuesDTO
+         * @description 一行发布配置。字段由 release.py 的模式决定,这里不逐个点名。
+         */
+        ReleaseValuesDTO: {
+            /**
+             * Values
+             * @default {}
+             */
+            values: {
+                [key: string]: string;
+            };
+        } & {
+            [key: string]: unknown;
+        };
         /** RepoDTO */
         RepoDTO: {
             /** Activeagents */
@@ -1660,6 +1711,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -2601,6 +2656,155 @@ export interface operations {
             };
         };
     };
+    get_release_config_api_settings_release_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_repo_row_api_settings_release_repos__repo_full_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_full_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseValuesDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_repo_row_api_settings_release_repos__repo_full_name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_full_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_tenant_default_api_settings_release_tenant_default_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseValuesDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tenant_default_api_settings_release_tenant_default_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_scopes_api_settings_scopes_get: {
         parameters: {
             query?: never;
@@ -2840,26 +3044,6 @@ export interface operations {
         };
     };
     mcp_mcp_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    github_comment_webhook_webhook_github_comment_post: {
         parameters: {
             query?: never;
             header?: never;
