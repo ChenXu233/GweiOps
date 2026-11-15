@@ -1,8 +1,10 @@
 # tests/test_integration/test_console.py
-"""控制台只读 API 测试 —— 需要 GWEI_TEST_DATABASE_URL(真实 Postgres)。"""
+"""控制台剩下的两个读取点 —— 需要 GWEI_TEST_DATABASE_URL(真实 Postgres)。
+
+议题与变更各有自己的测试;这里只管仓库列表与团队设置这两个没有别处可去的接口。
+"""
 
 import os
-import uuid
 
 import pytest
 
@@ -38,35 +40,8 @@ def client():
     return TestClient(app)
 
 
-def test_release_is_not_counted_as_an_overnight_fix():
-    from engine.api.routes.console import _is_repair
-
-    assert _is_repair({"effect": {"capability": "pr.open"}})
-    assert _is_repair({"effect": {"capability": "compose.scale"}})
-    assert not _is_repair({"effect": {"capability": "compose.release"}})
-
-
 @requires_postgres
 class TestConsole:
-    def test_dashboard_shape(self, client):
-        resp = client.get("/api/dashboard")
-        assert resp.status_code == 200
-        data = resp.json()
-        for key in ("status", "pendingReview", "overnightFixed", "activeAgents", "successRate"):
-            assert key in data
-        assert data["activeAgents"] >= 1
-
-    def test_issues_empty_then_shape(self, client):
-        resp = client.get("/api/issues")
-        assert resp.status_code == 200
-        # 无数据时为空列表;有数据时形状完整
-        for issue in resp.json():
-            assert {"id", "title", "severity", "status", "repo", "patches", "timeline"} <= set(issue)
-
-    def test_issue_detail_404(self, client):
-        resp = client.get(f"/api/issues/{uuid.uuid4()}")
-        assert resp.status_code == 404
-
     def test_repos_and_settings(self, client):
         repos = client.get("/api/repos").json()
         for repo in repos:
@@ -75,26 +50,7 @@ class TestConsole:
         settings = client.get("/api/settings").json()
         assert settings["plan"] == "selfhost"
 
-    def test_canary_honest_empty(self, client):
-        assert client.get("/api/dashboard/canary").json() == []
-
-    def test_runs_shape(self, client):
-        resp = client.get("/api/runs")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert {"items", "total"} <= set(data)
-        for run in data["items"]:
-            assert {
-                "id",
-                "issueId",
-                "issueTitle",
-                "repo",
-                "status",
-                "source",
-                "startedAt",
-                "endedAt",
-                "durationMs",
-            } <= set(run)
-            # 会话没结束时耗时如实留空,不拿 0 顶替
-            if run["endedAt"] is None:
-                assert run["durationMs"] is None
+    def test_retired_aggregates_are_gone(self, client):
+        """控制室与执行记录两个页面没了,它们的聚合接口也不该还挂着。"""
+        for path in ("/api/dashboard", "/api/dashboard/pending", "/api/runs", "/api/issues"):
+            assert client.get(path).status_code == 404, path

@@ -288,6 +288,8 @@ const sections = computed(() => {
           还没有接入层声明任何配置项。
         </div>
       </section>
+
+      <PluginSlot slot="settings.plugins" empty-hint="插件可以在这里放自己的设置面板。" />
     </template>
   </div>
 </template>

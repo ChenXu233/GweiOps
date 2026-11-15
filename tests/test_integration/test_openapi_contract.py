@@ -32,15 +32,11 @@ def test_contract_covers_frontend_endpoints() -> None:
 
     required = {
         "/api/health",
-        "/api/dashboard",
-        "/api/dashboard/pending",
-        "/api/dashboard/overnight",
-        "/api/dashboard/canary",
-        "/api/issues",
-        "/api/issues/{issue_id}",
+        "/api/board",
+        "/api/issues/{issue_id}/timeline",
+        "/api/issues/{issue_id}/continue",
         "/api/repos",
         "/api/settings",
-        "/api/runs",
         "/api/metrics",
         "/api/plugins",
         "/api/plugins/widgets",

@@ -3,23 +3,10 @@
 // 接口调用点。路径与响应体类型全部来自 ../../../contracts/openapi.json,
 // 新增端点只要引擎声明了 response_model,这里就不用再手写一遍类型。
 import { api } from './typed'
-import type {
-  CanaryStatus,
-  DashboardData,
-  OvernightEvent,
-  PendingIssue,
-} from '../types/dashboard'
-import type { Issue } from '../types/issues'
+import type { IssueBoard, IssueTimeline } from '../types/issues'
 import type { Plugin, Repo, TeamSettings } from '../types/repos'
 import type { PluginManifestDTO, PluginWidgetDTO } from '../types/plugin'
 import type { ChangeDetail, ChangeList } from '../types/changes'
-
-export const DashboardApi = {
-  get: () => api.get('/api/dashboard'),
-  getPending: () => api.get('/api/dashboard/pending'),
-  getOvernight: () => api.get('/api/dashboard/overnight'),
-  getCanary: () => api.get('/api/dashboard/canary'),
-}
 
 export const ChangesApi = {
   list: (params?: { verdict?: string; binding?: string; limit?: number }) =>
@@ -34,8 +21,17 @@ export const ChangesApi = {
 }
 
 export const IssuesApi = {
-  list: () => api.get('/api/issues'),
-  get: (id: string) => api.get('/api/issues/{issue_id}', { path: { issue_id: id } }),
+  // 一个议题的全部证据。三个状态与分段都由后端给,前端不拼。
+  timeline: (id: string) =>
+    api.get('/api/issues/{issue_id}/timeline', { path: { issue_id: id } }),
+  // 首页那张板:三段、三个数。空在第一个议题之前也是一次安排,不是错误。
+  board: (limit?: number) => api.get('/api/board', { query: { limit } }),
+  // 接着这条线再改一轮:话题与分支不变,PR 不会新开。
+  continueRound: (id: string, instruction: string) =>
+    api.post('/api/issues/{issue_id}/continue', {
+      path: { issue_id: id },
+      body: { instruction },
+    }),
 }
 
 export const ReposApi = {
@@ -73,13 +69,10 @@ export const HealthApi = {
 
 // 类型再导出:调用方需要注解时不必自己去找 schema
 export type {
-  CanaryStatus,
   ChangeDetail,
   ChangeList,
-  DashboardData,
-  Issue,
-  OvernightEvent,
-  PendingIssue,
+  IssueBoard,
+  IssueTimeline,
   Plugin,
   PluginManifestDTO,
   PluginWidgetDTO,

@@ -13,11 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-Severity = Literal["critical", "medium", "low"]
-IssueStatus = Literal["pending_review", "canary", "approved", "completed", "rolled_back"]
-TimelineStatus = Literal["done", "active", "pending"]
 # failed = 确定没动(可重试);unknown = 不知道动没动(要人核);irreversible = 确实动了且撤不回来。
 Verdict = Literal[
     "pending", "kept", "rolled_back", "blocked", "vetoed", "failed", "unknown", "irreversible"
@@ -27,94 +24,6 @@ Verdict = Literal[
 class HealthDTO(BaseModel):
     status: str
     version: str
-
-
-# ---------------------------------------------------------------------------
-# 控制室
-# ---------------------------------------------------------------------------
-
-
-class PatchDTO(BaseModel):
-    id: str
-    # 类型与风险来自插件写入的自由文本,不收敛成枚举:收窄会让没见过的值直接 500
-    type: str
-    risk: str
-    lines: int
-    passRate: float
-    latency: str
-    description: str
-
-
-class TimelineStepDTO(BaseModel):
-    id: str
-    label: str
-    status: TimelineStatus
-
-
-class CanaryMetricsDTO(BaseModel):
-    # 有默认值:金丝雀链路未接线时这里是 0,不是编出来的观测值
-    passRate: float = 0
-    errorRate: float = 0
-    p99Latency: str = ""
-    memoryPeak: str = ""
-
-
-class CanaryProgressDTO(BaseModel):
-    """金丝雀进度。引擎目前不产出,DTO 里显式留空,前端按"没进入灰度"渲染。"""
-
-    current: str = ""
-    steps: list[str] = []
-    completedSteps: list[str] = []
-    metrics: CanaryMetricsDTO = CanaryMetricsDTO()
-
-
-class IssueDTO(BaseModel):
-    id: str
-    title: str
-    source: str
-    severity: Severity
-    status: IssueStatus
-    repo: str
-    triggeredAt: str
-    patches: list[PatchDTO]
-    timeline: list[TimelineStepDTO]
-    canary: CanaryProgressDTO | None = None
-
-
-class DashboardDTO(BaseModel):
-    status: str
-    consecutiveDays: int
-    lastIncident: str
-    pendingReview: int
-    overnightFixed: int
-    memoryEntries: int
-    mttr: float
-    successRate: float
-    activeAgents: int
-    healthHistory: list[bool]
-
-
-class PendingIssueDTO(BaseModel):
-    id: str
-    title: str
-    severity: Severity
-    patchCount: int
-    status: IssueStatus
-
-
-class OvernightEventDTO(BaseModel):
-    time: str
-    title: str
-    description: str
-    result: Literal["success", "failed"]
-
-
-class CanaryStatusDTO(BaseModel):
-    issueId: str
-    issueTitle: str
-    currentStep: str
-    steps: list[str]
-    metrics: CanaryMetricsDTO
 
 
 # ---------------------------------------------------------------------------
@@ -141,30 +50,6 @@ class SettingsDTO(BaseModel):
     issueQuota: str
     notificationChannels: list[str]
     ssoProvider: str
-
-
-class RunRowDTO(BaseModel):
-    id: str
-    issueId: str
-    issueTitle: str
-    issueNumber: int
-    repo: str
-    status: str
-    source: str
-    startedAt: str | None = None
-    endedAt: str | None = None
-    durationMs: int | None = None
-    state: dict[str, Any] = {}
-
-
-class RunListDTO(BaseModel):
-    items: list[RunRowDTO]
-    total: int
-
-
-# ---------------------------------------------------------------------------
-# 指标 / 插件
-# ---------------------------------------------------------------------------
 
 
 class MetricDTO(BaseModel):
@@ -296,9 +181,144 @@ class IncidentDTO(BaseModel):
     summary: str = ""
     counts: dict[str, int] = {}
     steps: list[dict[str, Any]] = []
+    # 这一轮改了哪些文件,以及本打算做什么(一个候选都没落下时,只有它说得清经过)。
+    diff: list[dict[str, Any]] = []
+    intent: dict[str, Any] = {}
     exhausted: bool = False
 
 
 class IncidentListDTO(BaseModel):
     items: list[IncidentDTO]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# 议题时间线
+# ---------------------------------------------------------------------------
+
+# 用户只看到这三个。七种结论仍原样待在的账本里,列表上不出现原词。
+IssueState = Literal["waiting", "running", "landed"]
+# 一段一件事:哪来的信号、看到了什么、打算做什么、动了什么、验证、结论。
+TimelineSegmentKind = Literal[
+    "signal", "diagnosis", "intent", "change", "verify", "conclusion"
+]
+
+
+class TimelineEvidenceDTO(BaseModel):
+    """证据:存下来的原文。前端不加工,截断了要标出来。"""
+
+    label: str = ""
+    kind: str = "json"  # json | text | url
+    content: Any = None
+    truncated: bool = False
+
+
+class TimelineSegmentDTO(BaseModel):
+    """时间线上的一段。summary 是一句人话,detail 是工程决策要点,evidence 是原文。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    kind: TimelineSegmentKind
+    at: str = ""
+    summary: str = ""
+    detail: dict[str, Any] = {}
+    evidence: list[TimelineEvidenceDTO] = []
+
+
+class TimelineBranchDTO(BaseModel):
+    """话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。"""
+
+    repo: str = ""
+    head: str = ""
+    pull: str = ""
+    url: str = ""
+
+
+class RoundDiffDTO(BaseModel):
+    """一轮里一个文件的改动。行数是平台从工作区数的,不是 agent 自报的。"""
+
+    path: str
+    added: int = 0
+    removed: int = 0
+    status: Literal["added", "modified", "deleted"] = "modified"
+
+
+class TimelineRoundDTO(BaseModel):
+    """一轮 = 一次执行。轮次不覆盖,上一轮的结论留在上一轮里。"""
+
+    round: int
+    key: str = ""
+    at: str = ""
+    finished_at: str = ""
+    summary: str = ""
+    verdicts: dict[str, int] = {}
+    diff: list[RoundDiffDTO] = []
+    segments: list[TimelineSegmentDTO] = []
+
+
+class IssueTimelineDTO(BaseModel):
+    """一个议题:头部结论 + 轮次。没有变更时 rounds 为空,不是 404。"""
+
+    id: str
+    number: int = 0
+    title: str = ""
+    topic: str = ""
+    repo: str = ""
+    state: IssueState
+    state_reason: str = ""
+    branch: TimelineBranchDTO | None = None
+    rounds: list[TimelineRoundDTO] = []
+    truncated: bool = False
+
+# 等你做什么:钉在一条具体的变更单元上,不是一句"待处理"。
+IssueAction = Literal["approve", "investigate", ""]
+
+
+class IssueCardDTO(BaseModel):
+    """列表上的一行。三个状态由后端给,与详情页同一套判定。"""
+
+    id: str
+    number: int = 0
+    title: str = ""
+    repo: str = ""
+    topic: str = ""
+    state: IssueState
+    state_reason: str = ""
+    action: IssueAction = ""
+    unit_id: str = ""
+    rounds: int = 0
+    waiting_since: str = ""
+    updated_at: str = ""
+    conclusion: str = ""
+    # 空串 = 还没有任何变更。空不是第七种结论,所以单独留在联合类型里。
+    verdict: Verdict | Literal[""] = ""
+    undoable: bool = False
+    undo_reason: str = ""
+    branch: str = ""
+    pull: str = ""
+
+
+class IssueBoardDTO(BaseModel):
+    """议题板:三段、三个数。首页就是它。"""
+
+    items: list[IssueCardDTO] = []
+    counts: dict[str, int] = {}
+    total: int = 0
+
+
+class ContinueRoundDTO(BaseModel):
+    """人要求接着这条线再改一轮。
+
+    上限 500:事故只存 signal_title(String(512)),再长会被悄悄截断——宁可在这里
+    就说"太长了",也不要让人写下的话在时间线上少一截。
+    """
+
+    instruction: str = Field(..., min_length=1, max_length=500)
+
+
+class ContinuedDTO(BaseModel):
+    """已经开始排这一轮。轮次本身要等它跑起来才存在,所以这里不给轮号。"""
+
+    workflow_id: str
+    status: str = "queued"

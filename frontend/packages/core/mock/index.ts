@@ -1,119 +1,7 @@
-import type { DashboardData, PendingIssue, OvernightEvent, CanaryStatus } from '../types/dashboard'
-import type { Issue } from '../types/issues'
+import type { IssueBoard, IssueTimeline } from '../types/issues'
 import type { Repo, Plugin, TeamSettings } from '../types/repos'
 import type { PluginWidget } from '../types/plugin'
 import type { ChangeRow } from '../types/changes'
-
-export const mockDashboard: DashboardData = {
-  status: 'healthy',
-  // 与 healthHistory 里的那一次事故对齐:10 天前(2026-10-25)
-  consecutiveDays: 10,
-  lastIncident: '2026-10-25',
-  pendingReview: 3,
-  overnightFixed: 7,
-  memoryEntries: 1284,
-  mttr: 8.2,
-  successRate: 98.5,
-  activeAgents: 5,
-  healthHistory: [true, true, true, false, true, true, true, true, true, true, true, true, true, true],
-}
-
-export const mockPendingIssues: PendingIssue[] = [
-  { id: '#42', title: '内存泄漏 — 生产环境 Pod 内存持续增长', severity: 'critical', patchCount: 3, status: 'canary' },
-  { id: 'CVE-2026-1234', title: '依赖漏洞 — lodash 原型污染', severity: 'medium', patchCount: 2, status: 'pending_review' },
-  { id: '#89', title: '文档缺失 — API 认证说明不完整', severity: 'low', patchCount: 1, status: 'pending_review' },
-]
-
-export const mockOvernightEvents: OvernightEvent[] = [
-  { time: '03:17', title: '内存泄漏自动修复', description: '诊断 → 3 方案生成 → 金丝雀 1%→10%→50%→100% → 完成', result: 'success' },
-  { time: '04:30', title: 'CVE 应急补丁', description: '上游无修复 → 生成 patch-package → 金丝雀完成 → 上游追踪启动', result: 'success' },
-  { time: '05:12', title: '流量过载自动扩容', description: 'QPS 超限 → 扩容 3→10 Pod → 错误率 15%→0.2% → 恢复', result: 'success' },
-]
-
-export const mockCanaryStatuses: CanaryStatus[] = [
-  {
-    issueId: '#42',
-    issueTitle: '内存泄漏',
-    currentStep: '50%',
-    steps: ['1%', '10%', '50%', '100%'],
-    metrics: { passRate: 98.7, errorRate: 0.2, p99Latency: '42ms', memoryPeak: '512MB' },
-  },
-]
-
-export const mockIssues: Issue[] = [
-  {
-    id: '#42',
-    title: '内存泄漏 — 生产环境 Pod 内存持续增长',
-    source: 'prometheus',
-    severity: 'critical',
-    status: 'canary',
-    repo: 'acme/api-gateway',
-    triggeredAt: '2026-06-21 03:17',
-    patches: [
-      { id: 'a', type: 'hotfix', risk: 'low', lines: 3, passRate: 99.2, latency: '+0.1ms', description: '添加资源释放逻辑，最小改动。适用于紧急止血，不解决根因。' },
-      { id: 'b', type: 'proper', risk: 'medium', lines: 28, passRate: 98.7, latency: '+0.3ms', description: '重构连接池管理，引入引用计数机制。从根本上解决资源泄漏问题。' },
-      { id: 'c', type: 'refactor', risk: 'high', lines: 156, passRate: 97.1, latency: '-0.5ms', description: '替换为对象池模式，全面重构连接生命周期管理。长期最优但改动大。' },
-    ],
-    canary: {
-      current: '50%',
-      steps: ['1%', '10%', '50%', '100%'],
-      completedSteps: ['1%', '10%'],
-      metrics: { passRate: 98.7, errorRate: 0.2, p99Latency: '42ms', memoryPeak: '512MB' },
-    },
-    timeline: [
-      { id: 'sense', label: '感知', status: 'done' },
-      { id: 'diagnose', label: '诊断', status: 'done' },
-      { id: 'generate', label: '方案生成', status: 'done' },
-      { id: 'ci', label: 'CI 构建', status: 'done' },
-      { id: 'canary', label: '金丝雀验证', status: 'active' },
-      { id: 'expand', label: '扩流', status: 'pending' },
-      { id: 'review', label: '终审', status: 'pending' },
-    ],
-  },
-  {
-    id: 'CVE-2026-1234',
-    title: '依赖漏洞 — lodash 原型污染',
-    source: 'trivy',
-    severity: 'medium',
-    status: 'pending_review',
-    repo: 'acme/api-gateway',
-    triggeredAt: '2026-06-21 04:30',
-    patches: [
-      { id: 'a', type: 'upstream', risk: 'low', lines: 1, passRate: 99.8, latency: '0ms', description: '上游已发布修复版本 v4.17.21，直接升级依赖版本。' },
-      { id: 'b', type: 'patch', risk: 'low', lines: 5, passRate: 99.5, latency: '+0.05ms', description: '生成 patch-package 应急补丁，同时启动上游追踪。' },
-    ],
-    timeline: [
-      { id: 'sense', label: '感知', status: 'done' },
-      { id: 'diagnose', label: '诊断', status: 'done' },
-      { id: 'generate', label: '方案生成', status: 'done' },
-      { id: 'ci', label: 'CI 构建', status: 'pending' },
-      { id: 'canary', label: '金丝雀验证', status: 'pending' },
-      { id: 'expand', label: '扩流', status: 'pending' },
-      { id: 'review', label: '终审', status: 'pending' },
-    ],
-  },
-  {
-    id: '#89',
-    title: '文档缺失 — API 认证说明不完整',
-    source: 'github_issue',
-    severity: 'low',
-    status: 'pending_review',
-    repo: 'acme/auth-service',
-    triggeredAt: '2026-06-21 06:00',
-    patches: [
-      { id: 'a', type: 'docs', risk: 'low', lines: 42, passRate: 100, latency: '0ms', description: '补充 API 认证文档，包含 OAuth2 流程说明和示例代码。' },
-    ],
-    timeline: [
-      { id: 'sense', label: '感知', status: 'done' },
-      { id: 'diagnose', label: '诊断', status: 'done' },
-      { id: 'generate', label: '方案生成', status: 'done' },
-      { id: 'ci', label: 'CI 构建', status: 'pending' },
-      { id: 'canary', label: '金丝雀验证', status: 'pending' },
-      { id: 'expand', label: '扩流', status: 'pending' },
-      { id: 'review', label: '终审', status: 'pending' },
-    ],
-  },
-]
 
 /** 账本行的 effect 形状由引擎契约决定,这里统一构造,免得每条都抄一遍空字段。 */
 export function makeLedgerEffect(capability: string, task: string) {
@@ -149,7 +37,7 @@ export const mockTeamSettings: TeamSettings = {
 export const mockPluginWidgets: PluginWidget[] = [
   {
     plugin: 'observer-agent',
-    slot: 'dashboard.bento',
+    slot: 'issue-board.bento',
     kind: 'metric',
     span: 1,
     title: '观测采样',
@@ -169,6 +57,7 @@ export const mockChanges: ChangeRow[] = [
     handle: 'ghc_8812',
     idempotency_key: 'wf-8812:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -185,6 +74,7 @@ export const mockChanges: ChangeRow[] = [
     handle: 'cmp_api_1',
     idempotency_key: 'wf-8820:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -201,6 +91,7 @@ export const mockChanges: ChangeRow[] = [
     handle: null,
     idempotency_key: 'wf-8831:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -217,6 +108,7 @@ export const mockChanges: ChangeRow[] = [
     handle: 'cmp_api_1',
     idempotency_key: 'wf-8840:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -233,6 +125,7 @@ export const mockChanges: ChangeRow[] = [
     handle: null,
     idempotency_key: 'wf-8855:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -249,6 +142,7 @@ export const mockChanges: ChangeRow[] = [
     handle: null,
     idempotency_key: 'wf-8860:effects:effect:0',
     facts: {},
+    incident_id: '',
     undoable: false,
     undo_reason: '',
     undo_expires_at: '',
@@ -256,3 +150,438 @@ export const mockChanges: ChangeRow[] = [
     effect: makeLedgerEffect('repo.protection', 'github.repo_ops'),
   },
 ]
+/**
+ * 议题时间线的演示数据。
+ *
+ * 形状与后端 `GET /api/issues/{id}/timeline` 完全一致:三段状态、轮次、分段、证据。
+ * 用它能在没有引擎的情况下看界面——包括"等你放行"这一段的动作。
+ */
+export const mockIssueTimeline: IssueTimeline = {
+  id: '#42',
+  number: 42,
+  title: '内存泄漏 — 生产环境 Pod 内存持续增长',
+  topic: 'acme/api-gateway#42',
+  repo: 'acme/api-gateway',
+  state: 'waiting',
+  state_reason: '1 个变更在等你放行',
+  branch: {
+    repo: 'acme/api-gateway',
+    head: 'gwei/fix-42',
+    pull: '57',
+    url: 'https://github.com/acme/api-gateway/pull/57',
+  },
+  truncated: false,
+  rounds: [
+    {
+      round: 1,
+      key: 'gwei-triage-8f21c',
+      at: '2026-11-14T10:00:00+08:00',
+      finished_at: '2026-11-14T10:02:10+08:00',
+      summary: '',
+      verdicts: { kept: 2 },
+      diff: [
+        { path: 'api/settings.py', added: 12, removed: 2, status: 'modified' },
+        { path: 'api/pool.py', added: 30, removed: 0, status: 'added' },
+      ],
+      segments: [
+        {
+          id: 'r1.signal.0',
+          kind: 'signal',
+          at: '2026-11-14T10:00:00+08:00',
+          summary: 'prometheus 报来:api-gateway p99 抬头,连接池等待占主导',
+          detail: { source: 'prometheus' },
+          evidence: [
+            {
+              label: '报来的信号',
+              kind: 'json',
+              content: {
+                source: 'prometheus',
+                title: 'api-gateway p99 抬头,连接池等待占主导',
+                severity: 'critical',
+                subject: 'api-gateway',
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.diagnosis.1',
+          kind: 'diagnosis',
+          at: '2026-11-14T10:00:20+08:00',
+          summary: 'pool_max 是 4,峰值并发 60,等锁时间占 p99 的 78%',
+          detail: { labels: ['bug'], completeness_score: 0.82, is_complete: true },
+          evidence: [
+            {
+              label: '分析原文',
+              kind: 'text',
+              content:
+                '采样 10 分钟:并发峰值 60,p99 = 1.2s。其中 78% 花在等连接池,不是慢查询。\\npool_max = 4(部署默认),没有重试退避。',
+              truncated: true,
+            },
+          ],
+        },
+        {
+          id: 'r1.intent.2',
+          kind: 'intent',
+          at: '2026-11-14T10:00:40+08:00',
+          summary: '先把 pool_max 调到 50,并在议题上留一条可回看的结论',
+          detail: {
+            rationale: '瓶颈在池子不在查询;改配置一分钟生效,改代码要发版。',
+            candidates: [
+              { capability: 'comment.create', args: { body: '把 pool_max 调到 50' } },
+              { capability: 'pr.open', args: { head: 'gwei/fix-42' } },
+              { capability: 'issue.label', args: { label: 'pool' } },
+            ],
+            not_executed: [
+              {
+                capability: 'issue.label',
+                reason: '没有提供者声明这个能力: 这个租户上没装打标签的插件',
+              },
+            ],
+          },
+          evidence: [
+            {
+              label: '意图原文',
+              kind: 'json',
+              content: {
+                version: 1,
+                summary: '先把 pool_max 调到 50,并在议题上留一条可回看的结论',
+                rationale: '瓶颈在池子不在查询;改配置一分钟生效,改代码要发版。',
+                effects: [
+                  { capability: 'comment.create', args: { body: '把 pool_max 调到 50' } },
+                  { capability: 'pr.open', args: { head: 'gwei/fix-42' } },
+                  { capability: 'issue.label', args: { label: 'pool' } },
+                ],
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.change.3',
+          kind: 'change',
+          at: '2026-11-14T10:00:52+08:00',
+          summary: '在 Issue / PR 上发一条评论 → github',
+          detail: {
+            capability: 'comment.create',
+            task: 'create_comment',
+            args: { repo: 'acme/api-gateway', issue_number: 42, body: '把 pool_max 调到 50' },
+            undo_task: 'delete_comment',
+            undo_kind: 'symmetric',
+            binding: 'github',
+            verify: [{ query: 'comment_exists', expect: 'true' }],
+          },
+          evidence: [
+            {
+              label: '变更原文',
+              kind: 'json',
+              content: {
+                id: 'cu_demo_comment',
+                verdict: 'kept',
+                binding: 'github',
+                handle: '8812',
+                effect: { capability: 'comment.create', task: 'create_comment' },
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.verify.4',
+          kind: 'verify',
+          at: '2026-11-14T10:01:40+08:00',
+          summary: '验证通过',
+          detail: {
+            rules: [{ query: 'comment_exists', expect: 'true' }],
+            returned: { comment_id: 8812, found: true },
+          },
+          evidence: [
+            {
+              label: '下游返回',
+              kind: 'json',
+              content: { comment_id: 8812, found: true },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.conclusion.5',
+          kind: 'conclusion',
+          at: '2026-11-14T10:02:10+08:00',
+          summary: '验证通过,保持运行',
+          detail: {
+            unit_id: 'cu_demo_comment',
+            verdict: 'kept',
+            undoable: true,
+            undo_reason: '对称撤销:目标还在就能撤',
+            handle: '8812',
+            window: { seconds: null, unbounded: true, source: 'comment_present' },
+          },
+          evidence: [
+            {
+              label: '账本这一行',
+              kind: 'json',
+              content: {
+                id: 'cu_demo_comment',
+                verdict: 'kept',
+                reason: '验证通过,保持运行',
+                created_at: '2026-11-14T10:00:52+08:00',
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.change.6',
+          kind: 'change',
+          at: '2026-11-14T10:01:20+08:00',
+          summary: '开一个 PR(建分支、提交、发起合并请求) → github',
+          detail: {
+            capability: 'pr.open',
+            task: 'open_pull',
+            args: { repo: 'acme/api-gateway', head: 'gwei/fix-42', base: 'main' },
+            undo_task: 'close_pull',
+            undo_kind: 'symmetric',
+            binding: 'github',
+          },
+          evidence: [
+            {
+              label: '变更原文',
+              kind: 'json',
+              content: {
+                id: 'cu_demo_pr',
+                verdict: 'kept',
+                binding: 'github',
+                handle: '57',
+                effect: { capability: 'pr.open', task: 'open_pull' },
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r1.conclusion.7',
+          kind: 'conclusion',
+          at: '2026-11-14T10:02:10+08:00',
+          summary: '验证通过,保持运行',
+          detail: {
+            unit_id: 'cu_demo_pr',
+            verdict: 'kept',
+            undoable: true,
+            undo_reason: '对称撤销:目标还在就能撤',
+            handle: '57',
+            window: { seconds: null, unbounded: true, source: 'pull_open' },
+          },
+          evidence: [],
+        },
+      ],
+    },
+    {
+      round: 2,
+      key: 'gwei-fix-4b7d0',
+      at: '2026-11-14T11:12:00+08:00',
+      finished_at: '2026-11-14T11:12:30+08:00',
+      summary: '',
+      verdicts: { blocked: 1 },
+      diff: [],
+      segments: [
+        {
+          id: 'r2.signal.0',
+          kind: 'signal',
+          at: '2026-11-14T11:12:00+08:00',
+          summary: '人在评论里叫了 @gwei',
+          detail: { source: 'comment' },
+          evidence: [],
+        },
+        {
+          id: 'r2.intent.1',
+          kind: 'intent',
+          at: '2026-11-14T11:12:08+08:00',
+          summary: '按人说的把 api 副本从 3 扩到 6',
+          detail: {
+            rationale: '峰值 QPS 已经贴住 3 副本的上限,加副本比继续调池子更直接。',
+            candidates: [
+              { capability: 'compose.scale', args: { service: 'api', replicas: 6 } },
+            ],
+            by: 'ChenXu',
+          },
+          evidence: [
+            {
+              label: '意图原文',
+              kind: 'json',
+              content: {
+                summary: '按人说的把 api 副本从 3 扩到 6',
+                by: 'ChenXu',
+                topic: 'acme/api-gateway#42',
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r2.change.2',
+          kind: 'change',
+          at: '2026-11-14T11:12:20+08:00',
+          summary: '调整 compose 服务副本数 → compose',
+          detail: {
+            capability: 'compose.scale',
+            task: 'scale',
+            args: { service: 'api', replicas: 6 },
+            undo_task: 'undo_scale',
+            undo_kind: 'symmetric',
+            binding: 'compose',
+          },
+          evidence: [
+            {
+              label: '变更原文',
+              kind: 'json',
+              content: {
+                id: 'cu_demo_blocked',
+                verdict: 'blocked',
+                binding: 'compose',
+                effect: { capability: 'compose.scale', task: 'scale' },
+              },
+              truncated: false,
+            },
+          ],
+        },
+        {
+          id: 'r2.conclusion.3',
+          kind: 'conclusion',
+          at: '2026-11-14T11:12:30+08:00',
+          summary: 'compose.scale 不在自动收敛范围,等你放行',
+          detail: {
+            unit_id: 'cu_demo_blocked',
+            verdict: 'blocked',
+            undoable: false,
+            undo_reason: '没有句柄',
+          },
+          evidence: [
+            {
+              label: '账本这一行',
+              kind: 'json',
+              content: {
+                id: 'cu_demo_blocked',
+                verdict: 'blocked',
+                reason: 'compose.scale 不在自动收敛范围,等你放行',
+              },
+              truncated: false,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
+
+/** 演示模式:任何议题 id 都用同一份数据,只把 id 换掉。 */
+export function mockTimelineFor(id: string): IssueTimeline {
+  return { ...mockIssueTimeline, id }
+}
+/** 议题板的演示数据:三段各放几条,数也是照着算的。 */
+export const mockIssueBoard: IssueBoard = {
+  items: [
+    {
+      id: '#42',
+      number: 42,
+      title: '内存泄漏 — 生产环境 Pod 内存持续增长',
+      repo: 'acme/api-gateway',
+      topic: 'acme/api-gateway#42',
+      state: 'waiting',
+      state_reason: '1 个变更在等你放行',
+      action: 'approve',
+      unit_id: 'cu_demo_blocked',
+      rounds: 2,
+      waiting_since: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+      conclusion: 'compose.scale 不在自动收敛范围,等你放行',
+      verdict: 'blocked',
+      undoable: false,
+      undo_reason: '没有句柄',
+      branch: 'gwei/fix-42',
+      pull: '57',
+    },
+    {
+      id: 'CVE-2026-1234',
+      number: 88,
+      title: '依赖漏洞 — lodash 原型污染',
+      repo: 'acme/auth-service',
+      topic: 'acme/auth-service#88',
+      state: 'waiting',
+      state_reason: '1 个变更不知道动没动,要去下游核',
+      action: 'investigate',
+      unit_id: 'cu_demo_unknown',
+      rounds: 1,
+      waiting_since: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
+      conclusion: '执行时下游报错,不知道动没动:TimeoutError',
+      verdict: 'unknown',
+      undoable: false,
+      undo_reason: '没有句柄',
+      branch: '',
+      pull: '',
+    },
+    {
+      id: '#89',
+      number: 89,
+      title: '扩容 — worker 队列积压',
+      repo: 'acme/api-gateway',
+      topic: 'acme/api-gateway#89',
+      state: 'running',
+      state_reason: '执行还在跑',
+      action: '',
+      unit_id: '',
+      rounds: 3,
+      waiting_since: '',
+      updated_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      conclusion: '',
+      verdict: 'pending',
+      undoable: false,
+      undo_reason: '',
+      branch: 'gwei/fix-89',
+      pull: '58',
+    },
+    {
+      id: '#71',
+      number: 71,
+      title: '慢查询 — 订单列表 P99 1.4s',
+      repo: 'acme/api-gateway',
+      topic: 'acme/api-gateway#71',
+      state: 'landed',
+      state_reason: '1 个变更已有结论,没有要等的',
+      action: '',
+      unit_id: '',
+      rounds: 1,
+      waiting_since: '',
+      updated_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+      conclusion: '验证通过,保持运行',
+      verdict: 'kept',
+      undoable: true,
+      undo_reason: '对称撤销:目标还在就能撤',
+      branch: 'gwei/fix-71',
+      pull: '49',
+    },
+    {
+      id: '#63',
+      number: 63,
+      title: '证书过期 — api.acme.dev 剩余 3 天',
+      repo: 'acme/infra',
+      topic: 'acme/infra#63',
+      state: 'landed',
+      state_reason: '1 个变更已有结论,没有要等的',
+      action: '',
+      unit_id: '',
+      rounds: 1,
+      waiting_since: '',
+      updated_at: new Date(Date.now() - 26 * 3600 * 1000).toISOString(),
+      conclusion: 'P99 从 42ms 升到 118ms,撤销扩容',
+      verdict: 'rolled_back',
+      undoable: false,
+      undo_reason: '已经撤销过了',
+      branch: '',
+      pull: '',
+    },
+  ],
+  counts: { waiting: 2, running: 1, landed: 2 },
+  total: 5,
+}

@@ -14,7 +14,7 @@ async function loadStatus() {
   try {
     const s = await $fetch<{ needs_setup: boolean; authenticated: boolean }>('/api/auth/status')
     if (s.authenticated) {
-      await navigateTo('/dashboard', { replace: true })
+      await navigateTo('/issues', { replace: true })
       return
     }
     mode.value = s.needs_setup ? 'setup' : 'login'
@@ -39,7 +39,7 @@ async function submit() {
         body: { email: email.value, password: password.value },
       })
     }
-    await navigateTo('/dashboard', { replace: true })
+    await navigateTo('/issues', { replace: true })
   } catch (err) {
     // 引擎的 detail 就是给人看的那句话,原样显示
     const e = err as { data?: { detail?: string; message?: string }; message?: string }

@@ -1,104 +1,6 @@
 {
   "components": {
     "schemas": {
-      "CanaryMetricsDTO": {
-        "properties": {
-          "errorRate": {
-            "default": 0,
-            "title": "Errorrate",
-            "type": "number"
-          },
-          "memoryPeak": {
-            "default": "",
-            "title": "Memorypeak",
-            "type": "string"
-          },
-          "p99Latency": {
-            "default": "",
-            "title": "P99Latency",
-            "type": "string"
-          },
-          "passRate": {
-            "default": 0,
-            "title": "Passrate",
-            "type": "number"
-          }
-        },
-        "title": "CanaryMetricsDTO",
-        "type": "object"
-      },
-      "CanaryProgressDTO": {
-        "description": "金丝雀进度。引擎目前不产出,DTO 里显式留空,前端按\"没进入灰度\"渲染。",
-        "properties": {
-          "completedSteps": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Completedsteps",
-            "type": "array"
-          },
-          "current": {
-            "default": "",
-            "title": "Current",
-            "type": "string"
-          },
-          "metrics": {
-            "$ref": "#/components/schemas/CanaryMetricsDTO",
-            "default": {
-              "errorRate": 0.0,
-              "memoryPeak": "",
-              "p99Latency": "",
-              "passRate": 0.0
-            }
-          },
-          "steps": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Steps",
-            "type": "array"
-          }
-        },
-        "title": "CanaryProgressDTO",
-        "type": "object"
-      },
-      "CanaryStatusDTO": {
-        "properties": {
-          "currentStep": {
-            "title": "Currentstep",
-            "type": "string"
-          },
-          "issueId": {
-            "title": "Issueid",
-            "type": "string"
-          },
-          "issueTitle": {
-            "title": "Issuetitle",
-            "type": "string"
-          },
-          "metrics": {
-            "$ref": "#/components/schemas/CanaryMetricsDTO"
-          },
-          "steps": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Steps",
-            "type": "array"
-          }
-        },
-        "required": [
-          "issueId",
-          "issueTitle",
-          "currentStep",
-          "steps",
-          "metrics"
-        ],
-        "title": "CanaryStatusDTO",
-        "type": "object"
-      },
       "ChangeDetailDTO": {
         "properties": {
           "history": {
@@ -312,65 +214,39 @@
         "title": "ChangeRowDTO",
         "type": "object"
       },
-      "DashboardDTO": {
+      "ContinueRoundDTO": {
+        "description": "人要求接着这条线再改一轮。\n\n上限 500:事故只存 signal_title(String(512)),再长会被悄悄截断——宁可在这里\n就说\"太长了\",也不要让人写下的话在时间线上少一截。",
         "properties": {
-          "activeAgents": {
-            "title": "Activeagents",
-            "type": "integer"
-          },
-          "consecutiveDays": {
-            "title": "Consecutivedays",
-            "type": "integer"
-          },
-          "healthHistory": {
-            "items": {
-              "type": "boolean"
-            },
-            "title": "Healthhistory",
-            "type": "array"
-          },
-          "lastIncident": {
-            "title": "Lastincident",
+          "instruction": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Instruction",
             "type": "string"
-          },
-          "memoryEntries": {
-            "title": "Memoryentries",
-            "type": "integer"
-          },
-          "mttr": {
-            "title": "Mttr",
-            "type": "number"
-          },
-          "overnightFixed": {
-            "title": "Overnightfixed",
-            "type": "integer"
-          },
-          "pendingReview": {
-            "title": "Pendingreview",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "successRate": {
-            "title": "Successrate",
-            "type": "number"
           }
         },
         "required": [
-          "status",
-          "consecutiveDays",
-          "lastIncident",
-          "pendingReview",
-          "overnightFixed",
-          "memoryEntries",
-          "mttr",
-          "successRate",
-          "activeAgents",
-          "healthHistory"
+          "instruction"
         ],
-        "title": "DashboardDTO",
+        "title": "ContinueRoundDTO",
+        "type": "object"
+      },
+      "ContinuedDTO": {
+        "description": "已经开始排这一轮。轮次本身要等它跑起来才存在,所以这里不给轮号。",
+        "properties": {
+          "status": {
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_id"
+        ],
+        "title": "ContinuedDTO",
         "type": "object"
       },
       "ExitCallDTO": {
@@ -455,6 +331,15 @@
             "title": "Counts",
             "type": "object"
           },
+          "diff": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
           "exhausted": {
             "default": false,
             "title": "Exhausted",
@@ -468,6 +353,12 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "intent": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Intent",
+            "type": "object"
           },
           "signal_source": {
             "default": "",
@@ -545,12 +436,168 @@
         "title": "IncidentListDTO",
         "type": "object"
       },
-      "IssueDTO": {
+      "IssueBoardDTO": {
+        "description": "议题板:三段、三个数。首页就是它。",
         "properties": {
-          "canary": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IssueCardDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "IssueBoardDTO",
+        "type": "object"
+      },
+      "IssueCardDTO": {
+        "description": "列表上的一行。三个状态由后端给,与详情页同一套判定。",
+        "properties": {
+          "action": {
+            "default": "",
+            "enum": [
+              "approve",
+              "investigate",
+              ""
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "branch": {
+            "default": "",
+            "title": "Branch",
+            "type": "string"
+          },
+          "conclusion": {
+            "default": "",
+            "title": "Conclusion",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "number": {
+            "default": 0,
+            "title": "Number",
+            "type": "integer"
+          },
+          "pull": {
+            "default": "",
+            "title": "Pull",
+            "type": "string"
+          },
+          "repo": {
+            "default": "",
+            "title": "Repo",
+            "type": "string"
+          },
+          "rounds": {
+            "default": 0,
+            "title": "Rounds",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "running",
+              "landed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "state_reason": {
+            "default": "",
+            "title": "State Reason",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "topic": {
+            "default": "",
+            "title": "Topic",
+            "type": "string"
+          },
+          "undo_reason": {
+            "default": "",
+            "title": "Undo Reason",
+            "type": "string"
+          },
+          "undoable": {
+            "default": false,
+            "title": "Undoable",
+            "type": "boolean"
+          },
+          "unit_id": {
+            "default": "",
+            "title": "Unit Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "default": "",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "verdict": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CanaryProgressDTO"
+                "enum": [
+                  "pending",
+                  "kept",
+                  "rolled_back",
+                  "blocked",
+                  "vetoed",
+                  "failed",
+                  "unknown",
+                  "irreversible"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "",
+                "type": "string"
+              }
+            ],
+            "default": "",
+            "title": "Verdict"
+          },
+          "waiting_since": {
+            "default": "",
+            "title": "Waiting Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "title": "IssueCardDTO",
+        "type": "object"
+      },
+      "IssueTimelineDTO": {
+        "description": "一个议题:头部结论 + 轮次。没有变更时 rounds 为空,不是 404。",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineBranchDTO"
               },
               {
                 "type": "null"
@@ -561,69 +608,59 @@
             "title": "Id",
             "type": "string"
           },
-          "patches": {
-            "items": {
-              "$ref": "#/components/schemas/PatchDTO"
-            },
-            "title": "Patches",
-            "type": "array"
+          "number": {
+            "default": 0,
+            "title": "Number",
+            "type": "integer"
           },
           "repo": {
+            "default": "",
             "title": "Repo",
             "type": "string"
           },
-          "severity": {
-            "enum": [
-              "critical",
-              "medium",
-              "low"
-            ],
-            "title": "Severity",
-            "type": "string"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "pending_review",
-              "canary",
-              "approved",
-              "completed",
-              "rolled_back"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "timeline": {
+          "rounds": {
+            "default": [],
             "items": {
-              "$ref": "#/components/schemas/TimelineStepDTO"
+              "$ref": "#/components/schemas/TimelineRoundDTO"
             },
-            "title": "Timeline",
+            "title": "Rounds",
             "type": "array"
           },
+          "state": {
+            "enum": [
+              "waiting",
+              "running",
+              "landed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "state_reason": {
+            "default": "",
+            "title": "State Reason",
+            "type": "string"
+          },
           "title": {
+            "default": "",
             "title": "Title",
             "type": "string"
           },
-          "triggeredAt": {
-            "title": "Triggeredat",
+          "topic": {
+            "default": "",
+            "title": "Topic",
             "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
           }
         },
         "required": [
           "id",
-          "title",
-          "source",
-          "severity",
-          "status",
-          "repo",
-          "triggeredAt",
-          "patches",
-          "timeline"
+          "state"
         ],
-        "title": "IssueDTO",
+        "title": "IssueTimelineDTO",
         "type": "object"
       },
       "LoginDTO": {
@@ -674,38 +711,6 @@
         "title": "MetricDTO",
         "type": "object"
       },
-      "OvernightEventDTO": {
-        "properties": {
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "result": {
-            "enum": [
-              "success",
-              "failed"
-            ],
-            "title": "Result",
-            "type": "string"
-          },
-          "time": {
-            "title": "Time",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "time",
-          "title",
-          "description",
-          "result"
-        ],
-        "title": "OvernightEventDTO",
-        "type": "object"
-      },
       "PasswordDTO": {
         "properties": {
           "current_password": {
@@ -726,94 +731,6 @@
           "new_password"
         ],
         "title": "PasswordDTO",
-        "type": "object"
-      },
-      "PatchDTO": {
-        "properties": {
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "latency": {
-            "title": "Latency",
-            "type": "string"
-          },
-          "lines": {
-            "title": "Lines",
-            "type": "integer"
-          },
-          "passRate": {
-            "title": "Passrate",
-            "type": "number"
-          },
-          "risk": {
-            "title": "Risk",
-            "type": "string"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "risk",
-          "lines",
-          "passRate",
-          "latency",
-          "description"
-        ],
-        "title": "PatchDTO",
-        "type": "object"
-      },
-      "PendingIssueDTO": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "patchCount": {
-            "title": "Patchcount",
-            "type": "integer"
-          },
-          "severity": {
-            "enum": [
-              "critical",
-              "medium",
-              "low"
-            ],
-            "title": "Severity",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "pending_review",
-              "canary",
-              "approved",
-              "completed",
-              "rolled_back"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "severity",
-          "patchCount",
-          "status"
-        ],
-        "title": "PendingIssueDTO",
         "type": "object"
       },
       "PluginDTO": {
@@ -1125,107 +1042,38 @@
         "title": "RoleUpdateDTO",
         "type": "object"
       },
-      "RunListDTO": {
+      "RoundDiffDTO": {
+        "description": "一轮里一个文件的改动。行数是平台从工作区数的,不是 agent 自报的。",
         "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RunRowDTO"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total"
-        ],
-        "title": "RunListDTO",
-        "type": "object"
-      },
-      "RunRowDTO": {
-        "properties": {
-          "durationMs": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Durationms"
-          },
-          "endedAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Endedat"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "issueId": {
-            "title": "Issueid",
-            "type": "string"
-          },
-          "issueNumber": {
-            "title": "Issuenumber",
+          "added": {
+            "default": 0,
+            "title": "Added",
             "type": "integer"
           },
-          "issueTitle": {
-            "title": "Issuetitle",
+          "path": {
+            "title": "Path",
             "type": "string"
           },
-          "repo": {
-            "title": "Repo",
-            "type": "string"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "startedAt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Startedat"
-          },
-          "state": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "State",
-            "type": "object"
+          "removed": {
+            "default": 0,
+            "title": "Removed",
+            "type": "integer"
           },
           "status": {
+            "default": "modified",
+            "enum": [
+              "added",
+              "modified",
+              "deleted"
+            ],
             "title": "Status",
             "type": "string"
           }
         },
         "required": [
-          "id",
-          "issueId",
-          "issueTitle",
-          "issueNumber",
-          "repo",
-          "status",
-          "source"
+          "path"
         ],
-        "title": "RunRowDTO",
+        "title": "RoundDiffDTO",
         "type": "object"
       },
       "ScopeDTO": {
@@ -1412,32 +1260,166 @@
         "title": "SetupDTO",
         "type": "object"
       },
-      "TimelineStepDTO": {
+      "TimelineBranchDTO": {
+        "description": "话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。",
         "properties": {
+          "head": {
+            "default": "",
+            "title": "Head",
+            "type": "string"
+          },
+          "pull": {
+            "default": "",
+            "title": "Pull",
+            "type": "string"
+          },
+          "repo": {
+            "default": "",
+            "title": "Repo",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "title": "TimelineBranchDTO",
+        "type": "object"
+      },
+      "TimelineEvidenceDTO": {
+        "description": "证据:存下来的原文。前端不加工,截断了要标出来。",
+        "properties": {
+          "content": {
+            "title": "Content"
+          },
+          "kind": {
+            "default": "json",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "title": "TimelineEvidenceDTO",
+        "type": "object"
+      },
+      "TimelineRoundDTO": {
+        "description": "一轮 = 一次执行。轮次不覆盖,上一轮的结论留在上一轮里。",
+        "properties": {
+          "at": {
+            "default": "",
+            "title": "At",
+            "type": "string"
+          },
+          "diff": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RoundDiffDTO"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
+          "finished_at": {
+            "default": "",
+            "title": "Finished At",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "round": {
+            "title": "Round",
+            "type": "integer"
+          },
+          "segments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TimelineSegmentDTO"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
+          },
+          "verdicts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Verdicts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "round"
+        ],
+        "title": "TimelineRoundDTO",
+        "type": "object"
+      },
+      "TimelineSegmentDTO": {
+        "additionalProperties": true,
+        "description": "时间线上的一段。summary 是一句人话,detail 是工程决策要点,evidence 是原文。",
+        "properties": {
+          "at": {
+            "default": "",
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Detail",
+            "type": "object"
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvidenceDTO"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
           },
-          "label": {
-            "title": "Label",
+          "kind": {
+            "enum": [
+              "signal",
+              "diagnosis",
+              "intent",
+              "change",
+              "verify",
+              "conclusion"
+            ],
+            "title": "Kind",
             "type": "string"
           },
-          "status": {
-            "enum": [
-              "done",
-              "active",
-              "pending"
-            ],
-            "title": "Status",
+          "summary": {
+            "default": "",
+            "title": "Summary",
             "type": "string"
           }
         },
         "required": [
           "id",
-          "label",
-          "status"
+          "kind"
         ],
-        "title": "TimelineStepDTO",
+        "title": "TimelineSegmentDTO",
         "type": "object"
       },
       "UserCreateDTO": {
@@ -1891,6 +1873,63 @@
         "summary": "Auth Status"
       }
     },
+    "/api/board": {
+      "get": {
+        "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。",
+        "operationId": "issue_board_api_board_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueBoardDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Board"
+      }
+    },
     "/api/changes": {
       "get": {
         "description": "当前状态一栏:每个单元只出现一次,最新的在前。\n\n过滤在截断之前:先按 verdict / binding 收窄,再取前 limit 条,\ntotal 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。",
@@ -2269,90 +2308,6 @@
         "summary": "Veto Change"
       }
     },
-    "/api/dashboard": {
-      "get": {
-        "operationId": "dashboard_api_dashboard_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DashboardDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Dashboard"
-      }
-    },
-    "/api/dashboard/canary": {
-      "get": {
-        "operationId": "dashboard_canary_api_dashboard_canary_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CanaryStatusDTO"
-                  },
-                  "title": "Response Dashboard Canary Api Dashboard Canary Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Dashboard Canary"
-      }
-    },
-    "/api/dashboard/overnight": {
-      "get": {
-        "operationId": "dashboard_overnight_api_dashboard_overnight_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/OvernightEventDTO"
-                  },
-                  "title": "Response Dashboard Overnight Api Dashboard Overnight Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Dashboard Overnight"
-      }
-    },
-    "/api/dashboard/pending": {
-      "get": {
-        "operationId": "dashboard_pending_api_dashboard_pending_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PendingIssueDTO"
-                  },
-                  "title": "Response Dashboard Pending Api Dashboard Pending Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Dashboard Pending"
-      }
-    },
     "/api/health": {
       "get": {
         "operationId": "health_check_api_health_get",
@@ -2483,31 +2438,10 @@
         "summary": "Get Incident"
       }
     },
-    "/api/issues": {
-      "get": {
-        "operationId": "list_issues_api_issues_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/IssueDTO"
-                  },
-                  "title": "Response List Issues Api Issues Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Issues"
-      }
-    },
-    "/api/issues/{issue_id}": {
-      "get": {
-        "operationId": "issue_detail_api_issues__issue_id__get",
+    "/api/issues/{issue_id}/continue": {
+      "post": {
+        "description": "从界面发起新一轮:话题不变、分支不变、PR 不新开。\n\n权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。\n真要细分的话是加一条新权限,不是在这里各自判断。",
+        "operationId": "continue_issue_api_issues__issue_id__continue_post",
         "parameters": [
           {
             "in": "path",
@@ -2517,14 +2451,40 @@
               "title": "Issue Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueRoundDTO"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueDTO"
+                  "$ref": "#/components/schemas/ContinuedDTO"
                 }
               }
             },
@@ -2541,7 +2501,63 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Issue Detail"
+        "summary": "Continue Issue"
+      }
+    },
+    "/api/issues/{issue_id}/timeline": {
+      "get": {
+        "description": "一个议题的完整时间线。还没有变更也返回:那是\"还没发生\",不是\"查不到\"。",
+        "operationId": "issue_timeline_api_issues__issue_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueTimelineDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Timeline"
       }
     },
     "/api/metrics": {
@@ -2641,7 +2657,7 @@
             "name": "slot",
             "required": false,
             "schema": {
-              "default": "dashboard.bento",
+              "default": "issue-board.bento",
               "title": "Slot",
               "type": "string"
             }
@@ -2891,47 +2907,6 @@
           }
         },
         "summary": "Update Role"
-      }
-    },
-    "/api/runs": {
-      "get": {
-        "description": "执行记录:一次 AgentSession 就是一次执行。\n\n只读投影,不改任何状态。会话还没结束就没有 endedAt 与 durationMs,\n这里如实留空,不拿当前时间凑一个时长出来。",
-        "operationId": "list_runs_api_runs_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunListDTO"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Runs"
       }
     },
     "/api/settings": {
@@ -3256,60 +3231,9 @@
         "summary": "Mcp"
       }
     },
-    "/webhook/alertmanager": {
-      "post": {
-        "description": "监控信号入口。\n\nAlertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,\n不应该默认敞开。",
-        "operationId": "alertmanager_webhook_webhook_alertmanager_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Alertmanager Webhook"
-      }
-    },
-    "/webhook/cnb": {
-      "post": {
-        "description": "CNB Webhook(当前接 PullRequestEvent 的合并事件)。",
-        "operationId": "cnb_webhook_webhook_cnb_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Cnb Webhook"
-      }
-    },
-    "/webhook/github": {
-      "post": {
-        "description": "GitHub Webhook(issues / issue_comment / pull_request / ping)。",
-        "operationId": "github_webhook_webhook_github_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Github Webhook"
-      }
-    },
     "/webhook/github/comment": {
       "post": {
-        "description": "GitHub 评论专用入口:只接 issue_comment。",
+        "description": "GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。",
         "operationId": "github_comment_webhook_webhook_github_comment_post",
         "responses": {
           "200": {
@@ -3324,10 +3248,21 @@
         "summary": "Github Comment Webhook"
       }
     },
-    "/webhook/gitlab": {
+    "/webhook/{source}": {
       "post": {
-        "description": "GitLab Webhook(当前接合并请求的合并事件)。",
-        "operationId": "gitlab_webhook_webhook_gitlab_post",
+        "description": "任何来源的投递。\n\n核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:\n它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。\n接一个新的告警系统 = 装一个适配器插件,这里不加分支。",
+        "operationId": "source_webhook_webhook__source__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3336,9 +3271,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Gitlab Webhook"
+        "summary": "Source Webhook"
       }
     }
   }

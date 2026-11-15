@@ -14,6 +14,7 @@ from engine.api.routes.plugins import router as plugins_router
 from engine.api.routes.agent import router as agent_router
 from engine.api.routes.changes import router as changes_router
 from engine.api.routes.incidents import router as incidents_router
+from engine.api.routes.issues import router as issues_router
 from engine.api.routes.mcp import router as mcp_router
 from engine.api.routes.mcp import router as mcp_router
 from engine.api.routes.console import router as console_router
@@ -96,6 +97,28 @@ async def lifespan(app: FastAPI):
     await DBOS.register_queue_async(pipeline.WORKFLOW_QUEUE, partition_concurrency=4)
     logger.info("DBOS launched (partitioned queue: %s)", pipeline.WORKFLOW_QUEUE)
 
+    # Startup: 周期巡检。清单里声明的 schedule 在这里装进 DBOS 的调度器,
+    # 同一周期只跑一次由系统库里的工作流 id 保证,重启后不会重跑。
+    # 装不上只点名,不因此起不来:一个写坏的周期不该让整个引擎停摆。
+    from engine.scheduler import apply_registry_schedules
+
+    try:
+        outcome = apply_registry_schedules(
+            registry, tenant=config.settings.default_tenant_slug
+        )
+    except Exception:  # noqa: BLE001 - 调度器起不来不等于平台起不来
+        logger.warning("周期巡检没有装上", exc_info=True)
+    else:
+        if outcome["applied"]:
+            logger.info("Scheduled scans: %s", ", ".join(outcome["applied"]))
+        if outcome["failed"]:
+            logger.warning(
+                "巡检周期装不上: %s",
+                "; ".join(f"{f['schedule']}({f['error']})" for f in outcome["failed"]),
+            )
+        if outcome["removed"]:
+            logger.info("Removed stale schedules: %s", ", ".join(outcome["removed"]))
+
     yield
 
     # Shutdown: 先停工作流执行器,再停插件
@@ -120,6 +143,7 @@ app.include_router(console_router)
 app.include_router(changes_router)
 app.include_router(agent_router)
 app.include_router(incidents_router)
+app.include_router(issues_router)
 app.include_router(settings_scopes_router)
 app.include_router(rbac_router)
 app.include_router(webhook_router)

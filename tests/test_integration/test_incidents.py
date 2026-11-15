@@ -62,6 +62,21 @@ def test_closing_writes_the_report(store):
     assert asyncio.run(store.get("inc-1"))["status"] == "closed"
 
 
+def test_closing_keeps_what_the_round_changed(store):
+    """这一轮改了哪些文件:事故记着它,时间线的轮次才有"动了什么"。"""
+    _opened(store)
+    diff = [{"path": "api/pool.py", "added": 30, "removed": 0, "status": "added"}]
+    closed = asyncio.run(store.close("inc-1", report={**REPORT, "diff": diff}))
+
+    assert closed["diff"] == diff
+    assert asyncio.run(store.get("inc-1"))["diff"] == diff
+
+
+def test_an_incident_without_a_diff_reports_an_empty_list(store):
+    _opened(store)
+    assert asyncio.run(store.close("inc-1", report=REPORT))["diff"] == []
+
+
 def test_closing_an_incident_that_never_opened_is_a_no_op(store):
     assert asyncio.run(store.close("nope", report=REPORT)) is None
 
@@ -177,3 +192,20 @@ def test_api_lists_and_returns_an_incident(client):
 
 def test_api_returns_404_for_an_unknown_incident(client):
     assert client.get("/api/incidents/nope").status_code == 404
+
+def test_closing_keeps_what_the_round_was_going_to_do(store):
+    """一个候选都没落下时,这份意图是轮次上唯一的记录。"""
+    _opened(store)
+    intent = {
+        "summary": "想把 pool_max 调大",
+        "skipped": [{"capability": "config.set", "reason": "没有提供者声明这个能力"}],
+    }
+    closed = asyncio.run(store.close("inc-1", report={**REPORT, "intent": intent}))
+
+    assert closed["intent"] == intent
+    assert asyncio.run(store.get("inc-1"))["intent"] == intent
+
+
+def test_an_incident_without_an_intent_reports_an_empty_object(store):
+    _opened(store)
+    assert asyncio.run(store.close("inc-1", report=REPORT))["intent"] == {}

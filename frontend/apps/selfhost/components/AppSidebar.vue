@@ -17,6 +17,13 @@ onMounted(() => {
 
 const collapsed = useState<boolean>('gwei-nav-collapsed', () => false)
 
+// 徽标是客户端拉回来的数。服务端渲染时它还不存在,直接按值渲染会让首屏
+// 和服务端对不上(hydration mismatch)。等挂载后再显示,差别只是晚一帧。
+const mounted = ref(false)
+onMounted(() => {
+  mounted.value = true
+})
+
 // 收成图标轨只在大屏成立:窄屏侧边是抽屉,永远整宽带文字。
 const isDesktop = ref(false)
 const rail = computed(() => collapsed.value && isDesktop.value)
@@ -73,7 +80,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
       class="flex h-14 shrink-0 items-center gap-2 px-3"
       :class="rail ? 'lg:justify-center lg:px-0' : ''"
     >
-      <NuxtLink to="/dashboard" class="flex min-w-0 items-center gap-2.5" aria-label="既未 Gwei Ops">
+      <NuxtLink to="/issues" class="flex min-w-0 items-center gap-2.5" aria-label="既未 Gwei Ops">
         <span class="relative grid h-7 w-7 shrink-0 place-items-center rounded-[9px] bg-ink text-paper">
           <span class="font-mono text-[11.5px] font-semibold leading-none">未</span>
           <span class="absolute right-[3px] top-[3px] h-[5px] w-[5px] rounded-full bg-lime" />
@@ -134,7 +141,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
                 <AppIcon :name="item.icon" :size="16" />
                 <!-- 图标轨:只用一个小点表示"有事等你",数字放不下 -->
                 <span
-                  v-if="rail && countFor(item.badge)"
+                  v-if="rail && mounted && countFor(item.badge)"
                   class="absolute -right-1 -top-0.5 h-[6px] w-[6px] rounded-full ring-2"
                   :class="isActive(item.to) ? 'bg-amber ring-ink' : 'bg-amber ring-paper'"
                 />
@@ -142,7 +149,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
               <template v-if="!rail">
                 <span class="flex-1 truncate">{{ item.label }}</span>
                 <span
-                  v-if="countFor(item.badge)"
+                  v-if="mounted && countFor(item.badge)"
                   class="num shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none"
                   :class="isActive(item.to) ? 'bg-paper/20 text-paper' : 'bg-amber/15 text-amber'"
                 >

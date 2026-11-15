@@ -247,3 +247,25 @@ def test_the_exit_says_so_when_there_is_no_incident(tmp_path, monkeypatch):
 
     with pytest.raises(ws.WorkspaceError, match="incident_id"):
         asyncio.run(_workspace_files("", None))
+
+def test_diff_stat_counts_the_change_per_file(repo, work):
+    """一轮改了哪些文件、各多少行:这是时间线上"这一轮动了什么"的来源。"""
+    (work / "app.py").write_text("print('v2')\nprint('v3')\n", encoding="utf-8")
+    (work / "new.py").write_text("a\nb\n", encoding="utf-8")
+    (work / "README.md").unlink()
+
+    files = {f["path"]: f for f in asyncio.run(ws.diff_stat(repo.repo_path, work))}
+
+    assert files["app.py"]["status"] == "modified"
+    assert files["app.py"]["added"] == 2
+    assert files["app.py"]["removed"] == 1
+
+    # 未跟踪文件 git 数不出行,按整份新增算
+    assert files["new.py"]["status"] == "added"
+    assert files["new.py"]["added"] == 2
+
+    assert files["README.md"]["status"] == "deleted"
+
+
+def test_diff_stat_of_a_clean_workspace_is_empty(repo, work):
+    assert asyncio.run(ws.diff_stat(repo.repo_path, work)) == []

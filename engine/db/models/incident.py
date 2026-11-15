@@ -32,6 +32,10 @@ class Incident(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     counts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     steps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 这一轮改了哪些文件:平台从工作区算出来,{"path", "added", "removed", "status"}。
+    diff: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 这一轮本来打算做什么。一个候选都没落下时,轮次上能说清的只有它。
+    intent: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     exhausted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 

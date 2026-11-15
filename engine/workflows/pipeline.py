@@ -302,10 +302,15 @@ async def _apply_effects_impl(
     binding = binding or config.settings.default_binding
     ledger = create_ledger()
 
-    applied: list[dict] = []
+    # 第一遍:把每个候选拆成"能做"或"为什么不做"。理由必须先定下来——放弃的
+    # 候选也是这一轮的决策,得写进同一轮每个单元的 intent 里,否则界面上只剩
+    # 一张"打算做的名单",看不出哪几个为什么没做。
+    plans: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     for index, effect in enumerate(parsed.effects):
         capability = effect["capability"]
         args = dict(effect.get("args") or {})
+        reason = ""
 
         if capability == "comment.create" and payload.get("repo_full_name"):
             gated = await hooks.apply(
@@ -318,7 +323,14 @@ async def _apply_effects_impl(
                 },
             )
             if not gated["allowed"]:
-                applied.append({"capability": capability, "verdict": "vetoed"})
+                reason = "被 comment.posting 扩展点拦下"
+                skipped.append({"capability": capability, "reason": reason})
+                plans.append(
+                    {
+                        "index": index,
+                        "result": {"capability": capability, "verdict": "vetoed", "reason": reason},
+                    }
+                )
                 continue
             args["body"] = gated["payload"]["body"]
 
@@ -327,35 +339,67 @@ async def _apply_effects_impl(
         except LookupError as e:
             # intent 点了一个没人提供的能力(比如告警声明的动作还没装):
             # 记成阻断,不让整个工作流因为一个效果崩掉。
-            applied.append(
+            reason = f"没有提供者声明这个能力: {e}"
+            skipped.append({"capability": capability, "reason": reason})
+            plans.append(
                 {
-                    "capability": capability,
-                    "verdict": "blocked",
-                    "handle": None,
-                    "reason": f"没有提供者声明这个能力: {e}",
+                    "index": index,
+                    "result": {
+                        "capability": capability,
+                        "verdict": "blocked",
+                        "handle": None,
+                        "reason": reason,
+                    },
                 }
             )
             continue
 
+        plans.append(
+            {
+                "index": index,
+                "capability": capability,
+                "provider": provider,
+                "decl": decl,
+                "args": args,
+            }
+        )
+
+    # 单元要能自己说清"从哪来、为什么这么做":话题决定它属于哪个议题,
+    # 完整意图(理由、依据、候选动作、被放弃的候选与理由)留着回答"为什么是这个做法"。
+    intent_record: dict[str, Any] = {**parsed.to_dict(), "workflow": idem_base}
+    if payload.get("topic"):
+        intent_record["topic"] = str(payload["topic"])
+    if skipped:
+        intent_record["skipped"] = skipped
+
+    applied: list[dict] = []
+    for plan in plans:
+        if "result" in plan:
+            # 没落成单元的候选仍然记一笔:这一场的报告要完整。
+            applied.append(plan["result"])
+            continue
+
         unit = ChangeUnit(
-            intent={"workflow": idem_base, "summary": parsed.summary},
-            effect=decl.to_effect(args),
+            intent=intent_record,
+            effect=plan["decl"].to_effect(plan["args"]),
             tenant=tenant,
             binding=binding,
             incident_id=incident_id,
-            idempotency_key=f"{idem_base}:effect:{index}",
+            idempotency_key=f"{idem_base}:effect:{plan['index']}",
         )
-        outcome = await apply_change_unit(unit, provider, ledger)
+        outcome = await apply_change_unit(unit, plan["provider"], ledger)
         applied.append(
             {
-                "capability": capability,
+                "capability": plan["capability"],
                 "verdict": outcome.verdict,
                 "handle": outcome.handle,
                 "reason": outcome.reason,
             }
         )
 
-    return {"summary": parsed.summary, "applied": applied}
+    # 单元都带着 intent;一个单元都没落下时(候选全被放弃),它是这一轮唯一的
+    # 记录——调用方把它写进事故,时间线才说得出"本打算做什么、为什么都没做"。
+    return {"summary": parsed.summary, "applied": applied, "intent": intent_record}
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +606,26 @@ async def _run_harness_impl(payload: dict) -> dict | None:
     )
     if result.stderr:
         logger.info("harness %s: %s", incident_id, result.stderr[-400:])
-    return result.report
+    report = dict(result.report or {})
+    # 这一轮改了什么是工作区的事实:平台自己数,不靠 harness 自报(自报的没法核)。
+    report["diff"] = await _round_diff(incident_id, payload)
+    return report
+
+
+async def _round_diff(incident_id: str, payload: dict) -> list[dict]:
+    """这一轮改了哪些文件、各多少行。算不出来就是空表——不编一份交给界面。"""
+    if not payload.get("repo_full_name"):
+        return []
+    from engine.harness import workspace as ws
+
+    root = config.settings.harness_workspace_root
+    try:
+        return await ws.diff_stat(
+            ws.repo_of(root, incident_id), ws.workspace_of(root, incident_id)
+        )
+    except Exception:  # noqa: BLE001 - 数不出改动不该让这一场失败
+        logger.warning("算不出这一轮的 diff(%s)", incident_id, exc_info=True)
+        return []
 
 
 @DBOS.step()
@@ -612,6 +675,8 @@ def declarative_report(intent: dict, applied: dict) -> dict:
     return {
         "source": "declarative",
         "summary": str(intent.get("summary") or ""),
+        # 这一轮本打算做什么:一个单元都没落下时,轮次上只有它说得清经过。
+        "intent": dict(applied.get("intent") or intent),
         "steps": [
             {
                 "tool": str(item.get("capability") or ""),

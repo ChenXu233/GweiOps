@@ -41,6 +41,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit */
+        get: operations["list_audit_api_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -144,6 +161,30 @@ export interface paths {
          * @description 前端用它决定显示登录页还是首启初始化页。不要求鉴权。
          */
         get: operations["auth_status_api_auth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Issue Board
+         * @description 议题板:首页那一张列表。
+         *
+         *     一块板子三个段,判据与详情页同源(`normalize_state`)——列表说"在跑"、
+         *     点进去说"落了"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得
+         *     最久在前,跑着与落了的按最新在前。
+         */
+        get: operations["issue_board_api_board_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -257,74 +298,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dashboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Dashboard */
-        get: operations["dashboard_api_dashboard_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboard/canary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Dashboard Canary */
-        get: operations["dashboard_canary_api_dashboard_canary_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboard/overnight": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Dashboard Overnight */
-        get: operations["dashboard_overnight_api_dashboard_overnight_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/dashboard/pending": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Dashboard Pending */
-        get: operations["dashboard_pending_api_dashboard_pending_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -379,32 +352,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/issues": {
+    "/api/issues/{issue_id}/continue": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Issues */
-        get: operations["list_issues_api_issues_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /**
+         * Continue Issue
+         * @description 从界面发起新一轮:话题不变、分支不变、PR 不新开。
+         *
+         *     权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。
+         *     真要细分的话是加一条新权限,不是在这里各自判断。
+         */
+        post: operations["continue_issue_api_issues__issue_id__continue_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/issues/{issue_id}": {
+    "/api/issues/{issue_id}/timeline": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Issue Detail */
-        get: operations["issue_detail_api_issues__issue_id__get"];
+        /**
+         * Issue Timeline
+         * @description 一个议题的完整时间线。还没有变更也返回:那是"还没发生",不是"查不到"。
+         */
+        get: operations["issue_timeline_api_issues__issue_id__timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -425,6 +407,26 @@ export interface paths {
          * @description 指标快照(最新值序列),供插件页面经桥只读拉取。
          */
         get: operations["list_metrics_api_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Permissions
+         * @description 权限目录。前端用它画勾选框,一眼看完整个平台的写权限有哪些。
+         */
+        get: operations["list_permissions_api_permissions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -506,24 +508,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/runs": {
+    "/api/roles": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Runs
-         * @description 执行记录:一次 AgentSession 就是一次执行。
-         *
-         *     只读投影,不改任何状态。会话还没结束就没有 endedAt 与 durationMs,
-         *     这里如实留空,不拿当前时间凑一个时长出来。
-         */
-        get: operations["list_runs_api_runs_get"];
+        /** List Roles */
+        get: operations["list_roles_api_roles_get"];
         put?: never;
-        post?: never;
+        /** Create Role */
+        post: operations["create_role_api_roles_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/roles/{role_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Role */
+        put: operations["update_role_api_roles__role_id__put"];
+        post?: never;
+        /** Delete Role */
+        delete: operations["delete_role_api_roles__role_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -600,30 +615,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/alertmanager": {
+    "/api/users": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Users */
+        get: operations["list_users_api_users_get"];
         put?: never;
-        /**
-         * Alertmanager Webhook
-         * @description 监控信号入口。
-         *
-         *     Alertmanager 不会签名,只认共享令牌。没配令牌就直接拒绝——这个端点会起工作流,
-         *     不应该默认敞开。
-         */
-        post: operations["alertmanager_webhook_webhook_alertmanager_post"];
+        /** Create User */
+        post: operations["create_user_api_users_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/webhook/github": {
+    "/api/users/{user_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -631,12 +641,34 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Update User */
+        put: operations["update_user_api_users__user_id__put"];
+        post?: never;
+        /** Delete User */
+        delete: operations["delete_user_api_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Describe
+         * @description MCP 只有一条 POST 通道;GET 只用来告诉人"这里是什么"。
+         */
+        get: operations["mcp_describe_mcp_get"];
         put?: never;
         /**
-         * Github Webhook
-         * @description 处理 GitHub Webhook（issues / issue_comment / ping）。
+         * Mcp
+         * @description 单端点:请求是 JSON-RPC,响应也是(通知类消息返回 202)。
          */
-        post: operations["github_webhook_webhook_github_post"];
+        post: operations["mcp_mcp_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -654,9 +686,33 @@ export interface paths {
         put?: never;
         /**
          * Github Comment Webhook
-         * @description 处理 GitHub Webhook 评论事件（@gwei 触发）。
+         * @description GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。
          */
         post: operations["github_comment_webhook_webhook_github_comment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhook/{source}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Source Webhook
+         * @description 任何来源的投递。
+         *
+         *     核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+         *     它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
+         *     接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+         */
+        post: operations["source_webhook_webhook__source__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -667,71 +723,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** CanaryMetricsDTO */
-        CanaryMetricsDTO: {
-            /**
-             * Errorrate
-             * @default 0
-             */
-            errorRate: number;
-            /**
-             * Memorypeak
-             * @default
-             */
-            memoryPeak: string;
-            /**
-             * P99Latency
-             * @default
-             */
-            p99Latency: string;
-            /**
-             * Passrate
-             * @default 0
-             */
-            passRate: number;
-        };
-        /**
-         * CanaryProgressDTO
-         * @description 金丝雀进度。引擎目前不产出,DTO 里显式留空,前端按"没进入灰度"渲染。
-         */
-        CanaryProgressDTO: {
-            /**
-             * Completedsteps
-             * @default []
-             */
-            completedSteps: string[];
-            /**
-             * Current
-             * @default
-             */
-            current: string;
-            /**
-             * @default {
-             *       "errorRate": 0,
-             *       "memoryPeak": "",
-             *       "p99Latency": "",
-             *       "passRate": 0
-             *     }
-             */
-            metrics: components["schemas"]["CanaryMetricsDTO"];
-            /**
-             * Steps
-             * @default []
-             */
-            steps: string[];
-        };
-        /** CanaryStatusDTO */
-        CanaryStatusDTO: {
-            /** Currentstep */
-            currentStep: string;
-            /** Issueid */
-            issueId: string;
-            /** Issuetitle */
-            issueTitle: string;
-            metrics: components["schemas"]["CanaryMetricsDTO"];
-            /** Steps */
-            steps: string[];
-        };
         /** ChangeDetailDTO */
         ChangeDetailDTO: {
             /** History */
@@ -886,28 +877,29 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** DashboardDTO */
-        DashboardDTO: {
-            /** Activeagents */
-            activeAgents: number;
-            /** Consecutivedays */
-            consecutiveDays: number;
-            /** Healthhistory */
-            healthHistory: boolean[];
-            /** Lastincident */
-            lastIncident: string;
-            /** Memoryentries */
-            memoryEntries: number;
-            /** Mttr */
-            mttr: number;
-            /** Overnightfixed */
-            overnightFixed: number;
-            /** Pendingreview */
-            pendingReview: number;
-            /** Status */
+        /**
+         * ContinueRoundDTO
+         * @description 人要求接着这条线再改一轮。
+         *
+         *     上限 500:事故只存 signal_title(String(512)),再长会被悄悄截断——宁可在这里
+         *     就说"太长了",也不要让人写下的话在时间线上少一截。
+         */
+        ContinueRoundDTO: {
+            /** Instruction */
+            instruction: string;
+        };
+        /**
+         * ContinuedDTO
+         * @description 已经开始排这一轮。轮次本身要等它跑起来才存在,所以这里不给轮号。
+         */
+        ContinuedDTO: {
+            /**
+             * Status
+             * @default queued
+             */
             status: string;
-            /** Successrate */
-            successRate: number;
+            /** Workflow Id */
+            workflow_id: string;
         };
         /**
          * ExitCallDTO
@@ -974,6 +966,13 @@ export interface components {
                 [key: string]: number;
             };
             /**
+             * Diff
+             * @default []
+             */
+            diff: {
+                [key: string]: unknown;
+            }[];
+            /**
              * Exhausted
              * @default false
              */
@@ -985,6 +984,13 @@ export interface components {
             finished_at: string;
             /** Id */
             id: string;
+            /**
+             * Intent
+             * @default {}
+             */
+            intent: {
+                [key: string]: unknown;
+            };
             /**
              * Signal Source
              * @default
@@ -1038,33 +1044,171 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** IssueDTO */
-        IssueDTO: {
-            canary?: components["schemas"]["CanaryProgressDTO"] | null;
+        /**
+         * IssueBoardDTO
+         * @description 议题板:三段、三个数。首页就是它。
+         */
+        IssueBoardDTO: {
+            /**
+             * Counts
+             * @default {}
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["IssueCardDTO"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
+         * IssueCardDTO
+         * @description 列表上的一行。三个状态由后端给,与详情页同一套判定。
+         */
+        IssueCardDTO: {
+            /**
+             * Action
+             * @default
+             * @enum {string}
+             */
+            action: "approve" | "investigate" | "";
+            /**
+             * Branch
+             * @default
+             */
+            branch: string;
+            /**
+             * Conclusion
+             * @default
+             */
+            conclusion: string;
             /** Id */
             id: string;
-            /** Patches */
-            patches: components["schemas"]["PatchDTO"][];
-            /** Repo */
+            /**
+             * Number
+             * @default 0
+             */
+            number: number;
+            /**
+             * Pull
+             * @default
+             */
+            pull: string;
+            /**
+             * Repo
+             * @default
+             */
             repo: string;
             /**
-             * Severity
-             * @enum {string}
+             * Rounds
+             * @default 0
              */
-            severity: "critical" | "medium" | "low";
-            /** Source */
-            source: string;
+            rounds: number;
             /**
-             * Status
+             * State
              * @enum {string}
              */
-            status: "pending_review" | "canary" | "approved" | "completed" | "rolled_back";
-            /** Timeline */
-            timeline: components["schemas"]["TimelineStepDTO"][];
-            /** Title */
+            state: "waiting" | "running" | "landed";
+            /**
+             * State Reason
+             * @default
+             */
+            state_reason: string;
+            /**
+             * Title
+             * @default
+             */
             title: string;
-            /** Triggeredat */
-            triggeredAt: string;
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
+            /**
+             * Undo Reason
+             * @default
+             */
+            undo_reason: string;
+            /**
+             * Undoable
+             * @default false
+             */
+            undoable: boolean;
+            /**
+             * Unit Id
+             * @default
+             */
+            unit_id: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /**
+             * Verdict
+             * @default
+             */
+            verdict: ("pending" | "kept" | "rolled_back" | "blocked" | "vetoed" | "failed" | "unknown" | "irreversible") | "";
+            /**
+             * Waiting Since
+             * @default
+             */
+            waiting_since: string;
+        };
+        /**
+         * IssueTimelineDTO
+         * @description 一个议题:头部结论 + 轮次。没有变更时 rounds 为空,不是 404。
+         */
+        IssueTimelineDTO: {
+            branch?: components["schemas"]["TimelineBranchDTO"] | null;
+            /** Id */
+            id: string;
+            /**
+             * Number
+             * @default 0
+             */
+            number: number;
+            /**
+             * Repo
+             * @default
+             */
+            repo: string;
+            /**
+             * Rounds
+             * @default []
+             */
+            rounds: components["schemas"]["TimelineRoundDTO"][];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "waiting" | "running" | "landed";
+            /**
+             * State Reason
+             * @default
+             */
+            state_reason: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** LoginDTO */
         LoginDTO: {
@@ -1087,62 +1231,12 @@ export interface components {
             /** Value */
             value: number;
         };
-        /** OvernightEventDTO */
-        OvernightEventDTO: {
-            /** Description */
-            description: string;
-            /**
-             * Result
-             * @enum {string}
-             */
-            result: "success" | "failed";
-            /** Time */
-            time: string;
-            /** Title */
-            title: string;
-        };
         /** PasswordDTO */
         PasswordDTO: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
-        };
-        /** PatchDTO */
-        PatchDTO: {
-            /** Description */
-            description: string;
-            /** Id */
-            id: string;
-            /** Latency */
-            latency: string;
-            /** Lines */
-            lines: number;
-            /** Passrate */
-            passRate: number;
-            /** Risk */
-            risk: string;
-            /** Type */
-            type: string;
-        };
-        /** PendingIssueDTO */
-        PendingIssueDTO: {
-            /** Id */
-            id: string;
-            /** Patchcount */
-            patchCount: number;
-            /**
-             * Severity
-             * @enum {string}
-             */
-            severity: "critical" | "medium" | "low";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "pending_review" | "canary" | "approved" | "completed" | "rolled_back";
-            /** Title */
-            title: string;
         };
         /** PluginDTO */
         PluginDTO: {
@@ -1257,42 +1351,52 @@ export interface components {
             /** Status */
             status: string;
         };
-        /** RunListDTO */
-        RunListDTO: {
-            /** Items */
-            items: components["schemas"]["RunRowDTO"][];
-            /** Total */
-            total: number;
-        };
-        /** RunRowDTO */
-        RunRowDTO: {
-            /** Durationms */
-            durationMs?: number | null;
-            /** Endedat */
-            endedAt?: string | null;
-            /** Id */
-            id: string;
-            /** Issueid */
-            issueId: string;
-            /** Issuenumber */
-            issueNumber: number;
-            /** Issuetitle */
-            issueTitle: string;
-            /** Repo */
-            repo: string;
-            /** Source */
-            source: string;
-            /** Startedat */
-            startedAt?: string | null;
+        /** RoleCreateDTO */
+        RoleCreateDTO: {
             /**
-             * State
-             * @default {}
+             * Description
+             * @default
              */
-            state: {
-                [key: string]: unknown;
-            };
-            /** Status */
-            status: string;
+            description: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+        };
+        /** RoleUpdateDTO */
+        RoleUpdateDTO: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Permissions */
+            permissions?: string[] | null;
+        };
+        /**
+         * RoundDiffDTO
+         * @description 一轮里一个文件的改动。行数是平台从工作区数的,不是 agent 自报的。
+         */
+        RoundDiffDTO: {
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /** Path */
+            path: string;
+            /**
+             * Removed
+             * @default 0
+             */
+            removed: number;
+            /**
+             * Status
+             * @default modified
+             * @enum {string}
+             */
+            status: "added" | "modified" | "deleted";
         };
         /** ScopeDTO */
         ScopeDTO: {
@@ -1394,17 +1498,165 @@ export interface components {
             /** Password */
             password: string;
         };
-        /** TimelineStepDTO */
-        TimelineStepDTO: {
-            /** Id */
-            id: string;
-            /** Label */
+        /**
+         * TimelineBranchDTO
+         * @description 话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。
+         */
+        TimelineBranchDTO: {
+            /**
+             * Head
+             * @default
+             */
+            head: string;
+            /**
+             * Pull
+             * @default
+             */
+            pull: string;
+            /**
+             * Repo
+             * @default
+             */
+            repo: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /**
+         * TimelineEvidenceDTO
+         * @description 证据:存下来的原文。前端不加工,截断了要标出来。
+         */
+        TimelineEvidenceDTO: {
+            /** Content */
+            content?: unknown;
+            /**
+             * Kind
+             * @default json
+             */
+            kind: string;
+            /**
+             * Label
+             * @default
+             */
             label: string;
             /**
-             * Status
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /**
+         * TimelineRoundDTO
+         * @description 一轮 = 一次执行。轮次不覆盖,上一轮的结论留在上一轮里。
+         */
+        TimelineRoundDTO: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /**
+             * Diff
+             * @default []
+             */
+            diff: components["schemas"]["RoundDiffDTO"][];
+            /**
+             * Finished At
+             * @default
+             */
+            finished_at: string;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /** Round */
+            round: number;
+            /**
+             * Segments
+             * @default []
+             */
+            segments: components["schemas"]["TimelineSegmentDTO"][];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Verdicts
+             * @default {}
+             */
+            verdicts: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * TimelineSegmentDTO
+         * @description 时间线上的一段。summary 是一句人话,detail 是工程决策要点,evidence 是原文。
+         */
+        TimelineSegmentDTO: {
+            /**
+             * At
+             * @default
+             */
+            at: string;
+            /**
+             * Detail
+             * @default {}
+             */
+            detail: {
+                [key: string]: unknown;
+            };
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: components["schemas"]["TimelineEvidenceDTO"][];
+            /** Id */
+            id: string;
+            /**
+             * Kind
              * @enum {string}
              */
-            status: "done" | "active" | "pending";
+            kind: "signal" | "diagnosis" | "intent" | "change" | "verify" | "conclusion";
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** UserCreateDTO */
+        UserCreateDTO: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Permissions */
+            permissions?: string[];
+            /** Role Ids */
+            role_ids?: string[];
+        };
+        /** UserUpdateDTO */
+        UserUpdateDTO: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Permissions */
+            permissions?: string[] | null;
+            /** Role Ids */
+            role_ids?: string[] | null;
+            /** Status */
+            status?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1460,6 +1712,39 @@ export interface operations {
                 "application/json": components["schemas"]["ExitCallDTO"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_api_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1654,6 +1939,38 @@ export interface operations {
             };
         };
     };
+    issue_board_api_board_get: {
+        parameters: {
+            query?: {
+                tenant?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueBoardDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_changes_api_changes_get: {
         parameters: {
             query?: {
@@ -1826,86 +2143,6 @@ export interface operations {
             };
         };
     };
-    dashboard_api_dashboard_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DashboardDTO"];
-                };
-            };
-        };
-    };
-    dashboard_canary_api_dashboard_canary_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CanaryStatusDTO"][];
-                };
-            };
-        };
-    };
-    dashboard_overnight_api_dashboard_overnight_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OvernightEventDTO"][];
-                };
-            };
-        };
-    };
-    dashboard_pending_api_dashboard_pending_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PendingIssueDTO"][];
-                };
-            };
-        };
-    };
     health_check_api_health_get: {
         parameters: {
             query?: never;
@@ -1991,14 +2228,22 @@ export interface operations {
             };
         };
     };
-    list_issues_api_issues_get: {
+    continue_issue_api_issues__issue_id__continue_post: {
         parameters: {
-            query?: never;
+            query?: {
+                tenant?: string | null;
+            };
             header?: never;
-            path?: never;
+            path: {
+                issue_id: string;
+            };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContinueRoundDTO"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2006,14 +2251,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IssueDTO"][];
+                    "application/json": components["schemas"]["ContinuedDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    issue_detail_api_issues__issue_id__get: {
+    issue_timeline_api_issues__issue_id__timeline_get: {
         parameters: {
-            query?: never;
+            query?: {
+                tenant?: string | null;
+            };
             header?: never;
             path: {
                 issue_id: string;
@@ -2028,7 +2284,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["IssueDTO"];
+                    "application/json": components["schemas"]["IssueTimelineDTO"];
                 };
             };
             /** @description Validation Error */
@@ -2069,6 +2325,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_permissions_api_permissions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -2176,11 +2454,9 @@ export interface operations {
             };
         };
     };
-    list_runs_api_runs_get: {
+    list_roles_api_roles_get: {
         parameters: {
-            query?: {
-                limit?: number;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -2193,7 +2469,105 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunListDTO"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_role_api_roles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_role_api_roles__role_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleUpdateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_role_api_roles__role_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -2318,7 +2692,134 @@ export interface operations {
             };
         };
     };
-    alertmanager_webhook_webhook_alertmanager_post: {
+    list_users_api_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_user_api_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_users__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_describe_mcp_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2338,7 +2839,7 @@ export interface operations {
             };
         };
     };
-    github_webhook_webhook_github_post: {
+    mcp_mcp_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2374,6 +2875,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    source_webhook_webhook__source__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

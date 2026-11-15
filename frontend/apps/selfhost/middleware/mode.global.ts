@@ -5,6 +5,6 @@ export default defineNuxtRouteMiddleware((to) => {
   const modes = to.meta.modes as string[] | undefined
 
   if (modes?.length && !modes.includes(mode)) {
-    return navigateTo('/dashboard', { replace: true })
+    return navigateTo('/issues', { replace: true })
   }
 })

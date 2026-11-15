@@ -282,6 +282,79 @@ async def changed_paths(checkout_repo: Path, workspace: Path) -> dict[str, str]:
     return changes
 
 
+def _status_word(code: str) -> str:
+    """porcelain 两个字符 → 人读的一个词。改名按"删一个 + 加一个"算,不猜意图。"""
+    if "?" in code or "A" in code:
+        return "added"
+    if "D" in code:
+        return "deleted"
+    return "modified"
+
+
+async def diff_stat(checkout_repo: Path, workspace: Path) -> list[dict[str, Any]]:
+    """这一轮改了哪些文件、各多少行。
+
+    和工作区里读改动是同一份事实:平台自己数,不问 harness 自报。未跟踪的文件
+    git 数不出行,按整份新增算;读不动的(二进制、超大)行数记 0,文件仍然列出来
+    ——"改了它但数不出多少行"比"没改过它"接近真相。
+    """
+
+    if not (checkout_repo / ".git").exists():
+        return []
+
+    changes = {
+        path: code
+        for path, code in (await changed_paths(checkout_repo, workspace)).items()
+        if not _ignored(path)
+    }
+    if not changes:
+        return []
+
+    out = await _git(
+        "--git-dir",
+        str(checkout_repo / ".git"),
+        "--work-tree",
+        str(workspace),
+        "diff",
+        "--numstat",
+        "--no-renames",
+        "HEAD",
+        cwd=workspace,
+    )
+    counted: dict[str, tuple[int, int]] = {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        added, removed, path = parts
+        counted[path] = (
+            int(added) if added.isdigit() else 0,
+            int(removed) if removed.isdigit() else 0,
+        )
+
+    files: list[dict[str, Any]] = []
+    for path, code in sorted(changes.items()):
+        if path in counted:
+            added, removed = counted[path]
+        else:
+            added, removed = 0, 0
+            try:
+                content = _read(workspace, path).get("content", "")
+            except Exception:  # noqa: BLE001 - 二进制或超大:数不出来,但文件是真的
+                content = ""
+            if content:
+                added = content.count("\n") + (0 if content.endswith("\n") else 1)
+        files.append(
+            {
+                "path": path,
+                "added": added,
+                "removed": removed,
+                "status": _status_word(code),
+            }
+        )
+    return files
+
+
 async def collect(
     checkout_repo: Path, workspace: Path, paths: list[str] | None = None
 ) -> list[dict[str, Any]]:
@@ -334,6 +407,7 @@ __all__ = [
     "WorkspaceError",
     "changed_paths",
     "collect",
+    "diff_stat",
     "commit_snapshot",
     "download",
     "extract",

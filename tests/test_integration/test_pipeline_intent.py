@@ -102,6 +102,35 @@ def test_apply_effects_runs_unit_and_records(tmp_path):
     assert out["applied"][0]["handle"] == "42"
 
 
+def test_apply_effects_records_topic_and_reasoning_on_the_unit(tmp_path):
+    """单元要能自己说清从哪来、为什么:话题定归属,完整意图给界面答"为什么这么做"。"""
+    provider = FakeProvider()
+    intent = {
+        "version": 1,
+        "summary": "回评",
+        "evidence": [{"kind": "issue", "ref": "#7"}],
+        "effects": [{"capability": "comment.create", "args": {"body": "hi"}}],
+        "rationale": "问题在配置,不在代码",
+    }
+    allow = AsyncMock(return_value={"allowed": True, "payload": {"body": "hi"}})
+    payload = {**PAYLOAD, "topic": "ChenXu233/GweiOps#7"}
+
+    with patch.object(pipeline.registry, "effect_decl", return_value=(provider, DECL)), \
+         patch.object(pipeline.hooks, "apply", allow), \
+         patch.object(pipeline.config.settings, "change_ledger_backend", "file"), \
+         patch.object(pipeline.config.settings, "change_ledger_path", str(tmp_path / "l.jsonl")):
+        asyncio.run(pipeline._apply_effects_impl(intent, payload, "wf-9:effects"))
+
+    from engine.change_unit import JsonlLedger
+
+    rows = asyncio.run(JsonlLedger(tmp_path / "l.jsonl").read())
+    assert len(rows) == 1
+    recorded = rows[0]["intent"]
+    assert recorded["topic"] == "ChenXu233/GweiOps#7"
+    assert recorded["rationale"] == "问题在配置,不在代码"
+    assert recorded["effects"][0]["capability"] == "comment.create"
+
+
 def test_apply_effects_skips_vetoed_comment(tmp_path):
     provider = FakeProvider()
     intent = {

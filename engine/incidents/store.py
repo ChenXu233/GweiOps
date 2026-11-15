@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from sqlalchemy import text
+
 STATUS_OPEN = "open"
 STATUS_CLOSED = "closed"
 
@@ -55,6 +57,8 @@ def _blank(
         "summary": "",
         "counts": {},
         "steps": [],
+        "diff": [],
+        "intent": {},
         "exhausted": False,
     }
 
@@ -68,6 +72,8 @@ def _apply_report(row: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]
             "summary": str(report.get("summary") or ""),
             "counts": dict(report.get("counts") or {}),
             "steps": list(report.get("steps") or []),
+            "diff": list(report.get("diff") or []),
+            "intent": dict(report.get("intent") or {}),
             "exhausted": bool(report.get("exhausted")),
         }
     )
@@ -173,6 +179,8 @@ class DbIncidentStore:
             found.summary = str(report.get("summary") or "")
             found.counts = dict(report.get("counts") or {})
             found.steps = list(report.get("steps") or [])
+            found.diff = list(report.get("diff") or [])
+            found.intent = dict(report.get("intent") or {})
             found.exhausted = bool(report.get("exhausted"))
             found.finished_at = finished_at or _now()
             await session.commit()
@@ -215,6 +223,8 @@ def _row_of(model: Any) -> dict[str, Any]:
         "summary": model.summary,
         "counts": dict(model.counts or {}),
         "steps": list(model.steps or []),
+        "diff": list(getattr(model, "diff", None) or []),
+        "intent": dict(getattr(model, "intent", None) or {}),
         "exhausted": bool(model.exhausted),
     }
 
@@ -237,6 +247,20 @@ async def ensure_schema() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Incident.__table__.create(c, checkfirst=True))
+        # checkfirst 只补"没有这张表",补不了"这张表少一列"。老库到此为止会缺
+        # diff;一行幂等 ALTER 比要求手工跑迁移工具更接近"启动就能用"。
+        await conn.execute(
+            text(
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS diff JSON NOT NULL "
+                "DEFAULT '[]'"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS intent JSON NOT NULL "
+                "DEFAULT '{}'"
+            )
+        )
 
 
 __all__ = [

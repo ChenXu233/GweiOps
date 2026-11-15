@@ -82,13 +82,15 @@ class TestWebhookRoutes:
     """验证 Webhook 路由是否正确注册。"""
 
     def test_webhook_routes_registered(self):
-        """验证 /webhook/github 和 /webhook/github/comment 路由存在。"""
+        """只有一个按来源分发的入口,外加 GitHub 评论的专用别名。
+
+        来源名不进路由表:接一个新来源不该要求核心加一条路由。
+        """
         from engine.api.app import app
 
-        # 获取所有注册的路由路径
         routes = [route.path for route in app.routes]
 
-        assert "/webhook/github" in routes, "路由 /webhook/github 未注册"
+        assert "/webhook/{source}" in routes, "按来源分发的入口未注册"
         assert "/webhook/github/comment" in routes, "路由 /webhook/github/comment 未注册"
 
     def test_webhook_routes_methods(self):
@@ -101,8 +103,8 @@ class TestWebhookRoutes:
                 methods = getattr(route, "methods", set())
                 webhook_routes[route.path] = methods
 
-        assert "POST" in webhook_routes.get("/webhook/github", set()), \
-            "/webhook/github 路由不支持 POST 方法"
+        assert "POST" in webhook_routes.get("/webhook/{source}", set()), \
+            "/webhook/{source} 路由不支持 POST 方法"
         assert "POST" in webhook_routes.get("/webhook/github/comment", set()), \
             "/webhook/github/comment 路由不支持 POST 方法"
 

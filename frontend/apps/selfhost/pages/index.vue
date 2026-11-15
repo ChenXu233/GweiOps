@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 营销落地页仅 SaaS 档可见;selfhost 档由全局 middleware 重定向到 /dashboard
+// 营销落地页仅 SaaS 档可见;selfhost 档由全局 middleware 重定向到议题板
 definePageMeta({ layout: false, modes: ['saas'] })
 
 const pillars = [
@@ -66,7 +66,7 @@ const pillars = [
             免费开始
             <AppIcon name="arrow-right" :size="14" />
           </NuxtLink>
-          <NuxtLink to="/dashboard" class="btn-outline h-10 px-5 text-[13px]">看演示控制台</NuxtLink>
+          <NuxtLink to="/issues" class="btn-outline h-10 px-5 text-[13px]">看演示控制台</NuxtLink>
         </div>
 
         <div class="mt-14 grid gap-px overflow-hidden rounded-panel bg-line sm:grid-cols-3">

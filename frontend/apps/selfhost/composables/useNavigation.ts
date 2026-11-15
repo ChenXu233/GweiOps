@@ -1,12 +1,12 @@
-import { ChangesApi, IssuesApi } from '@gwei/core/api/client'
-import { mockChanges, mockIssues } from '@gwei/core/mock/index'
+import { IssuesApi } from '@gwei/core/api/client'
+import { mockIssueBoard } from '@gwei/core/mock/index'
 
 export interface NavItem {
   to: string
   label: string
   icon: string
-  /** 侧边徽标:显示需要人处理的条数 */
-  badge?: 'approvals' | 'issues'
+  /** 侧边徽标:显示需要人处理的条数。全站只有一个徽标。 */
+  badge?: 'waiting'
   /** 一句话说明,鼠标悬停与命令面板里显示 */
   hint?: string
 }
@@ -17,16 +17,18 @@ export interface NavGroup {
 }
 
 /**
- * 全站唯一的导航表。
+ * 全站唯一的导航表:三组八项,命令面板也直接读它。
  * 顶栏不再放导航——功能一律进侧边,顶栏只留全局动作。
+ *
+ * 控制室、待放行、执行记录都不在这里了:它们问的都是"要我做什么 / 做了什么",
+ * 答案在议题板的三段与议题详情的时间线里。页面文件还在,但没有入口——要不要
+ * 删掉它们是个单独的决定,见工作分解。
  */
 export const navGroups: NavGroup[] = [
   {
     title: '工作区',
     items: [
-      { to: '/dashboard', label: '控制室', icon: 'dashboard', hint: '系统态势与昨夜回顾' },
-      { to: '/issues', label: '议题', icon: 'issues', badge: 'issues', hint: '从信号到方案的每一步' },
-      { to: '/approvals', label: '待放行', icon: 'approvals', badge: 'approvals', hint: '不可逆或被策略拦下的变更' },
+      { to: '/issues', label: '议题', icon: 'issues', badge: 'waiting', hint: '要你处理的和正在跑的' },
       { to: '/changes', label: '变更账本', icon: 'changes', hint: '每一次改变都是可回滚事件' },
     ],
   },
@@ -41,9 +43,8 @@ export const navGroups: NavGroup[] = [
   {
     title: '系统',
     items: [
-      { to: '/runs', label: '执行记录', icon: 'runs', hint: '每次执行会话的来龙去脉' },
       { to: '/observability', label: '指标观测', icon: 'observability', hint: '引擎与插件上报的实时指标' },
-      { to: '/team', label: '成员与角色', icon: 'users', hint: '谁在用、能做什么、做过什么' },
+      { to: '/team', label: '成员', icon: 'users', hint: '谁在用、能做什么、做过什么' },
       { to: '/settings', label: '设置', icon: 'settings', hint: '租户、通知与外观' },
     ],
   },
@@ -54,30 +55,20 @@ export function flattenNav(groups: NavGroup[] = navGroups): NavItem[] {
 }
 
 /**
- * 侧边徽标计数:待放行 + 待审。
+ * 侧边徽标计数:只有"等我"这一条。
  * 拉不到就保持 0——徽标只是提示,不该因为后端不在就让整页报错。
  */
 export function useNavCounts() {
   const useMock = useRuntimeConfig().public.useMock === true
-  const approvals = ref(0)
-  const issues = ref(0)
+  const waiting = ref(0)
 
   async function fetch() {
     try {
-      if (useMock) {
-        approvals.value = mockChanges.filter((c) => c.verdict === 'blocked').length
-        issues.value = mockIssues.filter((i) => i.status === 'pending_review').length
-        return
-      }
-      const [changes, issueRows] = await Promise.all([
-        ChangesApi.list({ verdict: 'blocked', limit: 100 }),
-        IssuesApi.list(),
-      ])
-      approvals.value = changes.total ?? changes.items.length
-      issues.value = issueRows.filter((i) => i.status === 'pending_review').length
+      waiting.value = useMock
+        ? mockIssueBoard.counts.waiting ?? 0
+        : (await IssuesApi.board(200)).counts.waiting ?? 0
     } catch {
-      approvals.value = 0
-      issues.value = 0
+      waiting.value = 0
     }
   }
 
@@ -88,12 +79,10 @@ export function useNavCounts() {
   }
 
   function countFor(badge?: NavItem['badge']) {
-    if (badge === 'approvals') return approvals.value
-    if (badge === 'issues') return issues.value
-    return 0
+    return badge === 'waiting' ? waiting.value : 0
   }
 
-  return { approvals, issues, countFor, refresh: fetch }
+  return { waiting, countFor, refresh: fetch }
 }
 
 /** 命令面板开关:侧边栏与顶栏共用同一份状态。 */
