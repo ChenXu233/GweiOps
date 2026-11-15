@@ -14,6 +14,8 @@ export interface paths {
         /**
          * List Exits
          * @description 出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。
+         *
+         *     与 `/mcp` 的 `tools/list` 同一条判据:这个身份够不着的工具不出现。
          */
         get: operations["list_exits_api_agent_exits_get"];
         put?: never;
@@ -395,6 +397,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Keys */
+        get: operations["list_keys_api_keys_get"];
+        put?: never;
+        /** Create Key */
+        post: operations["create_key_api_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Key
+         * @description 吊销。之后这把密钥的每个请求都是 401,记录留着。
+         */
+        delete: operations["revoke_key_api_keys__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics": {
         parameters: {
             query?: never;
@@ -675,26 +715,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/webhook/github/comment": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Github Comment Webhook
-         * @description GitHub 评论专用入口:只接 issue_comment(其余投递忽略)。
-         */
-        post: operations["github_comment_webhook_webhook_github_comment_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/webhook/{source}": {
         parameters: {
             query?: never;
@@ -708,9 +728,9 @@ export interface paths {
          * Source Webhook
          * @description 任何来源的投递。
          *
-         *     核心这里不认识 GitHub、GitLab、Alertmanager、Caddy、云雀中的任何一个:
+         *     核心这里不认识 GitHub、GitLab、CNB、Alertmanager、Caddy、云雀中的任何一个:
          *     它按 `source` 找声明了 `webhook.receive` 的适配器,由适配器验签并翻译。
-         *     接一个新的告警系统 = 装一个适配器插件,这里不加分支。
+         *     接一个新的来源 = 装一个适配器插件,这里不加分支、不加一家专用的入口。
          */
         post: operations["source_webhook_webhook__source__post"];
         delete?: never;
@@ -1210,6 +1230,131 @@ export interface components {
              */
             truncated: boolean;
         };
+        /**
+         * KeyCreateDTO
+         * @description 签一把。permissions 不给 = 空权限,一把只能认路的钥匙。
+         *
+         *     tools 是可选的第二层收窄:权限够、但这里没点名的工具不给。
+         */
+        KeyCreateDTO: {
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /** Tools */
+            tools?: string[];
+        };
+        /**
+         * KeyDTO
+         * @description 一把密钥的事实。没有明文 —— 它只在签发那一次的响应里。
+         */
+        KeyDTO: {
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Created By
+             * @default
+             */
+            created_by: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Used At
+             * @default
+             */
+            last_used_at: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /**
+         * KeyIssuedDTO
+         * @description 签发那一刻的响应:多了明文。之后再也拿不到。
+         */
+        KeyIssuedDTO: {
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Created By
+             * @default
+             */
+            created_by: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /**
+             * Last Used At
+             * @default
+             */
+            last_used_at: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /** KeyListDTO */
+        KeyListDTO: {
+            /** Items */
+            items: components["schemas"]["KeyDTO"][];
+            /** Total */
+            total: number;
+        };
         /** LoginDTO */
         LoginDTO: {
             /** Email */
@@ -1660,6 +1805,10 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -2298,6 +2447,92 @@ export interface operations {
             };
         };
     };
+    list_keys_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyListDTO"];
+                };
+            };
+        };
+    };
+    create_key_api_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyIssuedDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_key_api_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_metrics_api_metrics_get: {
         parameters: {
             query?: {
@@ -2840,26 +3075,6 @@ export interface operations {
         };
     };
     mcp_mcp_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    github_comment_webhook_webhook_github_comment_post: {
         parameters: {
             query?: never;
             header?: never;

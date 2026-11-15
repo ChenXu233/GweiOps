@@ -223,6 +223,12 @@ effects:
 
 想给外面的 agent 加一个工具,加能力,不要加接口:例如内置插件 [`platform-mcp`](../../plugins/builtin/actions/platform-mcp/plugin.yaml) 声明 `changes.read` / `incidents.read` / `topic.read`,装上之后任何 MCP 客户端的工具清单里就多了这三样,查的是本机的账本与事故。
 
+清单只有一份,但**看到什么取决于凭据**:`tools/list` 在 `tool_specs` 之上按调用方的权限筛一遍,效果要 `changes.execute`,只读能力要 `changes.read`(见[运行时参考](runtime.md#工具按凭据暴露))。所以加能力时不用声明"它属哪个权限":
+
+- 改世界的效果天然落在 `changes.execute` 下 —— 它本来就只能通过出口走闸门;
+- `*.read` 结尾的能力天然落在 `changes.read` 下;
+- 真要一把单独的权限(例如 `secrets.read`),在 `engine/auth/keys.py` 的 `CAPABILITY_PERMISSIONS` 里点名,再往 `engine/auth/__init__.py` 的 `PERMISSIONS` 里加一条。
+
 只读能力拿到的是平台按身份定下的租户,不是调用方写在参数里的那个:收不住范围,读口就成了越权口。
 
 ## 运行时接线

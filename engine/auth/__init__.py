@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 PERMISSIONS: dict[str, str] = {
     "changes.read": "看变更账本与事故",
+    "changes.execute": "通过出口改世界(每次调用落成一个变更单元)",
     "changes.approve": "放行被阻断的变更",
     "changes.rollback": "撤销已执行的变更",
     "settings.read": "看配置(密钥只显示是否已设置)",
@@ -38,6 +39,8 @@ PERMISSIONS: dict[str, str] = {
     "roles.manage": "增删角色、改角色权限",
     "audit.read": "看审计日志",
     "plugins.read": "看插件与能力",
+    "keys.read": "看密钥清单(明文永不回显)",
+    "keys.manage": "签发与吊销密钥",
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSIONS)
@@ -58,11 +61,13 @@ DEFAULT_ROLES: tuple[dict, ...] = (
         "permissions": sorted(
             {
                 "changes.read",
+                "changes.execute",
                 "changes.approve",
                 "changes.rollback",
                 "settings.read",
                 "audit.read",
                 "plugins.read",
+                "keys.read",
             }
         ),
         "is_system": True,
@@ -76,6 +81,10 @@ DEFAULT_ROLES: tuple[dict, ...] = (
     },
 )
 
+READ_PERMISSIONS = frozenset(
+    {"changes.read", "settings.read", "users.read", "audit.read", "plugins.read", "keys.read"}
+)
+
 WRITE_PREFIXES = ("changes.approve", "changes.rollback", "settings.write")
 
 SESSION_COOKIE = "gwei_session"
@@ -83,8 +92,12 @@ SESSION_DAYS = 14
 
 
 def is_write_permission(permission: str) -> bool:
-    """这个权限会不会改世界。中间件用它决定写请求要不要拦。"""
-    return permission not in ("changes.read", "settings.read", "users.read", "audit.read", "plugins.read")
+    """这个权限会不会改世界。中间件用它决定写请求要不要拦。
+
+    "读"是白名单:新增一个只读权限时把它加进 READ_PERMISSIONS,漏加的后果是
+    这个权限被当成可写(保守那一侧),而不是悄悄放行。
+    """
+    return permission not in READ_PERMISSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +225,7 @@ __all__ = [
     "DEFAULT_ROLES",
     "Identity",
     "PERMISSIONS",
+    "READ_PERMISSIONS",
     "SESSION_COOKIE",
     "SESSION_DAYS",
     "effective_permissions",

@@ -63,6 +63,14 @@ export const SettingsScopesApi = {
     }),
 }
 
+// MCP 接入用的密钥。明文只在签发那一次的响应里,列表永远只有 hint。
+export const ApiKeysApi = {
+  list: () => api.get('/api/keys'),
+  issue: (body: { name: string; permissions: string[]; tools?: string[]; expires_at?: string }) =>
+    api.post('/api/keys', { body }),
+  revoke: (id: string) => api.delete('/api/keys/{key_id}', { path: { key_id: id } }),
+}
+
 export const HealthApi = {
   get: () => api.get('/api/health'),
 }

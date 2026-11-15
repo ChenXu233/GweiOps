@@ -53,10 +53,33 @@
 
 - `tools/list` 直接来自 `tool_specs(registry)` —— 插件声明过的效果就是工具,名字以 `.read` 结尾的能力是只读工具。没有第二份清单要维护。
 - `tools/call` 走 `run_tool`,和沙箱里的 agent 完全一条路:读窗口、判定、执行、验证、记账。所以从 MCP 点一下,和从出口点一下,账本里长得一模一样。
-- 身份同一个:`X-Gwei-Token`。令牌的租户盖过工具参数里的 `tenant`,只读令牌能调只读工具、调不动效果。
 - 一次调用可以带 `_summary` / `_incident_id` / `_topic` / `_binding` 这几个保留参数,它们只影响这一行账怎么写,不传给下游。
 
-接入方式:URL 填 `https://<平台>/mcp`,请求头带 `X-Gwei-Token`。平台自己的只读口(账本、事故、话题)由内置插件 `platform-mcp` 声明,装上就出现在工具清单里。
+接入方式:URL 填 `https://<平台>/mcp`,请求头带 `X-Gwei-Token`,值是[密钥](#密钥)的明文。平台自己的只读口(账本、事故、话题)由内置插件 `platform-mcp` 声明,装上就出现在工具清单里。
+
+### 工具按凭据暴露
+
+同一个 `/mcp`,不同凭据看到的工具不一样。`tools/list` 列的是**这条凭据够得着**的工具,`tools/call` 也只放行那些:知道了名字不等于够得着。
+
+工具到权限的翻译只有一处(`engine/auth/keys.py` 的 `permission_for_tool`),判据按顺序取第一条:
+
+| 工具 | 需要的权限 |
+| --- | --- |
+| `changes.read` / `incidents.read` / `topic.read` | `changes.read` |
+| 其余的 `*.read` | `changes.read` |
+| 其余的一切(声明过效果的能力) | `changes.execute` |
+
+凭据分三种,各按各的说法筛:
+
+| 凭据 | 谁在用 | 看到什么 |
+| --- | --- | --- |
+| 密钥(`gwei_` 前缀) | 外界的 agent | 它的权限集 ∩ 它自己的工具白名单(`tools`) |
+| 静态令牌 | harness、alertmanager | `operate` 看全部,`read` 只看只读工具 |
+| 会话 cookie | 浏览器里的人 | 角色算出来的权限 |
+| 没有凭据 | 没配任何凭据的部署 | 不筛(单机自用) |
+
+同一套判据也用在出口(`GET /api/agent/exits` 与 `POST /api/agent/exits/{name}`):清单同样收窄,调越界的工具是 403。
+
 ## 变更账本
 
 - 后端:`CHANGE_LEDGER_BACKEND`。`db`(默认)写业务库 `change_events` 表,启动时 checkfirst 建表;`file` 写 `CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`)的单文件 JSONL,仅用于演示与离线调试——并发追加与租户隔离都靠不住。
@@ -69,6 +92,25 @@
 - 放行前置条件:最新行为 `blocked`,否则 409。否决前置条件:最新行未执行,已执行的只能撤销。
 - 幂等:同一 `idempotency_key` 重放只复用账本结论,不二次外呼。
 
+## 权限目录
+
+`engine/auth/__init__.py` 的 `PERMISSIONS` 是全部权限的唯一定义,角色、用户、密钥都从这里取。`is_write_permission` 判"这条会不会改世界",判据是一份只读白名单(`READ_PERMISSIONS`):新增只读权限要显式加进去,漏加的后果是被当成可写(保守那一侧),而不是悄悄放行。
+
+| 权限 | 说明 |
+| --- | --- |
+| `changes.read` | 看变更账本、事故、话题 |
+| `changes.execute` | 通过出口改世界(每次调用落成一个变更单元) |
+| `changes.approve` | 放行被阻断的变更 |
+| `changes.rollback` | 撤销已执行的变更 |
+| `settings.read` / `settings.write` | 看配置 / 改配置与密钥 |
+| `users.read` / `users.manage` | 看用户 / 增删用户、分配角色 |
+| `roles.manage` | 增删角色、改角色权限 |
+| `audit.read` | 看审计日志 |
+| `plugins.read` | 看插件与能力 |
+| `keys.read` / `keys.manage` | 看密钥清单 / 签发与吊销 |
+
+预设角色 `owner` 拿全量;`operator` 有 `changes.execute` 与 `keys.read`,没有 `keys.manage`;`viewer` 只有读。三者权限都可以改,`is_system` 只保证删不掉。
+
 ## 控制台鉴权
 
 `API_TOKENS` 留空 = 不鉴权:`by` 与 `tenant` 由调用方自报,只适合单机自用。每个响应都带 `X-Gwei-Auth: on|off`,把这个状态说出来——静默降级的安全开关不叫开关。
@@ -76,10 +118,32 @@
 配置后按 `token:tenant:actor:scope` 签发,逗号分隔多条:
 
 - `tenant` 写 `*` 表示不限租户(运维令牌);`scope` 取 `read` 或 `operate`(后者才能放行、否决、撤销)。
-- 请求带 `X-Gwei-Token` 头。`/api/health` 与 `/webhook/*` 不走这套:前者是存活探测,后者各自带共享密钥。
+- 请求带 `X-Gwei-Token` 头。`/api/health` 与 `/webhook/*` 不走这套:前者是存活探测,后者各自带共享密钥。同一个头也接受[密钥](#密钥):先查库里的密钥,查不到再回落到静态令牌。
 - 租户只能看到自己的账;请求里写别的租户是 403,不属于自己的单元是 404。
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
 - 令牌写错(段数不对、scope 非法、重复)拒绝启动:写错的令牌不能静默降级成"不鉴权"。
+
+## 密钥
+
+给外界的 agent 的凭据。与控制台令牌的区别是"是不是库里的对象":静态令牌写在 `API_TOKENS` 里,改一次要重启,一个部署就几条;密钥一把一个客户端,单独签发、单独吊销、各自带权限。
+
+- 明文形如 `gwei_...`,只在**签发那一次**的响应里出现;库里只有 sha256 与 `hint`(前 9 位…后 4 位),列表永远不回显明文。
+- 吊销立即生效:这把密钥的下一个请求就是 401,记录留着(谁签的、什么时候用过还看得见)。
+- 权限是[权限目录](#权限目录)里的原子字符串,空白名单是"什么都没有",不是"全都有"。
+- `tools` 是可选的白名单,在权限之上再收窄一层:权限够但这里没点名的工具不出现。
+- `expires_at` 非空就按时失效;读不懂的到期时间在签发时就是 422,不存进去等运行期猜。
+- 请求带一个看起来像密钥(`gwei_` 前缀)却查不到的串,当场 401——它不能落到"没配凭据就不鉴权"那一侧,否则吊销只是装饰。
+
+密钥不进环境变量:签发自 `/api/keys`,存在业务库 `api_keys` 表(`CHANGE_LEDGER_BACKEND=file` 时落在 `var/api-keys.json`,只配演示与离线调试)。
+密钥本身不是"鉴权开关":一个既没有 `API_TOKENS` 也没有用户的部署仍然是不鉴权的(单机自用),密钥只是让拿它的人成为某个身份。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/keys` | 密钥清单,需要 `keys.read`;不含明文 |
+| POST | `/api/keys` | 签发,需要 `keys.manage`;响应里带一次明文 |
+| DELETE | `/api/keys/{id}` | 吊销,需要 `keys.manage`;记录留着 |
+
+两条红线在代码里,不靠界面提示:签出去的权限不能超过自己手上的(没有 `settings.write` 的人签不出 `settings.write`);密钥的租户取自签发人,调用时盖过工具参数里的 `tenant`。
 
 ## 出口
 
@@ -174,8 +238,11 @@
 | GET | `/api/agent/exits` | 出口清单:沙箱里的 agent 能改什么、每个动作的参数名 |
 | POST | `/api/agent/exits/{name}` | 走一次出口;改世界的调用落成一个变更单元 |
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
-| POST | `/mcp` | MCP(streamable HTTP):`tools/list` 就是出口清单,`tools/call` 就是走一次出口;需令牌 |
-| GET | `/mcp` | 这个端点是什么、当前有哪些工具 |
+| POST | `/mcp` | MCP(streamable HTTP):`tools/list` 是按凭据收窄的出口清单,`tools/call` 就是走一次出口;需令牌或密钥 |
+| GET | `/mcp` | 这个端点是什么、这条凭据看得到哪些工具、它是什么身份 |
+| GET | `/api/keys` | 密钥清单(不含明文),需 `keys.read` |
+| POST | `/api/keys` | 签发密钥,明文只在这里出现一次,需 `keys.manage` |
+| DELETE | `/api/keys/{key_id}` | 吊销:记录留着,之后每个请求都是 401 |
 | POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503 |
 | POST | `/webhook/github/comment` | GitHub 评论事件的专用别名 |
 

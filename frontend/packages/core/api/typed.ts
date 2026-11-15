@@ -11,7 +11,7 @@
 import type { paths } from './schema'
 
 type Paths = paths
-type Method = 'get' | 'post' | 'put'
+type Method = 'get' | 'post' | 'put' | 'delete'
 
 /** 哪些路径支持某个方法。 */
 type RoutesWith<M extends Method> = {
@@ -121,5 +121,13 @@ export const api = {
       body: options?.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options?.signal,
     })
+  },
+
+  delete<P extends RoutesWith<'delete'>>(
+    path: P,
+    options?: CallOptions<P>,
+  ): Promise<ResponseOf<P, 'delete'>> {
+    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    return send<ResponseOf<P, 'delete'>>(url, { method: 'DELETE', signal: options?.signal })
   },
 }
