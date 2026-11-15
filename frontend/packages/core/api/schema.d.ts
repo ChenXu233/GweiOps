@@ -14,6 +14,8 @@ export interface paths {
         /**
          * List Exits
          * @description 出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。
+         *
+         *     与 `/mcp` 的 `tools/list` 同一条判据:这个身份够不着的工具不出现。
          */
         get: operations["list_exits_api_agent_exits_get"];
         put?: never;
@@ -390,6 +392,89 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Keys */
+        get: operations["list_keys_api_keys_get"];
+        put?: never;
+        /** Create Key */
+        post: operations["create_key_api_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Key Resources
+         * @description 这个部署里的资源(下游目标)。签密钥时给人挑,不是权限目录。
+         *
+         *     资源名由插件实例自己声明(`binding`),平台不认识全集,所以这里是"出现过
+         *     哪些",不是"允许哪些"。
+         */
+        get: operations["list_key_resources_api_keys_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Key Tools
+         * @description 能授予的工具:每个要什么权限、能作用在哪些资源上。
+         *
+         *     页面靠它画"资源 × 工具"那张表 —— 前端不再自己猜哪个工具属于哪个目标。
+         */
+        get: operations["list_key_tools_api_keys_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Key
+         * @description 吊销。之后这把密钥的每个请求都是 401,记录留着。
+         */
+        delete: operations["revoke_key_api_keys__key_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1246,6 +1331,190 @@ export interface components {
              */
             truncated: boolean;
         };
+        /**
+         * KeyCreateDTO
+         * @description 签一把。permissions 不给 = 空权限,一把只能认路的钥匙。
+         *
+         *     tools 是可选的第二层收窄:权限够、但这里没点名的工具不给。
+         */
+        KeyCreateDTO: {
+            /** Bindings */
+            bindings?: string[];
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /** Tools */
+            tools?: string[];
+        };
+        /**
+         * KeyDTO
+         * @description 一把密钥的事实。没有明文 —— 它只在签发那一次的响应里。
+         */
+        KeyDTO: {
+            /** Bindings */
+            bindings?: string[];
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Created By
+             * @default
+             */
+            created_by: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Used At
+             * @default
+             */
+            last_used_at: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /**
+         * KeyIssuedDTO
+         * @description 签发那一刻的响应:多了明文。之后再也拿不到。
+         */
+        KeyIssuedDTO: {
+            /** Bindings */
+            bindings?: string[];
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Created By
+             * @default
+             */
+            created_by: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /** Id */
+            id: string;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
+            /**
+             * Last Used At
+             * @default
+             */
+            last_used_at: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /** KeyListDTO */
+        KeyListDTO: {
+            /** Items */
+            items: components["schemas"]["KeyDTO"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * KeyResourceListDTO
+         * @description 这个部署里出现过的资源,以及每个资源上有哪些能力。
+         */
+        KeyResourceListDTO: {
+            /**
+             * Default
+             * @default
+             */
+            default: string;
+            /** Resources */
+            resources: components["schemas"]["ResourceDTO"][];
+        };
+        /**
+         * KeyToolDTO
+         * @description 一个可以被授予的工具:它要什么权限、能作用在哪些资源上。
+         */
+        KeyToolDTO: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Mutating
+             * @default false
+             */
+            mutating: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Permission
+             * @default
+             */
+            permission: string;
+            /** Resources */
+            resources?: string[];
+        };
+        /** KeyToolListDTO */
+        KeyToolListDTO: {
+            /** Tools */
+            tools: components["schemas"]["KeyToolDTO"][];
+        };
         /** LoginDTO */
         LoginDTO: {
             /** Email */
@@ -1401,6 +1670,16 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+        };
+        /**
+         * ResourceDTO
+         * @description 一个可选的下游目标。签密钥时给人挑,不是权限目录的一部分。
+         */
+        ResourceDTO: {
+            /** Capabilities */
+            capabilities?: string[];
+            /** Key */
+            key: string;
         };
         /** RoleCreateDTO */
         RoleCreateDTO: {
@@ -2340,6 +2619,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssueTimelineDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_keys_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyListDTO"];
+                };
+            };
+        };
+    };
+    create_key_api_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyIssuedDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_key_resources_api_keys_resources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyResourceListDTO"];
+                };
+            };
+        };
+    };
+    list_key_tools_api_keys_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyToolListDTO"];
+                };
+            };
+        };
+    };
+    revoke_key_api_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
