@@ -66,6 +66,7 @@ ui:
 ## 注册表
 
 - **发现路径**:`plugins/builtin/{adapters,agents,actions}/<plugin>/plugin.yaml`(两级),以及环境变量 `PLUGINS_EXTRA_DIRS`(冒号分隔)下的 `<pkg>/plugin.yaml`(单级,根会加入 `sys.path`)。
+- **装插件不必重建镜像**:把外部插件放进挂载目录(生产编排里是 `/plugins-extra`),再 `POST /api/plugins/rescan` 即可。启动镜像里的 `plugins/` 是内置的,外挂的是这个部署自己加的。
 - **发现与启用是两件事**:发现只读清单,记进 `available()`;启用的才 import、注册、进索引。`states()` 因此能列出**未启用**的插件——只列已加载的话,页面上没有地方把它们打开。
 - **当前的接入范围**:默认启用的来源适配器只有 GitHub(issue 与 PR)。GitLab、CNB 与 Alertmanager 随包提供但 `default_enabled: false`,是预留位;要用时打开清单里的开关或加进 `PLUGINS_ENABLED`。哪些插件默认开合以各清单为准,本文不维护第二份名单。
 - **导入**:模块名为 `plugins.builtin.<category>.<dir>.plugin` 或 `<pkg>.plugin`;类名来自 `class_name`。
