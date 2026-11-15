@@ -53,4 +53,4 @@ runtime:
 
 ## 7. 阶段
 
-D1–D5 见 [路线图](../plan/roadmap.md),顺序排在变更单元闭环之后。
+本层的分阶段拆解尚未进入 [工作分解](../plan/wbs.md);已落地的部分以 [运行时参考](../reference/runtime.md) 的 Harness 一节为准。

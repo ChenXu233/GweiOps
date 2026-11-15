@@ -21,11 +21,13 @@
 | `fix_suggestion_workflow` | 评论含 `@gwei` | 落库 → 配了 `HARNESS_COMMAND` 就整场交给 harness(它改工作区里的代码,效果仍从出口落成,通常是 `pr.open`),收口后在原话题上回一句结果;没配才退回 补丁建议 → `patch.generated` transform → `intent.propose` → 回评 |
 | `release_workflow` | 任何来源的合并事件(GitHub PR / GitLab MR / CNB PR) | 合并提交 → 发布意图(`compose.release`)→ 指定下游的变更单元 → 来源支持回评时回帖 |
 | `alert_triage_workflow` | 监控告警 firing | 归化信号 → 有 `incident.handle` 提供者就整场交给 agent,否则 `intent.propose` → 效果单元(没有补丁、没有回评) |
+| `scheduled_scan_workflow` | 清单里声明的周期(DBOS 调度器) | 跑到点的能力 → 有结果就转成 `source=scan` 的信号交给 `alert_triage_workflow`;没结果就什么都不做 |
 
 - 持久化:DBOS 状态在 Postgres 的 `dbos` schema;重启后未完成工作流从断点恢复。
 - 队列:`gwei-agents`,`partition_concurrency=4`;入队必须带 `queue_partition_key=tenant_slug`(缺 key 会静默入队,幂等由 `SetWorkflowID` 兜底)。
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
-- 两种来源归化成一个信号再入队:GitHub 载荷现场翻译,监控告警由 `/webhook/alertmanager` 解析。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
+- 周期巡检走 DBOS 自己的调度器,不在 `gwei-agents` 队列上:入队的定时执行不带分区键,调度与幂等由系统库里的 `sched-<调度名>-<点火时刻>` 保证。发现与校验规则见[插件系统](plugin-system.md#周期巡检)。
+- 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
 - PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到那个分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
 
@@ -35,12 +37,13 @@
 
 - 三项配置缺一就不发布,不猜部署参数:`RELEASE_PROJECT_DIR`(compose 项目目录)、`RELEASE_SERVICE`(服务名)、`RELEASE_IMAGE_TEMPLATE`(支持 `{repo}` / `{sha}` / `{number}`)。缺项时这一场只写事故报告说明缺什么,不产生变更单元。
 - `RELEASE_BASE_BRANCH` 非空时只发布合入该基线的 PR;空 = 任意基线。
-- 效果是 `compose.release`:把服务切到合并提交对应的镜像。compose 文件用 `${GWEI_RELEASE_IMAGE}` 取这次的目标镜像;插件先 `pull`,再 `up -d --no-deps`。
+- 效果是 `compose.release`:把服务切到合并提交对应的镜像。compose 文件用 `${GWEI_RELEASE_IMAGE}` 取这次的目标镜像;插件先 `pull`,再 `up -d --no-deps`。**读当前镜像的 `compose ps` 也要带上这个变量**:不带 compose 连项目都解析不出来,报的是"没有 image"而不是"没在跑"。
 - 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进第一类路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
 - 验证读服务当前镜像:容器在跑、镜像与目标一致才算成;不一致走回滚。
 - 发布效果打到的下游是 `RELEASE_BINDING`(默认 `local`),不是部署默认的 `DEFAULT_BINDING`;两者要分别配。
-- 这不是金丝雀:一次发布就是一个单元、一步切换。分阶段发布见[路线图](../plan/roadmap.md)的「金丝雀」。
+- 这不是金丝雀:一次发布就是一个单元、一步切换。分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
 - 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
+- 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB PR 的适配器是预留位,打开后走同一条链路。
 
 ## MCP
 
@@ -120,7 +123,7 @@
 ## Redis
 
 - 只承载可丢失状态;Redis 故障时降级放行,不阻塞主链路。
-- webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。监控告警按 `fingerprint + startsAt` 去重,键 `gwei:{tenant_slug}:alert-dedup:{...}`。
+- webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。信号按 `ref + occurrence` 去重(Alertmanager 就是 `fingerprint + startsAt`),键 `gwei:{tenant_slug}:signal-dedup:{...}`。
 - LLM 分析缓存:内容哈希键(前缀 `gwei:`),TTL 24 小时;失败文案不写缓存。
 - 幂等兜底始终是 DBOS workflow ID,不是 Redis。
 
@@ -141,13 +144,10 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查 |
-| GET | `/api/dashboard` | 面板聚合数据 |
-| GET | `/api/dashboard/pending` | 待处理项 |
-| GET | `/api/dashboard/overnight` | 夜间任务 |
-| GET | `/api/dashboard/canary` | 金丝雀状态 |
-| GET | `/api/issues`、`/api/issues/{id}` | Issue 列表 / 详情 |
+| GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它 |
+| GET | `/api/issues/{id}/timeline` | 议题时间线:三个状态 + 各轮次的分段证据(见下) |
+| POST | `/api/issues/{id}/continue` | 接着这条线再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/repos` | 仓库列表 |
-| GET | `/api/runs` | 执行记录(一次 AgentSession 一次执行,含起止与耗时) |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
@@ -165,11 +165,42 @@
 | GET | `/api/plugins/{name}/ui/{path}` | 插件 iframe 资产 |
 | POST | `/mcp` | MCP(streamable HTTP):`tools/list` 就是出口清单,`tools/call` 就是走一次出口;需令牌 |
 | GET | `/mcp` | 这个端点是什么、当前有哪些工具 |
-| POST | `/webhook/github` | GitHub Webhook(issues / issue_comment / pull_request);需 `GITHUB_APP_WEBHOOK_SECRET`,未配置返回 503 |
-| POST | `/webhook/github/comment` | GitHub 评论事件 |
-| POST | `/webhook/gitlab` | GitLab Webhook(合并请求);需 `GITLAB_WEBHOOK_SECRET` |
-| POST | `/webhook/cnb` | CNB Webhook(PullRequestEvent);需 `CNB_WEBHOOK_TOKEN` |
-| POST | `/webhook/alertmanager` | Alertmanager 告警;需 `ALERTMANAGER_WEBHOOK_TOKEN`,未配置返回 503 |
+| POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503 |
+| POST | `/webhook/github/comment` | GitHub 评论事件的专用别名 |
+
+### 议题时间线
+
+`GET /api/issues/{id}/timeline` 把一个议题的全部证据排成一条线:信号、诊断、意图、
+变更、验证、结论;一轮就是一次执行。聚合在 `engine/change_unit/timeline.py` 里做
+(纯函数,喂字典就能测),接口只取数。设计与界面约定见[议题工作台](../explanation/issue-workspace.md)。
+
+- **三个状态**(`state`):`waiting` / `running` / `landed`。七种结论的原词只留在
+  账本页,这里不再出现。优先级就是"谁在拦着":`blocked` 或 `unknown` 是等人;
+  事故开着没收口也算等人——它可能卡住了,而卡住不是"在跑";没有任何变更时才看
+  issue 自己的状态,因为平台从不改 `issues.status`,它一直是 OPEN。
+- **一段两层**:`summary` 一句人话,`detail` 是工程决策要点(理由、候选、参数、
+  能不能撤),常驻不折叠;`evidence` 是存下来的原文,默认收起。原文不加工,
+  截断了 `truncated` 为真。
+- **轮次带 diff**:`rounds[].diff` 是这一轮改了哪些文件、各增删多少行。行数由
+  平台在 harness 收工后从工作区数(`workspace.diff_stat`),不是 agent 自报——
+  自报的东西没法核。跨轮合并由读的人按路径累加。
+- **为什么没做、查了什么**:`intent.detail.not_executed` 带理由(工作流在建单元
+  之前写进 `intent.skipped`,那一刻才知道有没有提供者、有没有被扩展点拦下);
+  `verify.detail.rules` 是插件声明里的 `{query, expect}`,随单元落账。
+- **一个候选都没落下的一轮**:没有单元可读,意图记在事故的 `intent` 上,时间线
+  据此给一段"本打算做什么、为什么都没做",而不是只剩信号与诊断。
+- **一个变更属于哪个议题**:`intent.topic`(agent 从出口进来的变更自己记),
+  或者 `incident_id` 落在该议题某次执行上。两条路都认。
+- **没有变更也返回**:`rounds` 为空数组,不是 404——"还没发生"与"查不到"要分得开。
+- 账本与事故各只扫最近的 `LEDGER_SCAN` / `INCIDENT_SCAN` 条,超了把 `truncated`
+  置真,不假装全看过了。
+- 同一条判定也服务 `GET /api/board`(首页那张列表):列表说"在跑"、点进去说
+  "落了"是最难查的一类 bug,所以两处共用 `normalize_state`,不各写一份。
+- **继续改**是 `POST /api/issues/{id}/continue`(`{"instruction": "..."}`,≤500 字):
+  它把人的一句话排成一轮 `fix_suggestion_workflow`——和人在 GitHub 上 `@gwei`
+  走同一条路,所以"接着哪个分支改"由同一个 `_thread_for` 决定,不在这里另判。
+  人说的话进 signal,事故把它记下来,于是它就是时间线上的一个新轮次。
+  权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。
 
 ### 接口契约
 

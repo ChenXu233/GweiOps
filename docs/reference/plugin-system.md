@@ -34,7 +34,7 @@ hooks:
       handler: handle_hook
 ui:
   widgets:
-    - slot: dashboard.bento
+    - slot: issue-board.bento
       kind: metric
       span: 2
       title: 示例指标
@@ -48,7 +48,7 @@ ui:
 | 字段 | 语义 |
 | --- | --- |
 | `class_name` | `plugin.py` 中要实例化的类名 |
-| `triggers` | `type: event` 的 `events` 进入事件索引;`type: schedule` 只登记,当前没有调度循环 |
+| `triggers` | `type: event` 的 `events` 进入事件索引;`type: schedule` 在启动时装进 DBOS 调度器,见[周期巡检](#周期巡检) |
 | `capabilities` | 本插件提供的能力名 |
 | `tasks` | 能力名 → `execute_task` 任务名;缺省为能力名下划线形式 |
 | `capabilities_priority` | 同名能力的覆盖优先级,高者优先 |
@@ -63,6 +63,7 @@ ui:
 
 - **发现路径**:`plugins/builtin/{adapters,agents,actions}/<plugin>/plugin.yaml`(两级),以及环境变量 `PLUGINS_EXTRA_DIRS`(冒号分隔)下的 `<pkg>/plugin.yaml`(单级,根会加入 `sys.path`)。
 - **启用**:发现不等于加载。`PLUGINS_ENABLED`(逗号或冒号分隔)给定时按白名单加载;否则用 `PLUGINS_DISABLED` 排除;再退回清单里的 `default_enabled`(缺省 true)。未启用的插件不 import、不注册、不进索引。
+- **当前的接入范围**:默认启用的来源适配器只有 GitHub(issue 与 PR)。GitLab、CNB 与 Alertmanager 随包提供但 `default_enabled: false`,是预留位;要用时打开清单里的开关或加进 `PLUGINS_ENABLED`。哪些插件默认开合以各清单为准,本文不维护第二份名单。
 - **导入**:模块名为 `plugins.builtin.<category>.<dir>.plugin` 或 `<pkg>.plugin`;类名来自 `class_name`。
 - **隔离**:单个插件的清单解析、导入、实例化失败只跳过自身,计 `plugin_discovery_errors_total`;同名插件重复注册直接报错。
 - **多实例**:`register(manifest, instance, key=...)` 支持同一清单挂多个实例(每租户 / 每目标一个),实例键默认取清单名;同名清单内容不一致、实例键重复都直接报错。索引里存的是实例键,不是清单名。
@@ -72,6 +73,24 @@ ui:
 - **按目标解析**:传 `tenant=` / `binding=` 时改走 `registry.resolve()`,只做精确匹配,不跨目标回退;实例以 `tenant` / `binding` 属性声明自己服务谁,控制面能力用空值解析。诊断用 `registry.capability_bindings(capability)`。
 - **兼容入口**:`engine/shared/runtime.py` 的 `get_adapter()` / `get_sensor()` 先查注册表,注册表未加载时回退直连单例。
 - **Webhook 来源**:`registry.webhook_adapter(source)` 按实例的 `source` 属性选适配器;该实例必须声明 `webhook.receive`。来源重复直接报错。
+
+## 周期巡检
+
+清单里的 `type: schedule` 触发声明「到点跑哪个能力」,平台负责把它装进 DBOS 的调度器:
+
+```yaml
+capabilities: [scan.dependencies]
+triggers:
+  - type: schedule
+    every: 6h                  # 必须整除分钟 / 小时 / 天
+    capability: scan.dependencies
+```
+
+- **周期写成 `every`,不收 cron**。cron 读不出「多久一次」,也读不出「会不会漏」;换成秒数是平台的事。时长支持 `s` / `m` / `h` / `d` 与纯秒数,必须整除它所在那一档:不整除的「每 45 分钟」在任何按整点对齐的调度器上都会走成 45 → 15 → 45。写错的在发现阶段就被拒,计入 `plugin_discovery_errors_total`。
+- **能力必须同时列在 `capabilities` 里**,与效果声明同一条规矩。
+- **调度与幂等都由 DBOS 承担**:工作流 id 是 `sched-<调度名>-<点火时刻>`,重启后同一周期不会补跑。平台不自建循环。
+- **启动时对账**:每条周期单独装上(一条写坏不拖累其余);清单里已经没人声明的周期按前缀清理,不让一个退役的巡检继续每六小时跑一次。
+- **巡检结果是一个信号**,来源 `scan`;空结果表示这次没查出东西,不产生事故。形状不对(缺 `subject` / `title`)当场抛出,记成失败的巡检——一个写坏的巡检不该长得像平安无事。
 
 ## 事件总线
 
@@ -97,7 +116,8 @@ ui:
 
 ## UI 插槽与 iframe 页面
 
-- **widgets**:核心前端按 schema 渲染,插件不注入代码;当前 kind 为 metric / list,variant 为 default / green / yellow / red。
+- **槽位是核心声明的清单**([slots.py](../../engine/plugin_manager/slots.py)):`issue-board.bento`(首页议题板的卡片列)、`issue-detail.sidebar`(议题详情右栏)、`settings.plugins`(设置页底部)。插件在清单里写了别的槽位,加载期直接拒绝——槽位写错不该表现为"装了但页面上什么都没有"。
+- **widgets**:核心前端按 schema 渲染,插件不注入代码;当前 kind 为 metric / list,variant 为 default / green / yellow / red。页面侧统一用 `<PluginSlot slot="...">` 渲染,拉不到卡片时留一句提示,不把页面撑成空白。
 - **pages**:前端动态路由 `/plugins/<name>` 用 `<iframe sandbox="allow-scripts">` 加载;`GET /api/plugins/{name}/ui/{path}` 由 engine 提供资产,resolve 后必须仍在插件 ui 目录内。
 - 相关端点:`GET /api/plugins`、`GET /api/plugins/widgets`、`GET /api/metrics`。
 
@@ -143,7 +163,7 @@ config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GIT
 - `plugin_settings` 的表结构变过一次(加了 `tenant` 列),仓库没有迁移工具:`ensure_schema` 是 checkfirst,老库要先 `DROP TABLE plugin_settings;` 让它重建。
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
-- 现有使用者:`plugins/builtin/adapters/github-app/`。
+- 现有使用者:`plugins/builtin/adapters/github-app/`、`plugins/builtin/adapters/alertmanager/`。
 
 ## Webhook 适配器
 
@@ -153,7 +173,9 @@ Webhook 的字段名、事件名与验签方式都属于来源,不属于核心�
 - 清单声明 `webhook.receive`,注册表按来源找它(`registry.webhook_adapter(source)`);同一来源有两个提供者直接报错,不猜;
 - 适配器实现三个方法:`webhook_configured()`(密钥配没配)、`verify_webhook(headers, body)`(验签)、`parse_webhook(headers, body)`(投递 → 归一化事件);
 - 归一化事件只有一种说法,定义在 [engine/ingest/events.py](../../engine/ingest/events.py):`kind`(issue / comment / merge / ping)、`source`、`repo`、`number`、`merge_sha` 等。核心不认识任何一家的原始字段;
-- 入口是 `/webhook/<source>`。新增来源不加路由分支:装上适配器,投递就有地方去;没装则回 503,不回落到"默认适配器"——把 GitLab 的投递交给 GitHub,比拒绝更糟。
+- 入口只有一个:`POST /webhook/{source}`。新增来源不加路由分支:装上适配器,投递就有地方去;没装则回 503,不回落到"默认适配器"——把 GitLab 的投递交给 GitHub,比拒绝更糟。
+- 适配器声明 `produces`:`event`(默认,产 issue / comment / merge 这类事件)或 `signal`(产信号,直接进事故管线)。产信号的适配器实现 `parse_signals(headers, body) -> list[signal]`,入口按 `ref + occurrence` 逐条去重后入队;一条重复不拖累其余。内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.yaml)就是这一种,接 Caddy、云雀、Grafana 也照这个形状写,核心一行不改。
+- `config_hint` 是适配器告诉人"该去填哪个环境变量"的一个字符串;没配密钥时入口按它回 503,核心不维护来源清单。
 
 当前内置:`github-app`(issues / issue_comment / pull_request)、`gitlab`(合并请求)、`cnb`(PullRequestEvent)。GitLab/CNB 目前只做合并触发;回评与开 MR 需要各自的项目令牌与 API,等真要用时再在适配器里补能力,不先声明一个调不通的效果。
 
@@ -173,7 +195,7 @@ effects:
 ```
 
 - `undo.kind`:`retained`(下游保留旧状态)或 `symmetric`(撤销作用在同一对象上)。
-- `window.read` 是读取来源,不是时长;真窗口在运行期读出来,声明只说读什么。
+- `window.read` 是读取来源,不是时长;真窗口在运行期读出来,声明只说读什么。读出来有三种答案:有到期时间、凭旧状态存在(不设到期)、算不出到期(按次数或容量淘汰)。第三种照常可撤,只是别说过期时间;只有"完全读不到"才按不可逆处理。
 - 每条 verify 必须是 `{query, expect}`。
 - `execute.args` 是参数名清单,核心保留下来当 intent 提供者的菜单(见 [变更单元契约](../explanation/change-unit-contract.md)):点一个没声明过的能力,后台只会把它记成阻断。
 - 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
