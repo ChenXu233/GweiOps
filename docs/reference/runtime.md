@@ -1,6 +1,6 @@
 # 运行时参考
 
-> 状态:现行 | 日期:2026-11-02
+> 状态:现行 | 日期:2026-11-16
 > 读者:后端、运维
 > 口径:基于当前代码;阈值与 TTL 为代码常量,改动时同步本文。
 
@@ -92,6 +92,29 @@
 | 没有凭据 | 没配任何凭据的部署 | 不筛(单机自用) |
 
 同一套判据也用在出口(`GET /api/agent/exits` 与 `POST /api/agent/exits/{name}`):清单同样收窄,调越界的工具是 403。
+
+## 控制台助手
+
+界面右下角那个悬浮窗里的助手。它不和 MCP 重复:同一个出口、同一本账,只是换成浏览器里的一句话,并且把"改世界"这一步摆到人面前。
+
+```mermaid
+flowchart LR
+  UI["悬浮窗 AgentDock"] -->|"POST /api/console/session"| S["会话(进程内)"]
+  UI -->|"POST …/turn (SSE)"| L["bub.core.Agent"]
+  L -->|"工具调用"| C["engine/agent/console.py"]
+  C -->|"只读口"| R["registry.run_capability"]
+  C -->|"改世界:先问人"| P["待批调用"]
+  P -->|"允许"| T["run_tool → 闸门 → 账本"]
+```
+
+- **循环交给 bub**:`bub.core.Agent` 负责推一版、执行工具、再看结果;`engine/agent/loop.py` 只把它的模型接口翻到 litellm,因此助手沿用引擎已有的 `LLM_*` 配置。
+- **工具清单只有一份**:来自 `tool_specs(registry)`,与 `/mcp` 的 `tools/list` 同源;按会话身份过 `tool_visible` 三关后再由会话白名单收窄。
+- **会话只能越用越窄**:开会话时给出去的权限不超过这个人手上的;改会话时同样。
+- **允许**只对改世界的能力生效。一次对话的改动次数由 `MAX_ACTIONS` 收口,与租户级的出口小时上限(`AGENT_MAX_EXITS_PER_HOUR`)是两件事。
+
+> 会话是进程内的对象:引擎重启或闲置 `SESSION_TTL_SECONDS` 之后,这一段对话就散了。它不是账本,不落库。
+
+`/api/console/tools` 给的是这个身份**能授予**的工具全集,`POST /api/console/session` 里挑的就是它。
 
 ## 变更账本
 
@@ -263,6 +286,15 @@
 | POST | `/mcp` | MCP(streamable HTTP):`tools/list` 是按凭据收窄的出口清单,`tools/call` 就是走一次出口;需令牌或密钥 |
 | GET | `/mcp` | 这个端点是什么、这条凭据看得到哪些工具、它是什么身份 |
 | GET | `/api/keys` | 密钥清单(不含明文),需 `keys.read` |
+| POST | `/api/console/session` | 开一个助手会话;权限与资源不超过调用者自己的,需 `changes.read` |
+| GET | `/api/console/session/{id}` | 会话此刻的形状:手上的权限、已用改动次数、看得见的工具 |
+| PATCH | `/api/console/session/{id}` | 收窄权限 / 资源 / 工具白名单,或开关"改世界先问我" |
+| DELETE | `/api/console/session/{id}` | 关掉这个会话(进程内的对象随之消失) |
+| GET | `/api/console/session/{id}/tools` | 这个会话此刻看得见的工具 |
+| GET | `/api/console/session/{id}/pending` | 正在等允许的那一次改世界调用,没有就是 `null` |
+| POST | `/api/console/session/{id}/pending/{call_id}` | 点允许或不允许,需 `changes.execute` |
+| POST | `/api/console/session/{id}/turn` | 说一句话,拿回 `text/event-stream`(delta / tool / tool_result / error / done) |
+| GET | `/api/console/tools` | 这个身份能给助手用的工具全集(开面板时挑的就是它) |
 | POST | `/api/keys` | 签发密钥,明文只在这里出现一次,需 `keys.manage` |
 | DELETE | `/api/keys/{key_id}` | 吊销:记录留着,之后每个请求都是 401 |
 | POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503 |

@@ -397,3 +397,37 @@ class KeyToolDTO(BaseModel):
 
 class KeyToolListDTO(BaseModel):
     tools: list[KeyToolDTO]
+
+
+class ConsoleToolDTO(BaseModel):
+    """控制台助手看得见的一个工具。判据与密钥那一栏同一条,所以字段也就同一条。"""
+
+    name: str
+    description: str = ""
+    permission: str = ""
+    mutating: bool = False
+
+
+class ConsoleSessionDTO(BaseModel):
+    """一次对话的形状:谁在用、手上有什么、能做什么、已经改了几次。"""
+
+    id: str
+    tenant: str = ""
+    actor: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    bindings: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    confirm: bool = True
+    model: str = ""
+    binding: str = ""
+    actions: int = 0
+    max_actions: int = 0
+    created_at: float = 0
+    last_used_at: float = 0
+    available: list[ConsoleToolDTO] = Field(default_factory=list)
+
+
+class ConsolePendingDTO(BaseModel):
+    """正在等人点的那一次改世界调用。没有就是 null —— 别用空字符串表示"没有"。"""
+
+    pending: dict | None = None

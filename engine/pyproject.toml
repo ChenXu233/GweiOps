@@ -16,6 +16,8 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",
     "litellm>=1.89.0",
+    # 控制台助手的 agent loop。不自己手搓:工具执行、多步、事件流都由它给。
+    "bub>=0.6.1",
     "httpx>=0.28.0",
     "pyyaml>=6.0",
     "pydantic>=2.10.0",

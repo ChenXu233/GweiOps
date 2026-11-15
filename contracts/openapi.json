@@ -214,6 +214,141 @@
         "title": "ChangeRowDTO",
         "type": "object"
       },
+      "ConsolePendingDTO": {
+        "description": "正在等人点的那一次改世界调用。没有就是 null —— 别用空字符串表示\"没有\"。",
+        "properties": {
+          "pending": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending"
+          }
+        },
+        "title": "ConsolePendingDTO",
+        "type": "object"
+      },
+      "ConsoleSessionDTO": {
+        "description": "一次对话的形状:谁在用、手上有什么、能做什么、已经改了几次。",
+        "properties": {
+          "actions": {
+            "default": 0,
+            "title": "Actions",
+            "type": "integer"
+          },
+          "actor": {
+            "default": "",
+            "title": "Actor",
+            "type": "string"
+          },
+          "available": {
+            "items": {
+              "$ref": "#/components/schemas/ConsoleToolDTO"
+            },
+            "title": "Available",
+            "type": "array"
+          },
+          "binding": {
+            "default": "",
+            "title": "Binding",
+            "type": "string"
+          },
+          "bindings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "confirm": {
+            "default": true,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "created_at": {
+            "default": 0,
+            "title": "Created At",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "default": 0,
+            "title": "Last Used At",
+            "type": "number"
+          },
+          "max_actions": {
+            "default": 0,
+            "title": "Max Actions",
+            "type": "integer"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ConsoleSessionDTO",
+        "type": "object"
+      },
+      "ConsoleToolDTO": {
+        "description": "控制台助手看得见的一个工具。判据与密钥那一栏同一条,所以字段也就同一条。",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "mutating": {
+            "default": false,
+            "title": "Mutating",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permission": {
+            "default": "",
+            "title": "Permission",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ConsoleToolDTO",
+        "type": "object"
+      },
       "ContinueRoundDTO": {
         "description": "人要求接着这条线再改一轮。\n\n上限 500:事故只存 signal_title(String(512)),再长会被悄悄截断——宁可在这里\n就说\"太长了\",也不要让人写下的话在时间线上少一截。",
         "properties": {
@@ -247,6 +382,24 @@
           "workflow_id"
         ],
         "title": "ContinuedDTO",
+        "type": "object"
+      },
+      "DecisionDTO": {
+        "properties": {
+          "allow": {
+            "title": "Allow",
+            "type": "boolean"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "allow"
+        ],
+        "title": "DecisionDTO",
         "type": "object"
       },
       "ExitCallDTO": {
@@ -1511,6 +1664,134 @@
         "title": "ScopeValuesDTO",
         "type": "object"
       },
+      "SessionOpenDTO": {
+        "description": "开一个会话。三样都可以不填:不填就按这个身份能给的全部算。",
+        "properties": {
+          "binding": {
+            "default": "",
+            "title": "Binding",
+            "type": "string"
+          },
+          "bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bindings"
+          },
+          "confirm": {
+            "default": true,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "model": {
+            "default": "",
+            "title": "Model",
+            "type": "string"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "title": "SessionOpenDTO",
+        "type": "object"
+      },
+      "SessionPatchDTO": {
+        "properties": {
+          "bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bindings"
+          },
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permissions"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "title": "SessionPatchDTO",
+        "type": "object"
+      },
       "SettingsDTO": {
         "properties": {
           "adminCount": {
@@ -1750,6 +2031,21 @@
           "kind"
         ],
         "title": "TimelineSegmentDTO",
+        "type": "object"
+      },
+      "TurnDTO": {
+        "properties": {
+          "message": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "TurnDTO",
         "type": "object"
       },
       "UserCreateDTO": {
@@ -2643,6 +2939,390 @@
           }
         },
         "summary": "Veto Change"
+      }
+    },
+    "/api/console/session": {
+      "post": {
+        "description": "开一个会话。签出去的权限不会超过调用者自己的。",
+        "operationId": "open_session_api_console_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionOpenDTO"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleSessionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Session"
+      }
+    },
+    "/api/console/session/{session_id}": {
+      "delete": {
+        "operationId": "close_session_api_console_session__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Close Session Api Console Session  Session Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Session"
+      },
+      "get": {
+        "operationId": "get_session_api_console_session__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleSessionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session"
+      },
+      "patch": {
+        "description": "收窄会话的权限、资源、工具,或者开关\"要不要人点\"。收窄不需要别人的批准,放宽不会越过这个人。",
+        "operationId": "patch_session_api_console_session__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPatchDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleSessionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Session"
+      }
+    },
+    "/api/console/session/{session_id}/pending": {
+      "get": {
+        "description": "正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。",
+        "operationId": "pending_api_console_session__session_id__pending_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsolePendingDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pending"
+      }
+    },
+    "/api/console/session/{session_id}/pending/{call_id}": {
+      "post": {
+        "description": "人点了允许或拒绝。允许之后才轮到出口判它能不能改世界 —— 两关都要过。",
+        "operationId": "decide_api_console_session__session_id__pending__call_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Decide Api Console Session  Session Id  Pending  Call Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide"
+      }
+    },
+    "/api/console/session/{session_id}/tools": {
+      "get": {
+        "description": "这个会话此刻看得见的工具。与 `/mcp` 的 `tools/list` 同一份事实来源。",
+        "operationId": "list_tools_api_console_session__session_id__tools_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Tools Api Console Session  Session Id  Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Tools"
+      }
+    },
+    "/api/console/session/{session_id}/turn": {
+      "post": {
+        "description": "说一句,拿回一条事件流(text/event-stream)。\n\n用 SSE 而不是 WebSocket:这是一问一答,断了就重说一句,不需要双向。",
+        "operationId": "turn_api_console_session__session_id__turn_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Turn"
+      }
+    },
+    "/api/console/tools": {
+      "get": {
+        "description": "这个身份能给出去的工具全集:开面板时挑的就是它,前端不自己编。",
+        "operationId": "available_tools_api_console_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Available Tools Api Console Tools Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Available Tools"
       }
     },
     "/api/health": {

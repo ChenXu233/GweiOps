@@ -18,6 +18,7 @@ from engine.api.routes.issues import router as issues_router
 from engine.api.routes.mcp import router as mcp_router
 from engine.api.routes.api_keys import router as api_keys_router
 from engine.api.routes.console import router as console_router
+from engine.api.routes.console_agent import router as console_agent_router
 from engine.api.routes.rbac import router as rbac_router
 from engine.api.routes.release_settings import router as release_settings_router
 from engine.api.routes.settings_scopes import router as settings_scopes_router
@@ -158,6 +159,7 @@ app.include_router(rbac_router)
 app.include_router(webhook_router)
 app.include_router(mcp_router)
 app.include_router(api_keys_router)
+app.include_router(console_agent_router)
 
 # 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。
 API_TOKENS = load_tokens(config.settings.api_tokens)

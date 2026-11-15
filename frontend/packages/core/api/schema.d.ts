@@ -300,6 +300,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/console/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Session
+         * @description 开一个会话。签出去的权限不会超过调用者自己的。
+         */
+        post: operations["open_session_api_console_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/session/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session */
+        get: operations["get_session_api_console_session__session_id__get"];
+        put?: never;
+        post?: never;
+        /** Close Session */
+        delete: operations["close_session_api_console_session__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Session
+         * @description 收窄会话的权限、资源、工具,或者开关"要不要人点"。收窄不需要别人的批准,放宽不会越过这个人。
+         */
+        patch: operations["patch_session_api_console_session__session_id__patch"];
+        trace?: never;
+    };
+    "/api/console/session/{session_id}/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pending
+         * @description 正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。
+         */
+        get: operations["pending_api_console_session__session_id__pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/session/{session_id}/pending/{call_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide
+         * @description 人点了允许或拒绝。允许之后才轮到出口判它能不能改世界 —— 两关都要过。
+         */
+        post: operations["decide_api_console_session__session_id__pending__call_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/session/{session_id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Tools
+         * @description 这个会话此刻看得见的工具。与 `/mcp` 的 `tools/list` 同一份事实来源。
+         */
+        get: operations["list_tools_api_console_session__session_id__tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/session/{session_id}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn
+         * @description 说一句,拿回一条事件流(text/event-stream)。
+         *
+         *     用 SSE 而不是 WebSocket:这是一问一答,断了就重说一句,不需要双向。
+         */
+        post: operations["turn_api_console_session__session_id__turn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/console/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Available Tools
+         * @description 这个身份能给出去的工具全集:开面板时挑的就是它,前端不自己编。
+         */
+        get: operations["available_tools_api_console_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -999,6 +1143,100 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * ConsolePendingDTO
+         * @description 正在等人点的那一次改世界调用。没有就是 null —— 别用空字符串表示"没有"。
+         */
+        ConsolePendingDTO: {
+            /** Pending */
+            pending?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ConsoleSessionDTO
+         * @description 一次对话的形状:谁在用、手上有什么、能做什么、已经改了几次。
+         */
+        ConsoleSessionDTO: {
+            /**
+             * Actions
+             * @default 0
+             */
+            actions: number;
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /** Available */
+            available?: components["schemas"]["ConsoleToolDTO"][];
+            /**
+             * Binding
+             * @default
+             */
+            binding: string;
+            /** Bindings */
+            bindings?: string[];
+            /**
+             * Confirm
+             * @default true
+             */
+            confirm: boolean;
+            /**
+             * Created At
+             * @default 0
+             */
+            created_at: number;
+            /** Id */
+            id: string;
+            /**
+             * Last Used At
+             * @default 0
+             */
+            last_used_at: number;
+            /**
+             * Max Actions
+             * @default 0
+             */
+            max_actions: number;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[];
+        };
+        /**
+         * ConsoleToolDTO
+         * @description 控制台助手看得见的一个工具。判据与密钥那一栏同一条,所以字段也就同一条。
+         */
+        ConsoleToolDTO: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Mutating
+             * @default false
+             */
+            mutating: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Permission
+             * @default
+             */
+            permission: string;
+        };
+        /**
          * ContinueRoundDTO
          * @description 人要求接着这条线再改一轮。
          *
@@ -1021,6 +1259,16 @@ export interface components {
             status: string;
             /** Workflow Id */
             workflow_id: string;
+        };
+        /** DecisionDTO */
+        DecisionDTO: {
+            /** Allow */
+            allow: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /**
          * ExitCallDTO
@@ -1797,6 +2045,49 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * SessionOpenDTO
+         * @description 开一个会话。三样都可以不填:不填就按这个身份能给的全部算。
+         */
+        SessionOpenDTO: {
+            /**
+             * Binding
+             * @default
+             */
+            binding: string;
+            /** Bindings */
+            bindings?: string[] | null;
+            /**
+             * Confirm
+             * @default true
+             */
+            confirm: boolean;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Permissions */
+            permissions?: string[] | null;
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+            /** Tools */
+            tools?: string[] | null;
+        };
+        /** SessionPatchDTO */
+        SessionPatchDTO: {
+            /** Bindings */
+            bindings?: string[] | null;
+            /** Confirm */
+            confirm?: boolean | null;
+            /** Permissions */
+            permissions?: string[] | null;
+            /** Tools */
+            tools?: string[] | null;
+        };
         /** SettingsDTO */
         SettingsDTO: {
             /** Admincount */
@@ -1958,6 +2249,11 @@ export interface components {
             summary: string;
         } & {
             [key: string]: unknown;
+        };
+        /** TurnDTO */
+        TurnDTO: {
+            /** Message */
+            message: string;
         };
         /** UserCreateDTO */
         UserCreateDTO: {
@@ -2473,6 +2769,297 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_session_api_console_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SessionOpenDTO"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsoleSessionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_api_console_session__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsoleSessionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_session_api_console_session__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_session_api_console_session__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionPatchDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsoleSessionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_api_console_session__session_id__pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsolePendingDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_api_console_session__session_id__pending__call_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tools_api_console_session__session_id__tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    turn_api_console_session__session_id__turn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    available_tools_api_console_tools_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
