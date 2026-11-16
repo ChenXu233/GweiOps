@@ -93,6 +93,8 @@ class PluginWidgetDTO(BaseModel):
 
 
 class PluginDTO(BaseModel):
+    """一个被发现过的插件。`enabled` 表示它此刻在不在流程里。"""
+
     name: str
     version: str
     type: str
@@ -100,6 +102,10 @@ class PluginDTO(BaseModel):
     capabilities: list[str] = []
     widgets: list[PluginWidgetDTO] = []
     pages: list[PluginPageDTO] = []
+    enabled: bool = False
+    instances: list[str] = []
+    reason: str = ""
+    error: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +233,7 @@ class TimelineSegmentDTO(BaseModel):
 
 
 class TimelineBranchDTO(BaseModel):
-    """话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。"""
+    """话题上此刻打开着的 PR(话题已开 PR 时返回它的分支信息)。没有就是没有,不编造分支。"""
 
     repo: str = ""
     head: str = ""
@@ -271,7 +277,7 @@ class IssueTimelineDTO(BaseModel):
     rounds: list[TimelineRoundDTO] = []
     truncated: bool = False
 
-# 等你做什么:钉在一条具体的变更单元上,不是一句"待处理"。
+# 等你做什么:每条都钉在具体的变更单元上
 IssueAction = Literal["approve", "investigate", ""]
 
 
@@ -291,7 +297,7 @@ class IssueCardDTO(BaseModel):
     waiting_since: str = ""
     updated_at: str = ""
     conclusion: str = ""
-    # 空串 = 还没有任何变更。空不是第七种结论,所以单独留在联合类型里。
+    # 空串 = 还没有任何变更
     verdict: Verdict | Literal[""] = ""
     undoable: bool = False
     undo_reason: str = ""

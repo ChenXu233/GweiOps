@@ -57,6 +57,21 @@ class EffectDecl:
         )
 
 
+@dataclass(frozen=True)
+class ScopeDecl:
+    """清单里声明的一块配置:插件要哪些键、从哪个前缀读。
+
+    进程内插件用自己的代码 `config.register_scope(...)` 声明,核心导入它之后才知道
+    它要什么;进程外插件没有代码可导入,声明只能落在清单里。两边要的东西是同一组
+    事实(字段名、前缀、必填与否),所以形状也照抄一份。
+    """
+
+    name: str
+    prefix: str = ""
+    required: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()
+
+
 SCHEDULE_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
@@ -126,7 +141,15 @@ class Manifest:
     version: str
     type: PluginType
     description: str
-    class_name: str
+    # 进程内插件的类名。进程外插件(endpoint 非空)不导入代码,可以省掉。
+    class_name: str = ""
+    # 进程外插件的 gRPC 地址(host:port)。声明留在清单里:控制台在进程没连上时
+    # 也能说明它是什么,加载期就能校验,两边走同一条注册路径。
+    endpoint: str = ""
+    # 实例服务哪个下游目标 / 哪个租户。进程内插件通常用实例属性声明,
+    # 进程外插件没有实例属性可读,声明只能落在清单里。
+    binding: str = ""
+    tenant: str = ""
     default_enabled: bool = True  # 部署未显式选择时是否加载;false 表示备选项
     triggers: list[dict[str, Any]] = field(default_factory=list)  # 原样保留,索引见下
     schedules: tuple[ScheduleDecl, ...] = ()  # triggers 里 type: schedule 的解析结果
@@ -138,6 +161,9 @@ class Manifest:
     ui_widgets: list[UiWidget] = field(default_factory=list)
     ui_pages: list[UiPage] = field(default_factory=list)
     effects: dict[str, EffectDecl] = field(default_factory=dict)
+    # 插件要的配置块。进程内插件在代码里注册;进程外插件只能在清单里说,
+    # 核心据此把 scope 注册进配置表并把值推下去。
+    scopes: dict[str, ScopeDecl] = field(default_factory=dict)
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -155,9 +181,19 @@ class Manifest:
         if not isinstance(raw, dict):
             raise ManifestError(f"{path}: 清单必须是 YAML 映射")
 
-        for key in ("name", "version", "type", "description", "class_name"):
+        for key in ("name", "version", "type", "description"):
             if not raw.get(key):
                 raise ManifestError(f"{path}: 缺少必填字段 {key}")
+        # 进程内插件要类名来实例化,进程外插件要地址来连。两个都没有就无从加载,
+        # 两个都给则是自相矛盾的两份实现,同样拒掉。
+        class_name = str(raw.get("class_name") or "").strip()
+        endpoint = str(raw.get("endpoint") or "").strip()
+        if not class_name and not endpoint:
+            raise ManifestError(f"{path}: 缺少必填字段 class_name(或进程外插件的 endpoint)")
+        if class_name and endpoint:
+            raise ManifestError(
+                f"{path}: class_name 与 endpoint 只能给一个"
+            )
         try:
             plugin_type = PluginType(raw["type"])
         except ValueError:
@@ -233,6 +269,7 @@ class Manifest:
             pages.append(UiPage(title=p["title"], entry=entry))
 
         effects = _parse_effects(path, raw.get("effects") or {})
+        scopes = _parse_scopes(path, raw.get("scopes") or {})
         schedules = _parse_schedules(
             path, list(raw.get("triggers") or []), list(raw.get("capabilities") or [])
         )
@@ -242,7 +279,10 @@ class Manifest:
             version=str(raw["version"]),
             type=plugin_type,
             description=raw["description"],
-            class_name=raw["class_name"],
+            class_name=class_name,
+            endpoint=endpoint,
+            binding=str(raw.get("binding") or ""),
+            tenant=str(raw.get("tenant") or ""),
             default_enabled=bool(raw.get("default_enabled", True)),
             triggers=list(raw.get("triggers") or []),
             schedules=schedules,
@@ -256,6 +296,7 @@ class Manifest:
             ui_widgets=widgets,
             ui_pages=pages,
             effects=effects,
+            scopes=scopes,
         )
 
 
@@ -288,7 +329,7 @@ def _parse_schedules(
 ) -> tuple[ScheduleDecl, ...]:
     """`triggers: [{type: schedule, every: 6h, capability: scan.dependencies}]`。
 
-    周期必须整除它所在的那一档(分钟 / 小时 / 天):不整除的"每 45 分钟"在
+    周期必须整除所在档位(分钟 / 小时 / 天):不整除的"每 45 分钟"在
     任何按整点对齐的调度器上都会走成 45 分钟、15 分钟、45 分钟。与其跑出一个
     看着像均匀的假象,不如在加载期说清楚。
     """
@@ -324,8 +365,40 @@ def _parse_schedules(
     return tuple(out)
 
 
+def _parse_scopes(path: Path, raw: Any) -> dict[str, ScopeDecl]:
+    """解析 scopes 块。形状不对即拒绝注册——写错的声明只会在第一次推配置时才炸。"""
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{path}: scopes 必须是映射(scope 名 -> 字段声明)")
+
+    out: dict[str, ScopeDecl] = {}
+    for name, spec in raw.items():
+        scope_name = str(name or "").strip()
+        if not scope_name:
+            raise ManifestError(f"{path}: scope 名不能为空")
+        if not isinstance(spec, dict):
+            raise ManifestError(f"{path}: scope {scope_name} 必须是映射")
+        required = spec.get("required") or []
+        optional = spec.get("optional") or []
+        for group, keys in (("required", required), ("optional", optional)):
+            if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+                raise ManifestError(f"{path}: scope {scope_name} 的 {group} 必须是字符串列表")
+        overlap = sorted(set(required) & set(optional))
+        if overlap:
+            raise ManifestError(
+                f"{path}: scope {scope_name} 的 {', '.join(overlap)} 同时在 required "
+                "与 optional 里:必填与可选只能挑一个"
+            )
+        out[scope_name] = ScopeDecl(
+            name=scope_name,
+            prefix=str(spec.get("prefix") or ""),
+            required=tuple(required),
+            optional=tuple(optional),
+        )
+    return out
+
+
 def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
-    """解析 effects 块。形状不对即拒绝注册——坏声明不该活到执行期。"""
+    """解析 effects 块。形状不对即拒绝注册。"""
     if not isinstance(raw, dict):
         raise ManifestError(f"{path}: effects 必须是映射")
 

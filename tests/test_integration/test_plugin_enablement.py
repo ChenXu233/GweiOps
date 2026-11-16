@@ -9,13 +9,10 @@ from engine.plugin_manager.registry import PluginRegistry, plugin_enabled
 
 PLUGIN_PY = textwrap.dedent(
     '''
-    from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+    from engine.plugin_manager.base import PluginBase
 
 
     class Demo(PluginBase):
-        def info(self):
-            return PluginInfo(name="demo", version="1", type=PluginType.ACTION, description="d")
-
         async def on_startup(self):
             pass
 

@@ -228,6 +228,8 @@ function quotaPercent(item: QuotaItem): number {
 const scopes = ref<Scope[]>([])
 const saving = ref<string | null>(null)
 const scopeErrorText = ref('')
+// 值存下来了,但配置推送失败(进程外插件靠核心推配置)
+const pushWarning = ref('')
 const drafts = reactive<Record<string, Record<string, string>>>({})
 const savedScope = ref<string | null>(null)
 
@@ -241,7 +243,7 @@ function draftValue(scope: string, field: string): string {
   return drafts[scope]?.[field] ?? ''
 }
 
-// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 这种前缀。
+// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 前缀。
 function friendly(raw: string): string {
   return raw.replace(/^API error:\s*\d{3}\s*/, '').trim()
 }
@@ -273,15 +275,21 @@ async function onSave(name: string) {
   if (!Object.keys(values).length) return
   saving.value = name
   scopeErrorText.value = ''
+  pushWarning.value = ''
   try {
-    await SettingsScopesApi.put(name, values)
+    const saved = (await SettingsScopesApi.put(name, values)) as unknown as {
+      push_error?: string
+    }
     drafts[name] = {}
     savedScope.value = name
+    // 值存下了,但插件手里还是旧配置:这不是保存失败,也不能只说"已保存"
+    pushWarning.value = saved?.push_error || ''
     await loadScopes()
     setTimeout(() => {
       if (savedScope.value === name) savedScope.value = null
     }, 2000)
   } catch (e) {
+    pushWarning.value = ''
     scopeErrorText.value = friendly(e instanceof Error ? e.message : String(e))
   } finally {
     saving.value = null
@@ -733,6 +741,13 @@ const sections = computed(() => {
             </button>
             <span v-if="savedScope === s.name" class="text-[11.5px] text-ink-faint">已保存</span>
           </div>
+        </div>
+
+        <div
+          v-if="pushWarning"
+          class="mx-5 my-3 rounded-card border border-amber/30 bg-amber/5 px-3 py-2 text-[12px] text-ink-soft"
+        >
+          已存下,但没推给插件:{{ pushWarning }}
         </div>
 
         <div

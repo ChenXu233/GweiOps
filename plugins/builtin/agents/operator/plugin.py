@@ -20,7 +20,7 @@ from typing import Any, Optional
 from engine.agent import ToolCall, run_tool, tool_specs
 from engine.change_unit import create_ledger
 from engine.llm.client import LLMService
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 # 一次事故最多几次出口调用。够它看两眼看一步再收尾,又不会把账单跑飞。
 DEFAULT_MAX_EXITS = 8
@@ -49,15 +49,6 @@ class OperatorAgent(PluginBase):
         self.max_exits = max_exits
         self.binding = ""
         self.tenant = ""
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="operator",
-            version="0.1.0",
-            type=PluginType.AGENT,
-            description="带出口的值班 agent",
-            capabilities=["incident.handle"],
-        )
 
     async def on_startup(self) -> None:
         pass

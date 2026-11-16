@@ -5,6 +5,10 @@
 与 `read_scope`(read / operate)。没声明的默认 never——没写的就不出去。
 
 值存在业务库,改了就生效,重启不丢。
+
+改完配置会**推给插件**:进程外插件读不到核心的环境变量与库,值只能由核心送过去。
+推失败不让这次写入失败(值已经存下了),但会如实写在错误里——插件手里是旧配置,
+这件事不能悄悄过去。
 """
 
 from __future__ import annotations
@@ -143,7 +147,7 @@ def _explain(exc: ValidationError, scope_name: str, tenant: str) -> str:
 async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> dict:
     require(request, "settings.write")
     if config.get_scope(scope_name) is None:
-        raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
+        raise HTTPException(status_code=404, detail=f"没有配置 scope: {scope_name}")
     values = {str(key): str(value) for key, value in body.values.items()}
     if not values:
         raise HTTPException(status_code=400, detail="没有要写入的值")
@@ -182,22 +186,41 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
         "scope": scope_name,
         "set": sorted(stored),
         "missing": config.validate_scope(scope_name, tenant),
+        "push_error": await _push_to_plugins(scope_name),
     }
+
+
+async def _push_to_plugins(scope_name: str) -> str:
+    """把改完的值推给声明了该 scope 的插件。返回失败说明(空 = 都推到了)。
+
+    只推相关的插件:改一项配置不该让所有插件的连接都抖一下。插件没实现
+    `configure` 就什么都不做——它自己读得到配置表。
+    """
+    from engine.plugin_manager.registry import registry
+
+    try:
+        failures = await registry.push_config(scope_name)
+    except Exception as e:  # noqa: BLE001 - 值已经存下了,推失败只是它还没生效
+        logger.warning("配置 %s 没推给插件: %s", scope_name, e, exc_info=True)
+        return f"没推给插件:{e}"
+    if not failures:
+        return ""
+    return ";".join(f"{name}: {reason}" for name, reason in sorted(failures.items()))
 
 
 @router.delete("/api/settings/scopes/{scope_name}/{key}")
 async def delete_value(scope_name: str, key: str, request: Request) -> dict:
-    """删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。"""
+    """删掉一个键。删掉的是租户覆盖值,读的时候落回公共值——不是落空。"""
     require(request, "settings.write")
     if config.get_scope(scope_name) is None:
-        raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
+        raise HTTPException(status_code=404, detail=f"没有配置 scope: {scope_name}")
     tenant = tenant_scope(request, None) or ""
 
     removed = await create_settings_store().delete(scope_name, key, tenant=tenant)
     if not removed:
         raise HTTPException(
             status_code=404,
-            detail=f"{scope_name} 上没有这个键: {key}"
+            detail=f"{scope_name} 上没有键: {key}"
             + (f"(租户 {tenant})" if tenant else "(公共)"),
         )
     config.forget(scope_name, key, tenant)
@@ -207,4 +230,6 @@ async def delete_value(scope_name: str, key: str, request: Request) -> dict:
         "removed": key,
         "set": sorted(config.stored(scope_name, tenant)),
         "missing": config.validate_scope(scope_name, tenant),
+        # 删掉一个键也要推:远端把"键不存在"与"键未改"分得开,前提是全量下发
+        "push_error": await _push_to_plugins(scope_name),
     }

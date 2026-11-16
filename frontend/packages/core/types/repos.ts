@@ -10,9 +10,8 @@ export type RepoStatus = Repo['status']
 export type TeamSettings = S['SettingsDTO']
 
 /**
- * 插件市场卡片。
- * 这不是接口形状,而是前端从清单算出来的展示模型:
- * author / price / installed 都是本地判断或占位,引擎不返回。
+ * 插件市场卡片:前端从清单 DTO 算出来的展示模型。`enabled` 来自引擎,
+ * author / price 是展示用占位(引擎没有市场与计价概念)。
  */
 export interface Plugin {
   id: string
@@ -20,7 +19,13 @@ export interface Plugin {
   description: string
   author: 'official' | 'community'
   price: number | null
-  installed: boolean
+  enabled: boolean
+  reason: string
+  error: string
+  instances: string[]
+  version: string
+  type: string
+  capabilities: string[]
   /** 插件声明了 iframe 页面时的页面标题(用于"打开页面"入口) */
   pageTitle?: string
 }

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 
 def _limit(raw: Any, default: int = 20, ceiling: int = 200) -> int:
@@ -44,15 +44,6 @@ def _brief(row: Dict[str, Any]) -> Dict[str, Any]:
 
 class PlatformMcpAction(PluginBase):
     """只读能力:把平台记下的事交出去,不改任何东西。"""
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="platform-mcp",
-            version="0.1.0",
-            type=PluginType.ACTION,
-            description="把平台自己记下的事(账本、事故、话题)做成只读能力",
-            capabilities=["changes.read", "incidents.read", "topic.read"],
-        )
 
     async def on_startup(self) -> None:
         return None

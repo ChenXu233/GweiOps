@@ -7,4 +7,12 @@ capabilities:
 - issue.completeness_check
 - issue.duplicate_detection
 - issue.llm_analysis
+# 能力名 → execute_task 任务名。缺省会把点换成下划线(issue.label → issue_label),
+# 而实现里的方法叫 label——两套名字对不上时,能力看上去在那儿,调起来全是
+# "Unknown task"。声明就在这里说清楚,不让核心去猜。
+tasks:
+  issue.label: label
+  issue.completeness_check: check_completeness
+  issue.duplicate_detection: detect_duplicates
+  issue.llm_analysis: analyze
 class_name: SensorAgent

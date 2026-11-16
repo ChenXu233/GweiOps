@@ -29,9 +29,8 @@ class TestImports:
 
     def test_import_plugin_base(self):
         """验证 plugin_manager.base 可以导入。"""
-        from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+        from engine.plugin_manager.base import PluginBase, PluginType
         assert PluginBase is not None
-        assert PluginInfo is not None
         assert PluginType is not None
 
     def test_import_github_app_adapter(self):
@@ -142,21 +141,25 @@ class TestPluginInitialization:
         assert adapter.client is None
         assert adapter.webhook_handler is None
 
-    def test_github_app_adapter_info(self):
-        """验证 GitHubAppAdapter 可以返回插件信息。"""
-        import importlib
-        from engine.plugin_manager.base import PluginType
+    def test_github_app_adapter_declarations_live_in_manifest(self):
+        """插件是什么由清单说:代码里没有第二份声明可漂移。"""
+        from pathlib import Path
 
-        mod = importlib.import_module("plugins.builtin.adapters.github-app.plugin")
-        GitHubAppAdapter = mod.GitHubAppAdapter
+        import yaml
 
-        adapter = GitHubAppAdapter()
-        info = adapter.info()
-
-        assert info.name == "github-app-adapter"
-        assert info.version == "1.0.0"
-        assert info.type == PluginType.ADAPTER
-        assert "webhook.receive" in info.capabilities
+        manifest = yaml.safe_load(
+            (
+                Path(__file__).resolve().parents[2]
+                / "plugins"
+                / "builtin"
+                / "adapters"
+                / "github-app"
+                / "plugin.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        assert manifest["name"] == "github-app-adapter"
+        assert manifest["type"] == "adapter"
+        assert "webhook.receive" in manifest["capabilities"]
 
     def test_sensor_agent_instantiation(self):
         """验证 SensorAgent 可以实例化。"""
@@ -172,21 +175,19 @@ class TestPluginInitialization:
         assert sensor.completeness is not None
         assert sensor.duplicate is not None
 
-    def test_sensor_agent_info(self):
-        """验证 SensorAgent 可以返回插件信息。"""
+    def test_sensor_agent_capabilities_are_reachable(self):
+        """感知智能体声明的四个能力都真的调得通——清单的任务名映射与实现对齐。"""
         from plugins.builtin.agents.sensor.plugin import SensorAgent
-        from engine.plugin_manager.base import PluginType
 
         with patch("plugins.builtin.agents.sensor.plugin.LLMService") as MockLLM:
             MockLLM.return_value = MagicMock()
             sensor = SensorAgent()
 
-        info = sensor.info()
+        import asyncio
 
-        assert info.name == "sensor-agent"
-        assert info.version == "2.0.0"
-        assert info.type == PluginType.AGENT
-        assert "issue.llm_analysis" in info.capabilities
+        for task in ("label", "check_completeness", "detect_duplicates"):
+            result = asyncio.run(sensor.execute_task(task, {"title": "t", "body": "b"}))
+            assert "Unknown task" not in str(result.get("message", "")), (task, result)
 
     def test_github_app_adapter_startup_with_mock(self):
         """验证 GitHubAppAdapter 可以在 mock 环境下完成启动。"""

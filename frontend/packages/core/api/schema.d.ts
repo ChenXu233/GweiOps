@@ -673,10 +673,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Plugins */
+        /**
+         * List Plugins
+         * @description 发现到的全部清单,含未启用的。
+         */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescan Plugins
+         * @description 重扫插件目录:新出现的按决定启用,磁盘上没了的停用,已在跑且没变的不动。
+         */
+        post: operations["rescan_plugins_api_plugins_rescan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -700,6 +723,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins/{name}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Plugin */
+        post: operations["disable_plugin_api_plugins__name__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/{name}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Plugin
+         * @description 打开一个已发现但没启用的插件。没有清单就 404。
+         */
+        post: operations["enable_plugin_api_plugins__name__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plugins/{name}/ui/{file_path}": {
         parameters: {
             query?: never;
@@ -709,9 +769,7 @@ export interface paths {
         };
         /**
          * Plugin Ui Asset
-         * @description 服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。
-         *
-         *     安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
+         * @description 服务插件自带 UI 资产;resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
          */
         get: operations["plugin_ui_asset_api_plugins__name__ui__file_path__get"];
         put?: never;
@@ -1732,7 +1790,10 @@ export interface components {
             /** New Password */
             new_password: string;
         };
-        /** PluginDTO */
+        /**
+         * PluginDTO
+         * @description 一个被发现过的插件。`enabled` 表示它此刻在不在流程里。
+         */
         PluginDTO: {
             /**
              * Capabilities
@@ -1741,6 +1802,21 @@ export interface components {
             capabilities: string[];
             /** Description */
             description: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Instances
+             * @default []
+             */
+            instances: string[];
             /** Name */
             name: string;
             /**
@@ -1748,6 +1824,11 @@ export interface components {
              * @default []
              */
             pages: components["schemas"]["PluginPageDTO"][];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
             /** Type */
             type: string;
             /** Version */
@@ -3325,6 +3406,28 @@ export interface operations {
             };
         };
     };
+    rescan_plugins_api_plugins_rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_widgets_api_plugins_widgets_get: {
         parameters: {
             query?: {
@@ -3343,6 +3446,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginWidgetDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_plugin_api_plugins__name__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_plugin_api_plugins__name__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
                 };
             };
             /** @description Validation Error */

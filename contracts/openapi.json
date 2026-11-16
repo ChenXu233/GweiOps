@@ -1027,6 +1027,7 @@
         "type": "object"
       },
       "PluginDTO": {
+        "description": "一个被发现过的插件。`enabled` 表示它此刻在不在流程里。",
         "properties": {
           "capabilities": {
             "default": [],
@@ -1040,6 +1041,24 @@
             "title": "Description",
             "type": "string"
           },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "instances": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1051,6 +1070,11 @@
             },
             "title": "Pages",
             "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
           },
           "type": {
             "title": "Type",
@@ -1734,7 +1758,7 @@
         "type": "object"
       },
       "TimelineBranchDTO": {
-        "description": "话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。",
+        "description": "话题上此刻打开着的 PR(话题已开 PR 时返回它的分支信息)。没有就是没有,不编造分支。",
         "properties": {
           "head": {
             "default": "",
@@ -3543,6 +3567,7 @@
     },
     "/api/plugins": {
       "get": {
+        "description": "发现到的全部清单,含未启用的。",
         "operationId": "list_plugins_api_plugins_get",
         "responses": {
           "200": {
@@ -3561,6 +3586,27 @@
           }
         },
         "summary": "List Plugins"
+      }
+    },
+    "/api/plugins/rescan": {
+      "post": {
+        "description": "重扫插件目录:新出现的按决定启用,磁盘上没了的停用,已在跑且没变的不动。",
+        "operationId": "rescan_plugins_api_plugins_rescan_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rescan Plugins Api Plugins Rescan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rescan Plugins"
       }
     },
     "/api/plugins/widgets": {
@@ -3607,9 +3653,88 @@
         "summary": "List Widgets"
       }
     },
+    "/api/plugins/{name}/disable": {
+      "post": {
+        "operationId": "disable_plugin_api_plugins__name__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Plugin"
+      }
+    },
+    "/api/plugins/{name}/enable": {
+      "post": {
+        "description": "打开一个已发现但没启用的插件。没有清单就 404。",
+        "operationId": "enable_plugin_api_plugins__name__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Plugin"
+      }
+    },
     "/api/plugins/{name}/ui/{file_path}": {
       "get": {
-        "description": "服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。\n\n安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。",
+        "description": "服务插件自带 UI 资产;resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。",
         "operationId": "plugin_ui_asset_api_plugins__name__ui__file_path__get",
         "parameters": [
           {
@@ -4185,7 +4310,7 @@
     },
     "/api/settings/scopes/{scope_name}/{key}": {
       "delete": {
-        "description": "删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。",
+        "description": "删掉一个键。删掉的是租户覆盖值,读的时候落回公共值——不是落空。",
         "operationId": "delete_value_api_settings_scopes__scope_name___key__delete",
         "parameters": [
           {

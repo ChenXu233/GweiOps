@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from engine.change_unit import Effect, EffectNotApplied, Window
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 COMPOSE_FILES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
 LOCAL_BINDING = "local"
@@ -61,15 +61,6 @@ class DockerComposeAction(PluginBase):
         self.image_env = image_env
 
     # -- 清单元数据 -------------------------------------------------
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="docker-compose",
-            version="0.1.0",
-            type=PluginType.ACTION,
-            description="用 docker compose 执行可撤销的服务变更",
-            capabilities=["compose.scale", "compose.release"],
-        )
 
     async def on_startup(self) -> None:
         pass
@@ -193,7 +184,7 @@ class DockerComposeAction(PluginBase):
     ) -> list[dict[str, Any]]:
         """读这个项目现在跑着什么。
 
-        compose 文件多半用 `${GWEI_RELEASE_IMAGE}` 取镜像:不带那个变量,compose
+        compose 文件多半用 `${GWEI_RELEASE_IMAGE}` 取镜像:不带该变量,compose
         连项目都解析不出来,ps 直接报"没有 image"而不是报"没在跑"。所以发布路径
         必须把镜像变量一起带上,和 up / pull 用同一份环境。
         """
@@ -271,7 +262,7 @@ class DockerComposeAction(PluginBase):
     #
     # 发布是"一次外部改变",不是平台自己造的一条发布流水线:下游仍是 compose,
     # 平台只负责登记这次切换、读出切换前的镜像、并保证切得回来。
-    # 撤销是重新部署切换前那个镜像(对称操作),所以窗口是"项目还在就一直能撤"。
+    # 撤销是重新部署切换前镜像(对称操作),所以窗口是"项目还在就一直能撤"。
 
     async def _release(self, params: dict[str, Any]) -> dict[str, Any]:
         project_dir = str(params.get("project_dir") or "")

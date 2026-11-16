@@ -39,6 +39,7 @@ PERMISSIONS: dict[str, str] = {
     "roles.manage": "增删角色、改角色权限",
     "audit.read": "看审计日志",
     "plugins.read": "看插件与能力",
+    "plugins.write": "启停插件、重扫插件目录",
     "keys.read": "看密钥清单(明文永不回显)",
     "keys.manage": "签发与吊销密钥",
 }

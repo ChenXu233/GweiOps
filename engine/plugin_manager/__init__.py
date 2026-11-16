@@ -1,5 +1,5 @@
 # engine/plugin_manager/__init__.py
-from .base import PluginBase, PluginInfo, PluginType
+from .base import PluginBase, PluginType
 from .manifest import HookSubscription, Manifest, ManifestError
 from .registry import PluginRegistry, registry
 from .events import EventBus
@@ -11,7 +11,6 @@ hooks = HookPipeline(registry)
 
 __all__ = [
     "PluginBase",
-    "PluginInfo",
     "PluginType",
     "Manifest",
     "ManifestError",

@@ -8,7 +8,7 @@ import pathlib
 import pytest
 import yaml
 
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginType
 from engine.plugin_manager.manifest import EffectDecl, Manifest, ManifestError
 from engine.plugin_manager.registry import PluginRegistry
 
@@ -109,8 +109,6 @@ class Fake(PluginBase):
         self.binding = binding
         self.tenant = tenant
 
-    def info(self):
-        return PluginInfo(name="p", version="1", type=PluginType.ACTION, description="d")
 
     async def on_startup(self):
         pass

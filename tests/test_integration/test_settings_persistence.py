@@ -394,3 +394,146 @@ def test_plugin_config_reads_the_tenant_the_console_writes_to():
         assert cfg.validate() == []
     finally:
         config.apply_stored({})
+
+
+# ---------------------------------------------------------------------------
+# 改完配置要推给插件
+# ---------------------------------------------------------------------------
+
+
+def _swap_registry(monkeypatch, reg) -> None:
+    """换掉生产 registry 单例。
+
+    `engine.plugin_manager.registry` 被包属性遮住了(包 `__init__` 导出了
+    同名单例),所以只能从 sys.modules 拿到原模块。
+    """
+    import sys
+
+    module = sys.modules["engine.plugin_manager.registry"]
+    monkeypatch.setattr(module, "registry", reg)
+
+
+def test_putting_a_value_pushes_it_to_the_plugin(client, monkeypatch):
+    """进程外插件读不到核心的配置表,改完的值只能由核心送过去。"""
+    from engine.plugin_manager.manifest import Manifest, ScopeDecl
+    from engine.plugin_manager.registry import PluginRegistry
+
+    seen: list[tuple[str, dict, list]] = []
+
+    class Sink:
+        binding = "local"
+        tenant = ""
+
+        async def on_startup(self): ...
+        async def on_shutdown(self): ...
+        async def health_check(self) -> bool: return True
+        async def handle_event(self, event, data): return {}
+        async def execute_task(self, task, params): return {}
+
+        async def configure(self, scope, values, missing):
+            seen.append((scope, dict(values), list(missing)))
+
+    reg = PluginRegistry()
+    reg.register(
+        Manifest(
+            name="demo-bot",
+            version="1.0.0",
+            type="adapter",
+            description="d",
+            class_name="Sink",
+            capabilities=[],
+            scopes={"demo-bot": ScopeDecl(name="demo-bot", prefix="DEMO_BOT_")},
+        ),
+        Sink(),
+    )
+    _swap_registry(monkeypatch, reg)
+
+    body = client.put(
+        "/api/settings/scopes/demo-bot", json={"values": {"base_url": "https://x"}}
+    ).json()
+    assert body["push_error"] == "", body
+    assert seen and seen[-1][0] == "demo-bot"
+    assert seen[-1][1]["base_url"] == "https://x"
+
+
+def test_deleting_a_value_also_pushes(client, monkeypatch):
+    """删一个键也要推:远端要能分清"键不存在"与"键未改"。"""
+    from engine.plugin_manager.manifest import Manifest, ScopeDecl
+    from engine.plugin_manager.registry import PluginRegistry
+
+    seen: list[tuple[str, dict]] = []
+
+    class Sink:
+        binding = ""
+        tenant = ""
+
+        async def on_startup(self): ...
+        async def on_shutdown(self): ...
+        async def health_check(self) -> bool: return True
+        async def handle_event(self, event, data): return {}
+        async def execute_task(self, task, params): return {}
+
+        async def configure(self, scope, values, missing):
+            seen.append((scope, dict(values)))
+
+    reg = PluginRegistry()
+    reg.register(
+        Manifest(
+            name="demo-bot",
+            version="1.0.0",
+            type="adapter",
+            description="d",
+            class_name="Sink",
+            scopes={"demo-bot": ScopeDecl(name="demo-bot", prefix="DEMO_BOT_")},
+        ),
+        Sink(),
+    )
+    _swap_registry(monkeypatch, reg)
+
+    client.put("/api/settings/scopes/demo-bot", json={"values": {"base_url": "https://z"}})
+    resp = client.delete("/api/settings/scopes/demo-bot/base_url")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["push_error"] == ""
+    assert seen[-1][1].get("base_url") in (None, "")
+
+
+def test_a_push_failure_is_reported_but_does_not_undo_the_write(client, monkeypatch):
+    """值已经存下了;推失败只是它还没生效——两件事要分开说。"""
+    from engine.plugin_manager.manifest import Manifest, ScopeDecl
+    from engine.plugin_manager.registry import PluginRegistry
+
+    class Refusing:
+        binding = ""
+        tenant = ""
+
+        async def on_startup(self): ...
+        async def on_shutdown(self): ...
+        async def health_check(self) -> bool: return True
+        async def handle_event(self, event, data): return {}
+        async def execute_task(self, task, params): return {}
+
+        async def configure(self, scope, values, missing):
+            raise ValueError("我不认该 scope")
+
+    reg = PluginRegistry()
+    reg.register(
+        Manifest(
+            name="demo-bot",
+            version="1.0.0",
+            type="adapter",
+            description="d",
+            class_name="Refusing",
+            scopes={"demo-bot": ScopeDecl(name="demo-bot", prefix="DEMO_BOT_")},
+        ),
+        Refusing(),
+    )
+    _swap_registry(monkeypatch, reg)
+
+    body = client.put(
+        "/api/settings/scopes/demo-bot", json={"values": {"base_url": "https://y"}}
+    ).json()
+    assert body["set"] == ["base_url"]
+    assert "我不认该 scope" in body["push_error"]
+    # 存下来的值仍然读得到:推失败不等于写失败
+    assert config.get_scope_config("demo-bot")["base_url"] == "https://y"
