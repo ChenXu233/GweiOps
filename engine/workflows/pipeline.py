@@ -79,8 +79,40 @@ async def _analyze_with_cache(payload: dict) -> dict:
     )
 
 
+async def _find_issue(session, project_id, payload: dict) -> Issue | None:
+    """这个仓库里已有那条议题吗。
+
+    先按平台侧 id 找(能带 id 的来源最准);没有 id 或找不到时按议题号找 ——
+    议题号是仓库内唯一的,而它是所有来源都有的一栏。两条都不中就新建。
+    """
+    github_id = payload.get("issue_github_id")
+    if github_id is not None:
+        found = (
+            await session.execute(
+                select(Issue).where(
+                    Issue.project_id == project_id,
+                    Issue.github_id == github_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if found is not None:
+            return found
+    number = payload.get("issue_number")
+    if number is None:
+        return None
+    return (
+        await session.execute(
+            select(Issue).where(Issue.project_id == project_id, Issue.number == number)
+        )
+    ).scalar_one_or_none()
+
+
 async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> dict:
-    """按租户与 GitHub ID 幂等 upsert Tenant/Project/Issue,并新建 AgentSession。"""
+    """按 (租户, 仓库) 与平台侧 id 幂等 upsert Tenant/Project/Issue,并新建 AgentSession。
+
+    仓库的身份是 (租户, 来源, 仓库全名):数字 id 只在同一个来源里可比,没有 id
+    的来源(部分投递不带)不能拿它当身份,`github_id` 也可能根本不存在。
+    """
     async with async_session_factory() as session:
         try:
             tenant = (
@@ -91,31 +123,30 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
                 session.add(tenant)
                 await session.flush()
 
+            source = str(payload.get("source_adapter") or "") or "github"
             project = (
                 await session.execute(
                     select(Project).where(
                         Project.tenant_id == tenant.id,
-                        Project.github_id == payload["repo_github_id"],
+                        Project.source == source,
+                        Project.name == payload["repo_full_name"],
                     )
                 )
             ).scalar_one_or_none()
             if project is None:
                 project = Project(
                     tenant_id=tenant.id,
-                    github_id=payload["repo_github_id"],
+                    source=source,
+                    github_id=payload.get("repo_github_id"),
                     name=payload["repo_full_name"],
                 )
                 session.add(project)
                 await session.flush()
+            elif project.github_id is None and payload.get("repo_github_id") is not None:
+                # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
+                project.github_id = payload["repo_github_id"]
 
-            issue = (
-                await session.execute(
-                    select(Issue).where(
-                        Issue.project_id == project.id,
-                        Issue.github_id == payload["issue_github_id"],
-                    )
-                )
-            ).scalar_one_or_none()
+            issue = await _find_issue(session, project.id, payload)
             if issue is None:
                 issue = Issue(
                     github_id=payload["issue_github_id"],

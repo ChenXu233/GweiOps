@@ -9,9 +9,9 @@ export function makeLedgerEffect(capability: string, task: string) {
 }
 
 export const mockRepos: Repo[] = [
-  { id: '1', name: 'acme/api-gateway', icon: '📦', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
-  { id: '2', name: 'acme/auth-service', icon: '📦', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
-  { id: '3', name: 'acme/frontend', icon: '📦', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
+  { id: '1', name: 'acme/api-gateway', icon: '📦', source: 'github', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
+  { id: '2', name: 'acme/auth-service', icon: '📦', source: 'github', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
+  { id: '3', name: 'acme/frontend', icon: '📦', source: 'github', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
 ]
 
 /** 演示数据:形状照 GET /api/plugins 来,enabled 与 reason 都是引擎会真的给出的字段。 */

@@ -39,6 +39,26 @@ class RepoDTO(BaseModel):
     issueCount: int
     activeAgents: int
     lastSyncAt: str
+    # 这个仓库来自哪个平台(github / cnb / gitlab …):同名仓库在不同平台上不是同一个
+    source: str = "github"
+
+
+class WorkspaceDTO(BaseModel):
+    """一个工作区 = 一个租户。
+
+    界面上"工作区"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、
+    配置、密钥、成员都落在它里面,跨工作区不共享一条账。
+    """
+
+    slug: str
+    name: str
+    repos: int = 0
+    sources: list[str] = []
+
+
+class WorkspaceListDTO(BaseModel):
+    items: list[WorkspaceDTO] = []
+    current: str = ""
 
 
 class SettingsDTO(BaseModel):

@@ -34,8 +34,15 @@ export const IssuesApi = {
     }),
 }
 
+// 工作区 = 租户在控制台的名字。它是所有数据的边界:议题、账本、配置、密钥、
+// 成员都落在它里面。跨工作区不共享一条账,所以列表页永远从"在哪个工作区"开始。
+export const WorkspacesApi = {
+  list: () => api.get('/api/workspaces'),
+}
+
 export const ReposApi = {
-  list: () => api.get('/api/repos'),
+  // 不给 workspace 就是令牌那一个(没有令牌时是全部)
+  list: (workspace?: string) => api.get('/api/repos', { query: { workspace } }),
 }
 
 export const PluginsApi = {

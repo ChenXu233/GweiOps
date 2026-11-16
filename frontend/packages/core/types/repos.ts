@@ -29,3 +29,8 @@ export interface Plugin {
   /** 插件声明了 iframe 页面时的页面标题(用于"打开页面"入口) */
   pageTitle?: string
 }
+
+// 工作区:租户在控制台的名字。repo / source 只是列表上要说清的两件事,
+// 不是新的筛选维度——工作区本身就是筛选维度。
+export type Workspace = S['WorkspaceDTO']
+export type WorkspaceList = S['WorkspaceListDTO']

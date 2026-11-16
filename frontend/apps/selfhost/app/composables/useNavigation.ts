@@ -17,8 +17,11 @@ export interface NavGroup {
 }
 
 /**
- * 全站唯一的导航表:三组八项,命令面板也直接读它。
+ * 全站唯一的导航表:三组,命令面板也直接读它。
  * 顶栏不再放导航——功能一律进侧边,顶栏只留全局动作。
+ *
+ * 这些页面都在"当前工作区"之内:侧边栏最上面那个选择器换的是工作区,
+ * 换完还是同一张导航表。理由见[工作区模型](../../../../../docs/explanation/workspace-model.md)。
  *
  * 控制室、待放行、执行记录都不在这里了:它们问的都是"要我做什么 / 做了什么",
  * 答案在议题板的三段与议题详情的时间线里。页面文件还在,但没有入口——要不要
@@ -35,18 +38,18 @@ export const navGroups: NavGroup[] = [
   {
     title: '接入',
     items: [
-      { to: '/repos', label: '仓库', icon: 'repos', hint: '引擎订阅的仓库' },
+      { to: '/repos', label: '仓库', icon: 'repos', hint: '这个工作区里有哪些仓库' },
       { to: '/signals', label: '信号源', icon: 'signals', hint: '从哪儿接收外部信号' },
       { to: '/marketplace', label: '插件', icon: 'plugins', hint: '能力由插件提供' },
       { to: '/mcp', label: 'MCP 接入', icon: 'key-round', hint: '给外界的 agent 发密钥' },
     ],
   },
   {
-    title: '系统',
+    title: '工作区管理',
     items: [
       { to: '/observability', label: '指标观测', icon: 'observability', hint: '引擎与插件上报的实时指标' },
       { to: '/team', label: '成员', icon: 'users', hint: '谁在用、能做什么、做过什么' },
-      { to: '/settings', label: '设置', icon: 'settings', hint: '租户、通知与外观' },
+      { to: '/settings', label: '设置', icon: 'settings', hint: '这个工作区的接入、密钥与外观' },
     ],
   },
 ]

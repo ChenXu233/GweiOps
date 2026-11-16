@@ -321,7 +321,8 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它 |
 | GET | `/api/issues/{id}/timeline` | 议题时间线:三个状态 + 各轮次的分段证据(见下) |
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
-| GET | `/api/repos` | 仓库列表 |
+| GET | `/api/workspaces` | 工作区列表(= 租户):各有几个仓库、来自哪些平台;令牌声明了租户时只返回它自己那一个 |
+| GET | `/api/repos` | 仓库列表;`?workspace=<slug>` 收窄到一个工作区,不给就是令牌那一个(无令牌时是全部)。每行带 `source` |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |
 | POST | `/api/auth/register/start` | 发注册验证码 |

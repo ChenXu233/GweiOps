@@ -1492,6 +1492,11 @@
             "title": "Name",
             "type": "string"
           },
+          "source": {
+            "default": "github",
+            "title": "Source",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -2405,6 +2410,57 @@
           "code"
         ],
         "title": "VerifyDTO",
+        "type": "object"
+      },
+      "WorkspaceDTO": {
+        "description": "一个工作区 = 一个租户。\n\n界面上\"工作区\"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、\n配置、密钥、成员都落在它里面,跨工作区不共享一条账。",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repos": {
+            "default": 0,
+            "title": "Repos",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "WorkspaceDTO",
+        "type": "object"
+      },
+      "WorkspaceListDTO": {
+        "properties": {
+          "current": {
+            "default": "",
+            "title": "Current",
+            "type": "string"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "WorkspaceListDTO",
         "type": "object"
       }
     }
@@ -4601,7 +4657,26 @@
     },
     "/api/repos": {
       "get": {
+        "description": "这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。\n\n仓库要多到一张列表放不下时才需要按工作区筛,现在就是把\"哪些仓库\"说清楚:\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源。",
         "operationId": "list_repos_api_repos_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4616,6 +4691,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Repos"
@@ -5227,6 +5312,25 @@
           }
         },
         "summary": "Update User"
+      }
+    },
+    "/api/workspaces": {
+      "get": {
+        "description": "这个部署里的工作区(租户),以及每个里面有几个仓库、来自哪些平台。\n\n令牌声明了租户时只返回它自己那一个:看得见另外几个再让列表把它们藏起来,\n既没用又容易给出\"它在这儿但你不能点\"的坏体验。",
+        "operationId": "list_workspaces_api_workspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Workspaces"
       }
     },
     "/mcp": {

@@ -991,7 +991,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Repos */
+        /**
+         * List Repos
+         * @description 这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。
+         *
+         *     仓库要多到一张列表放不下时才需要按工作区筛,现在就是把"哪些仓库"说清楚:
+         *     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源。
+         */
         get: operations["list_repos_api_repos_get"];
         put?: never;
         post?: never;
@@ -1159,7 +1165,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Value
-         * @description 删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。
+         * @description 删掉一个键。删掉的是租户覆盖值,读的时候落回公共值——不是落空。
          */
         delete: operations["delete_value_api_settings_scopes__scope_name___key__delete"];
         options?: never;
@@ -1198,6 +1204,29 @@ export interface paths {
         post?: never;
         /** Delete User */
         delete: operations["delete_user_api_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspaces
+         * @description 这个部署里的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
+         *
+         *     令牌声明了租户时只返回它自己那一个:看得见另外几个再让列表把它们藏起来,
+         *     既没用又容易给出"它在这儿但你不能点"的坏体验。
+         */
+        get: operations["list_workspaces_api_workspaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2226,6 +2255,11 @@ export interface components {
             lastSyncAt: string;
             /** Name */
             name: string;
+            /**
+             * Source
+             * @default github
+             */
+            source: string;
             /** Status */
             status: string;
         };
@@ -2479,7 +2513,7 @@ export interface components {
         };
         /**
          * TimelineBranchDTO
-         * @description 话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。
+         * @description 话题上此刻打开着的 PR(话题已开 PR 时返回它的分支信息)。没有就是没有,不编造分支。
          */
         TimelineBranchDTO: {
             /**
@@ -2676,6 +2710,42 @@ export interface components {
              * @default
              */
             password: string;
+        };
+        /**
+         * WorkspaceDTO
+         * @description 一个工作区 = 一个租户。
+         *
+         *     界面上"工作区"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、
+         *     配置、密钥、成员都落在它里面,跨工作区不共享一条账。
+         */
+        WorkspaceDTO: {
+            /** Name */
+            name: string;
+            /**
+             * Repos
+             * @default 0
+             */
+            repos: number;
+            /** Slug */
+            slug: string;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: string[];
+        };
+        /** WorkspaceListDTO */
+        WorkspaceListDTO: {
+            /**
+             * Current
+             * @default
+             */
+            current: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceDTO"][];
         };
     };
     responses: never;
@@ -4260,7 +4330,9 @@ export interface operations {
     };
     list_repos_api_repos_get: {
         parameters: {
-            query?: never;
+            query?: {
+                workspace?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4274,6 +4346,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4788,6 +4869,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspaces_api_workspaces_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListDTO"];
                 };
             };
         };

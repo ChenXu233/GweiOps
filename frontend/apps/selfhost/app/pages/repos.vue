@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { useRepoList } from '@gwei/core/composables/useRepoList'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const { repos, loading, error, refresh } = useRepoList()
+// 仓库属于一个工作区:同一个仓库名在别的平台上不是同一份代码,所以列表上带来源。
+const { current } = useWorkspaces()
+
+const sourceLabel: Record<string, string> = {
+  github: 'GitHub',
+  cnb: 'CNB',
+  gitlab: 'GitLab',
+}
 
 const statusTone: Record<string, 'ok' | 'warn' | 'idle'> = {
   running: 'ok',
@@ -27,7 +36,7 @@ const statusChip: Record<string, string> = {
     <PageHeader
       eyebrow="REPOSITORIES"
       title="仓库"
-      description="引擎订阅的仓库，以及它当前盯着的执行体数量。"
+      :description="`${current?.name ?? '当前工作区'}里引擎订阅的仓库，以及它当前盯着的执行体数量。`"
     >
       <template #actions>
         <button class="btn-outline btn-sm" :disabled="loading" @click="refresh">
@@ -49,7 +58,7 @@ const statusChip: Record<string, string> = {
       v-else-if="!repos.length"
       icon="repos"
       title="还没有接入仓库"
-      hint="安装 GitHub 适配器后，把仓库绑定到当前租户。"
+      hint="装一个来源适配器后，把仓库绑定到当前工作区。"
     />
 
     <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -67,7 +76,12 @@ const statusChip: Record<string, string> = {
           <StatusPip :tone="statusTone[repo.status]" :label="statusLabel[repo.status]" />
         </div>
 
-        <h2 class="mt-4 break-all font-mono text-[13px] font-medium leading-snug">{{ repo.name }}</h2>
+        <div class="mt-4 flex items-baseline gap-2">
+          <h2 class="min-w-0 break-all font-mono text-[13px] font-medium leading-snug">{{ repo.name }}</h2>
+          <span class="shrink-0 rounded-md bg-well px-1.5 py-0.5 text-[10.5px] text-ink-faint">
+            {{ sourceLabel[repo.source] ?? repo.source }}
+          </span>
+        </div>
 
         <div class="mt-auto grid grid-cols-2 gap-3 border-t border-line/70 pt-3.5">
           <div>

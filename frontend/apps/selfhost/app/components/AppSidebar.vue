@@ -102,6 +102,11 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
       </button>
     </div>
 
+    <!-- 工作区:换它 = 换一整套议题、账本、配置与成员。永远在导航之上。 -->
+    <div class="shrink-0 pb-1.5" :class="rail ? 'px-3 lg:px-3.5' : 'px-3'">
+      <WorkspaceSwitcher :rail="rail" />
+    </div>
+
     <!-- 搜索 -->
     <div class="shrink-0 px-3" :class="rail ? 'lg:px-3.5' : ''">
       <button

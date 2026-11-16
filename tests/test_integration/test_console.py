@@ -54,3 +54,60 @@ class TestConsole:
         """控制室与执行记录两个页面没了,它们的聚合接口也不该还挂着。"""
         for path in ("/api/dashboard", "/api/dashboard/pending", "/api/runs", "/api/issues"):
             assert client.get(path).status_code == 404, path
+
+    def test_workspaces_list_carries_repo_counts(self, client):
+        """工作区列表带上每个里面有几个仓库、来自哪些平台——侧边栏靠它显示。"""
+        import uuid
+
+        import sqlalchemy as sa
+        from sqlalchemy.orm import Session
+
+        from engine.db.models import Project, Tenant
+
+        slug = f"ws-{uuid.uuid4().hex[:8]}"
+        engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
+        try:
+            with Session(engine) as db:
+                tenant = Tenant(slug=slug, name="多仓库工作区")
+                db.add(tenant)
+                db.flush()
+                for name, source in (("acme/web", "github"), ("acme/api", "cnb")):
+                    db.add(
+                        Project(
+                            tenant_id=tenant.id,
+                            source=source,
+                            name=name,
+                        )
+                    )
+                db.commit()
+        finally:
+            engine.dispose()
+
+        data = client.get("/api/workspaces").json()
+        row = next(w for w in data["items"] if w["slug"] == slug)
+        assert row["repos"] == 2
+        assert row["sources"] == ["cnb", "github"]
+
+    def test_repo_identity_is_source_plus_name(self, client):
+        """同一仓库名在两个来源上是两份数据:平台侧的数字 id 不是身份。"""
+        import uuid
+
+        import sqlalchemy as sa
+        from sqlalchemy.orm import Session
+
+        from engine.db.models import Project, Tenant
+
+        slug = f"ws-{uuid.uuid4().hex[:8]}"
+        name = f"acme/dup-{uuid.uuid4().hex[:6]}"
+        engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
+        try:
+            with Session(engine) as db:
+                tenant = Tenant(slug=slug, name="同名仓库")
+                db.add(tenant)
+                db.flush()
+                # 来源不同的两行,名字一样;id 都没有(有的来源根本不给)
+                db.add(Project(tenant_id=tenant.id, source="github", name=name))
+                db.add(Project(tenant_id=tenant.id, source="gitlab", name=name))
+                db.commit()
+        finally:
+            engine.dispose()
