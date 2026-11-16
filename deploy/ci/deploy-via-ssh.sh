@@ -47,7 +47,7 @@ echo "==> 连接 ${REMOTE_USER}@${REMOTE_HOST},部署 ${REPO_SLUG}:${TAG}"
 
 # 先把自包含的 compose 文件送到目标机。目标机上只放这一份编排,不叠加别的文件。
 "${SSH[@]}" 'mkdir -p /opt/gwei && base64 -d > /opt/gwei/docker-compose.deploy.yml' \
-  < "$ROOT/docker-compose.deploy.yml"
+  < "$ROOT/deploy/docker-compose.deploy.yml"
 
 # 部署脚本经 stdin 送过去;TAG / REPO_SLUG 用 bash %q 转义后写在最前面。
 {

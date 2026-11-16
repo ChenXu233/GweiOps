@@ -447,7 +447,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 一次部署 = 给 tag 在仓库页面点「部署到 dogfood」（`.cnb/tag_deploy.yml`），
 触发 `.cnb.yml` 的 `tag_deploy.dogfood`：目标机拉制品库里该 tag 的 engine/web 镜像，
 compose 切流，验 `/api/health`，失败自动回滚。目标机的编排是
-`docker-compose.deploy.yml`（自包含，拉现成镜像、不 build），凭据在目标机的
+[`deploy/docker-compose.deploy.yml`](../../deploy/docker-compose.deploy.yml)（自包含，拉现成镜像、不 build），凭据在目标机的
 `.env.prod`，SSH 与内网跳板配置在密钥仓库。
 
 目标机准备、密钥仓库字段与内网连通方式见[根 README · 部署 CI](../../README.md#部署-cidogfood)；

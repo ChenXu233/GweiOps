@@ -1,6 +1,6 @@
 # =============================================================================
 # Gwei — CI 部署编排（自包含，不叠加其它 compose 文件）
-# 使用方式：docker compose -f docker-compose.deploy.yml up -d
+# 使用方式：docker compose -f deploy/docker-compose.deploy.yml up -d
 #
 # 与 docker-compose.prod.yml 的区别：
 #   - prod.yml 在目标机本机 build 镜像（单机自用起步）；

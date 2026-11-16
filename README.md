@@ -68,12 +68,13 @@ pnpm dev:selfhost
 
 ### 目标机准备
 
-一台能跑 Docker + Compose 的 Linux 机器（腾讯内网机器也行）。首次在上面执行：
+一台能跑 Docker + Compose 的 Linux 机器（腾讯内网机器也行）。仓库里的编排是
+[deploy/docker-compose.deploy.yml](deploy/docker-compose.deploy.yml)，首次在上面执行：
 
 ```bash
 sudo mkdir -p /opt/gwei && sudo chown "$USER" /opt/gwei
 cd /opt/gwei
-# 把仓库里的 docker-compose.deploy.yml 放进来，再写 .env.prod（chmod 600）：
+# 把仓库里的 deploy/docker-compose.deploy.yml 放进来，再写 .env.prod（chmod 600）：
 #   POSTGRES_PASSWORD / API_TOKENS —— 必填
 #   CNB_REGISTRY / CNB_REGISTRY_USER / CNB_REGISTRY_TOKEN —— 拉制品库镜像用
 # 其余 LLM_* / *_WEBHOOK_* 等按运行时参考配置，详见 .env.prod.example。
