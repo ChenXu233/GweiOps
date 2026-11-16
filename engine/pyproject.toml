@@ -16,6 +16,10 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",
     "litellm>=1.89.0",
+    # 控制台助手的 agent loop(工具执行、多步、事件流)。
+    # `bub.builtin.model` 的 import 会拉进 `bub.builtin` 包级 __init__,那里要
+    # framework(typer / pluggy),所以必须带 [app] extras,否则 import 不到 BubModel。
+    "bub[app]>=0.6.1",
     "httpx>=0.28.0",
     "pyyaml>=6.0",
     "pydantic>=2.10.0",
@@ -32,6 +36,8 @@ dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
+    # 控制台助手的用例用内存 SQLite 当那份库,不碰部署里的 Postgres
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.pytest.ini_options]

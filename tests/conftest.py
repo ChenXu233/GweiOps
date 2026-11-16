@@ -93,3 +93,36 @@ def _dispose_async_engine():
             loop.close()
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _fake_bub(monkeypatch):
+    """没装 bub 时补一个最小替身:`engine/agent/console.py` 只用到
+    `bub.core.tools.Tool`(name/handler/description/parameters)。
+    """
+    try:
+        import bub.core.tools  # noqa: F401
+    except ImportError:
+        import sys
+        import types
+        from dataclasses import dataclass, field
+        from typing import Any, Callable
+
+        bub = types.ModuleType("bub")
+        core = types.ModuleType("bub.core")
+        tools = types.ModuleType("bub.core.tools")
+
+        @dataclass
+        class Tool:
+            name: str
+            handler: Callable[..., Any]
+            description: str = ""
+            parameters: dict = field(default_factory=dict)
+
+        tools.Tool = Tool
+        tools.model_tools = lambda items: list(items)
+        core.tools = tools
+        monkeypatch.setitem(sys.modules, "bub", bub)
+        monkeypatch.setitem(sys.modules, "bub.core", core)
+        monkeypatch.setitem(sys.modules, "bub.core.tools", tools)
+    yield

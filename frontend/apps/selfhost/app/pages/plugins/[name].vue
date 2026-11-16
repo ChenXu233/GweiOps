@@ -19,7 +19,7 @@ const notFound = ref(false)
 
 onMounted(async () => {
   try {
-    const plugins: PluginManifest[] = await $fetch('/api/plugins')
+    const plugins = await $fetch<PluginManifest[]>('/api/plugins')
     manifest.value = plugins.find(p => p.name === name.value) || null
     if (!manifest.value?.pages?.length) notFound.value = true
   } catch {

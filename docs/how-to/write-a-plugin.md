@@ -4,7 +4,7 @@
 > 读者:插件作者
 > 上游:[插件系统参考](../reference/plugin-system.md)、[变更单元契约](../explanation/change-unit-contract.md)
 
-插件与平台之间只有一份合同:`plugin.yaml`。本文按"能被加载 → 能接来源 → 能改世界 → 能被定时调用 → 会配置 → 怎么验"的顺序写;**字段的完整语义不在这里重复**,统一查[插件系统参考](../reference/plugin-system.md)。读之前先看一眼[平台架构](../explanation/platform-architecture.md)第 4 节:为什么直接改核心代码是被禁止的,以及三条合法的变更通道。
+插件与平台之间只有一份合同:`plugin.yaml`。本文按"能被加载 → 能接来源 → 能改世界 → 能被定时调用 → 会配置 → 怎么验"的顺序写;**字段的完整语义不在本文重复**,统一查[插件系统参考](../reference/plugin-system.md)。读之前先看一眼[平台架构](../explanation/platform-architecture.md)第 4 节:为什么直接改核心代码是被禁止的,以及三条合法的变更通道。
 
 ## 1 先选对形状
 
@@ -178,7 +178,7 @@ class MyPlugin:
 两种产出共用同一套验签、去重和 503 口径。适配器还要实现三个小方法:
 
 ```python
-source = "caddy"                  # 入口按这个名字分发
+source = "caddy"                  # 入口按 source 名分发
 produces = "signal"               # event | signal
 config_hint = "CADDY_WEBHOOK_TOKEN"   # 没配密钥时入口告诉你该填哪个变量
 

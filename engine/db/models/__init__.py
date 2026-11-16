@@ -19,6 +19,7 @@ from .registration import (
 )
 from .quota import QuotaUsage
 from .api_key import ApiKey
+from .console_session import ConsoleMessageRow, ConsoleSessionRow
 
 __all__ = [
     "Project",
@@ -43,4 +44,6 @@ __all__ = [
     "ExternalIdentity",
     "QuotaUsage",
     "ApiKey",
+    "ConsoleMessageRow",
+    "ConsoleSessionRow",
 ]

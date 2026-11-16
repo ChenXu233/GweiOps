@@ -1,12 +1,12 @@
 # GweiOps 文档
 
-> 状态:现行 | 日期:2026-11-02
+> 状态:现行 | 日期:2026-11-16
 > 读者:所有使用或修改 GweiOps 的人
 > 口径:只描述当前 HEAD;实现历史在 git,不在文档里。
 
 ## 先读哪份
 
-| 你想做什么 | 读这些 |
+| 你想做什么 | 读这些文档 |
 | --- | --- |
 | 第一次了解平台 | [目标](explanation/goals.md) → [平台架构](explanation/platform-architecture.md) |
 | 本地跑起来 | [根 README](../README.md) 的快速开始 |
@@ -14,6 +14,7 @@
 | 查当前运行行为 | [运行时参考](reference/runtime.md) → [插件系统](reference/plugin-system.md) |
 | 想知道一次自动变更的边界 | [变更单元契约](explanation/change-unit-contract.md) |
 | 改界面、对齐交互 | [议题工作台](explanation/issue-workspace.md) |
+| 用/改界面右下角的助手 | [运行时参考 · 控制台助手](reference/runtime.md#控制台助手) |
 | 提交 PR 前想知道 CI 会查什么 | [CI 校验](../CI-CHECKS.md) |
 | 看接下来做什么 | [工作分解](plan/wbs.md) → [Harness 执行层](explanation/harness-execution-layer.md) |
 

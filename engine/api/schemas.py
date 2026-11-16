@@ -403,3 +403,37 @@ class KeyToolDTO(BaseModel):
 
 class KeyToolListDTO(BaseModel):
     tools: list[KeyToolDTO]
+
+
+class ConsoleToolDTO(BaseModel):
+    """控制台助手可见的一个工具;判据与密钥那一栏相同。"""
+
+    name: str
+    description: str = ""
+    permission: str = ""
+    mutating: bool = False
+
+
+class ConsoleSessionDTO(BaseModel):
+    """一次会话:谁在用、权限与白名单、已用改动次数。"""
+
+    id: str
+    tenant: str = ""
+    actor: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    bindings: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    confirm: bool = True
+    model: str = ""
+    binding: str = ""
+    actions: int = 0
+    max_actions: int = 0
+    created_at: float = 0
+    last_used_at: float = 0
+    available: list[ConsoleToolDTO] = Field(default_factory=list)
+
+
+class ConsolePendingDTO(BaseModel):
+    """待批准的改世界调用;没有时为 null。"""
+
+    pending: dict | None = None

@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 SCOPES = ("read", "operate")
 
+# 只读身份可 POST 的例外:开会话本身不改世界,改不改由工具判——改世界的调用
+# 要界面上批准,只读身份也看不到那些工具。与放开读口是同一个理由,不是新入口。
+READ_ONLY_POST_PREFIXES = ("/api/console/session",)
 # 健康检查要能在没有凭据时访问:它是不带数据的存活探测。
 EXEMPT_PATHS = frozenset({"/api/health", "/openapi.json", "/docs", "/redoc"})
 # 登录接口本身,以及自带共享密钥的 webhook 入口
@@ -209,7 +212,13 @@ def make_middleware(tokens: dict[str, Actor]) -> Callable[..., Any]:
             actor = request.state.actor
             if actor is None:
                 return JSONResponse({"detail": "未登录或令牌无效"}, status_code=401)
-            if not is_mcp and request.method not in SAFE_METHODS and not actor.can_write:
+            starts_a_conversation = path.startswith(READ_ONLY_POST_PREFIXES)
+            if (
+                not is_mcp
+                and not starts_a_conversation
+                and request.method not in SAFE_METHODS
+                and not actor.can_write
+            ):
                 return JSONResponse(
                     {"detail": f"这个身份只读,不能 {request.method}"}, status_code=403
                 )

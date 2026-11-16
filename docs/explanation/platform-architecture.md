@@ -38,7 +38,7 @@ engine、前端、内置插件与 `proto/` 契约均以 **AGPL-3.0** 授权。
 现有 plugin_manager 只有 PluginBase 接口 + 无人调用的 PluginDispatcher,插件加载是
 硬编码 import——**尚无生态锁定成本,契约改动接近零成本;这是唯一便宜的窗口**。
 （决策时状态;现已由 registry/事件总线/Hook 落地,见 [插件系统参考](../reference/plugin-system.md)。）
-决策时曾认为七个内置智能体的 `triggers` 隐含一条完整事件编排链。这条链后来没有实现:依赖它的空壳插件已删除,推理侧改由 `intent.propose` 的提供者承担(见 [变更单元契约](change-unit-contract.md))。
+决策时曾认为七个内置智能体的 `triggers` 隐含一条完整事件编排链。该编排链后来没有实现:依赖它的空壳插件已删除,推理侧改由 `intent.propose` 的提供者承担(见 [变更单元契约](change-unit-contract.md))。
 
 v2 留下的真实骨架是:清单、注册表、能力通道、Hook、UI 插槽。
 
@@ -115,11 +115,11 @@ scopes: [...]          # 配置旋钮(沿用现有 Scope 规范)
 - **当前范围**:只接 GitHub 的 issue 与 PR。GitLab、CNB 与告警适配器是预留位(`default_enabled: false`),形状已定,打开开关即可用;适配器的写法见[写一个插件](../how-to/write-a-plugin.md#5-接一个来源webhook-适配器)。
 - **拉取型来源用 DBOS 的调度器,不自建循环**:同一周期只跑一次由系统库里的工作流 id 保证,重启不补跑。
 
-机制细节在[插件系统参考](../reference/plugin-system.md),这里只记边界与取舍。
+机制细节在[插件系统参考](../reference/plugin-system.md),本文只记边界与取舍。
 
 ## 5. 落地顺序
 
-先后本身就是决策,记在这里;做到哪一步以[工作分解](../plan/wbs.md)与代码为准,本文不维护状态。
+先后本身就是决策,记在本文;做到哪一步以[工作分解](../plan/wbs.md)与代码为准,本文不维护状态。
 
 1. 前端合并单应用 + `deployment_mode` 路由门控;
 2. 核心租户原语:租户表 + 上下文注入 + 查询隔离 + 队列分区(**先于插件 v2**,使事件与落库载荷从第一天带租户);

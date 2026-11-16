@@ -24,7 +24,7 @@
 
 **当前范围**:默认只启用 GitHub 的 issue 与 PR,统一成 `kind = issue / comment / merge` 三种事件。CNB 适配器已补齐议题 / 评论事件、`comment.create`、`pr.open` 与 `workspace_source`,但仍是预留位(`default_enabled: false`);GitLab 只做合并触发,告警适配器形状已定。要用时打开清单里的开关或加进 `PLUGINS_ENABLED`。
 
-三件"假设只有一个来源"的事已经收口:取代码、回评、评论触发词都按这条投递的 `source_adapter` 解析,核心没有默认来源。
+三件"假设只有一个来源"的事已经收口:取代码、回评、评论触发词都按投递自身的 `source_adapter` 解析,核心没有默认来源。
 
 调度器是另一回事:它只服务"只会被问、不会主动说"的来源(某些扫描结果只有 API、没有 webhook),以及 §3 的到点收口。
 
