@@ -111,7 +111,10 @@ tag 名与 `latest` 各打一份。拉取地址(`<org>/<repo>` 全小写):
 | 镜像 | 拉取地址 |
 |------|----------|
 | engine | `docker.cnb.cool/<org>/<repo>:<tag>` |
-| web | `docker.cnb.cool/<org>/<repo>-web:<tag>` |
+| web | `docker.cnb.cool/<org>/<repo>:<tag>-web` |
+
+两个镜像在同一个制品库仓库里,靠 tag 后缀区分。制品库按仓库授写权:另开一个
+`<repo>-web` 仓库会拿到 `requested access to the resource is denied`。
 
 本机拉取先登录:
 

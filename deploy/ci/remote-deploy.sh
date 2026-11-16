@@ -77,7 +77,7 @@ upsert() {
 }
 
 ENGINE_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}"
-WEB_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}-web:${TAG}"
+WEB_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}-web"
 upsert GWEI_ENGINE_IMAGE "$ENGINE_IMAGE"
 upsert GWEI_WEB_IMAGE "$WEB_IMAGE"
 # 让本次 compose 用到刚写入的镜像(而不是 .env.prod 里的旧值)。
