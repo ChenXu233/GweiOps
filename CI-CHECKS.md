@@ -18,6 +18,9 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 `UV_VERSION` 决定,默认 0.13.8),脚本因此能在干净的 `python:3.12` 里原样跑;
 本地已有 uv 时跳过安装。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
 
+装 uv 那一下带 curl 重试:这一段只有一次出网请求,构建节点到 astral.sh 的 TLS 偶发
+中断,单发失败会让整阶段红,而重跑同一提交就绿。这类红与代码无关,因此不值得去看 diff。
+
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
 是否与 `app.openapi()` 一致、再查迁移是不是一条链、再比 gRPC 桩,最后跑 `pytest tests/`。
 比对是 `tests/test_integration/test_openapi_contract.py` 同一件事的重复断言;单拎出来
