@@ -103,7 +103,7 @@ def _effect(payload: dict):
     """wire 上的效果 → Effect。
 
     远端拿到的必须是**与进程内同一个类型**,不然 window / verify 里
-    `effect.capability`、`effect.args` 这些写法一搬过来就全要改。
+    `effect.capability`、`effect.args` 等属性写法才能直接复用。
     """
     from engine.change_unit.model import Effect
 
