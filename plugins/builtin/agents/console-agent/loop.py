@@ -1,9 +1,10 @@
-# engine/agent/loop.py
-"""bub 的循环接上本机模型配置。
+# plugins/builtin/agents/console-agent/loop.py
+"""bub 的循环接上本机模型配置 —— 现在住在插件里。
 
-bub 自带模型入口(`BubModel` + `republic` 的 provider),这里不做消息翻译与
-补全摊平。本模块只提供三样:`provider:model` 规格、凭据来源、不可用时的报错。
-工具与权限见 `engine/agent/console.py`。
+bub 自带模型入口(`BubModel` + provider),这里不做消息翻译与补全摊平。
+本模块只提供三样:`provider:model` 规格、凭据来源、不可用时的报错。
+工具与权限不在这里:核心把 `bub_tools(session, registry, actor)` 递进来,
+插件只负责"每次运行现算工具清单",保证权限收窄后下一步即生效。
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from typing import Any
 
 from engine.shared.config import config
 
-try:  # 未装 bub 时此 import 失败,由路由报错
+try:  # 未装 bub 时此 import 失败,由调用方报错
     from bub.builtin.model import BubModel
     from bub.core import Agent
     from bub.core.tools import model_tools
@@ -48,7 +49,7 @@ def model_spec(model: str = "", provider: str = "") -> str:
 
 
 def client_options(spec: str) -> dict[str, Any]:
-    """该 provider 的凭据与端点,由 bub 交给 `republic.get_model`。"""
+    """该 provider 的凭据与端点,由 bub 交给 model 实现。"""
     _, _, name = spec.partition(":")
     options: dict[str, Any] = {"api_key": config.settings.llm_api_key or None, "model": name}
     base_url = (config.settings.llm_base_url or "").strip()
@@ -66,15 +67,18 @@ def missing_key() -> bool:
     return not (config.settings.llm_api_key or "").strip()
 
 
-def session_agent(*, session: Any, registry: Any, actor: Any = None):
-    """构造会话用的 bub agent。
+def build_agent(*, session: Any, registry: Any, actor: Any = None) -> Any:
+    """按会话造一个 bub agent。
 
     仅重写 `prepare_tools`:每次运行按 `actor` 当前权限现算工具清单(session 只是
     上限),权限收窄后下一步即生效,工具清单不固定在构造时。
+
+    没有 bub 时抛 `LookupError`,由调用方翻成人话——插件不替核心决定"要不要报错"。
     """
     if not HAS_BUB:  # pragma: no cover - 只在没装 bub 的部署里走到
-        raise RuntimeError(NOT_INSTALLED)
+        raise LookupError(NOT_INSTALLED)
 
+    # 闸门那半边在核心:会话、权限、待批、动作上限都在 `engine.agent.console`
     from engine.agent.console import MAX_STEPS, SYSTEM_PROMPT, bub_tools
 
     spec = model_spec()
@@ -98,8 +102,8 @@ __all__ = [
     "HAS_BUB",
     "NOT_CONFIGURED",
     "NOT_INSTALLED",
+    "build_agent",
     "client_options",
     "missing_key",
     "model_spec",
-    "session_agent",
 ]

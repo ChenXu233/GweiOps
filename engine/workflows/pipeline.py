@@ -168,6 +168,8 @@ async def _generate_patches_impl(payload: dict) -> list[dict]:
         result = await registry.run_capability(
             "patch.generate",
             {"title": payload["title"], "body": payload["body"], "file_path": ""},
+            tenant=payload.get("tenant_slug", ""),
+            workflow_id=DBOS.workflow_id,
         )
     except LookupError as e:
         logger.warning("没有补丁生成的提供者,本次不产出补丁:%s", e)
@@ -224,7 +226,12 @@ async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict
         if history:
             params["history"] = history
     try:
-        return await registry.run_capability("intent.propose", params)
+        return await registry.run_capability(
+            "intent.propose",
+            params,
+            tenant=payload.get("tenant_slug", ""),
+            workflow_id=DBOS.workflow_id,
+        )
     except LookupError:
         logger.info("No provider for intent.propose; falling back to local intent")
 
@@ -446,6 +453,9 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
             "binding": config.settings.default_binding,
             "idem_base": f"{DBOS.workflow_id}:incident",
         },
+        tenant=payload.get("tenant_slug", ""),
+        incident_id=DBOS.workflow_id,
+        workflow_id=DBOS.workflow_id,
     )
 
 

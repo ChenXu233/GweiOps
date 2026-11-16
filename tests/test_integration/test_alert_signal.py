@@ -270,7 +270,7 @@ def test_a_repeated_delivery_is_deduped(ingress, monkeypatch):
 def test_alert_signal_without_a_provider_produces_no_effect(monkeypatch):
     """以前这里会 KeyError(repo_full_name):监控信号根本没有仓库。"""
 
-    async def no_provider(capability, params):
+    async def no_provider(capability, params, **_ctx):
         raise LookupError(capability)
 
     monkeypatch.setattr(pipeline.registry, "run_capability", no_provider)
@@ -418,7 +418,7 @@ def test_alert_declaration_becomes_a_change_unit_in_the_ledger(tmp_path, monkeyp
     plugin_mod = importlib.import_module("plugins.builtin.agents.intent-builder.plugin")
     builder = plugin_mod.IntentBuilder()
 
-    async def run_capability(capability, params):
+    async def run_capability(capability, params, **_ctx):
         if capability != "intent.propose":
             raise LookupError(capability)
         return (await builder.propose(params)).to_dict()

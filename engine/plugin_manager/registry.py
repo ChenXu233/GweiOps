@@ -33,7 +33,8 @@ from typing import Any
 from engine.shared.metrics import metrics
 
 from .base import PluginBase
-from .manifest import Manifest
+from .context import PluginContext, context_for, execute
+from .manifest import Manifest, check_data_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,21 @@ def _register_scopes(manifest: Manifest) -> None:
     added = register_manifest_scopes(manifest)
     if added:
         logger.info("Plugin %s 声明了配置 scope: %s", manifest.name, ", ".join(added))
+
+
+def _check_data_declaration(manifest_path: Path, manifest: Manifest, module_name: str) -> None:
+    """声明了 `data.scopes` 的插件要过两道判据,不过就装不上。
+
+    - 外部插件(不在本仓库 `plugins.builtin.` 之下)一律不许声明:它的代码跑在
+      核心进程里,给了库通道就没有边界了。要读数据就走能力通道,由核心代查。
+    - `host`(跨租户)只发给内置插件。
+    """
+    check_data_scopes(
+        manifest_path,
+        manifest,
+        builtin=manifest.is_builtin(module_name),
+        external=bool(module_name) and not manifest.is_builtin(module_name),
+    )
 
 
 def plugin_enabled(name: str, default_enabled: bool = True) -> bool:
@@ -101,6 +117,11 @@ class PluginState:
     """单个清单此刻的状态:声明、启用与否、在哪些实例键上活着、原因。
 
     `error` 存注册成功但 on_startup 抛错的原因(比如密钥没配):实例还在,能力调不通。
+
+    启停是两层,状态里也分两层给出去:
+    - `platform_available`:这个部署提供不提供它(环境变量与清单默认决定);
+    - `tenant_enabled`:看这份状态的这个租户选没选它。
+    真的在跑 = 两者都为真。一个开关表达不了两件事,页面上必须分开说。
     """
 
     manifest: Manifest
@@ -108,6 +129,8 @@ class PluginState:
     instances: list[str] = field(default_factory=list)
     reason: str = ""
     error: str = ""
+    platform_available: bool = True
+    tenant_enabled: bool = True
 
 
 class PluginRegistry:
@@ -121,8 +144,12 @@ class PluginRegistry:
         self._effect_index: dict[str, list[_CapabilityProvider]] = {}
         self._hook_index: dict[str, list[tuple[int, str, Any]]] = {}
         self._available: dict[str, Discovered] = {}
-        # 运行期显式决定(清单名 -> 启停);由控制台写入,启动时从库里装回来
+        # 实例键 -> 来源(清单名或插件目录名)。数据声明的判据要按它分 builtin/外部
+        self._sources: dict[str, str] = {}
+        # 部署级的显式决定(清单名 -> 启停);由控制台写入,启动时从库里装回来
         self._decisions: dict[str, bool] = {}
+        # 租户级决定(租户 -> 清单名 -> 启停)。两层取交集,不做覆盖。
+        self._tenancy: dict[str, dict[str, bool]] = {}
         # 清单名 -> on_startup 的失败原因
         self._startup_errors: dict[str, str] = {}
         # 清单名 -> 配置推送失败原因。它不属于"起不来":插件在跑,
@@ -190,6 +217,15 @@ class PluginRegistry:
                 logger.error("Failed to load plugin at %s: %s", manifest_path, e)
                 continue
             _register_scopes(manifest)
+            try:
+                _check_data_declaration(manifest_path, manifest, module_name)
+            except Exception as e:
+                metrics.increment(
+                    "plugin_discovery_errors_total",
+                    {"path": str(manifest_path.parent.name)},
+                )
+                logger.error("Failed to load plugin at %s: %s", manifest_path, e)
+                continue
             if manifest.name in seen:
                 logger.error(
                     "Plugin %s 出现两次(%s 与 %s),只认第一个",
@@ -267,6 +303,7 @@ class PluginRegistry:
     def _record(self, manifest_path: Path, module_name: str) -> None:
         """读清单并登记为"发现到"。同名清单只认第一个,重复是配置错误。"""
         manifest = Manifest.from_yaml(manifest_path)
+        _check_data_declaration(manifest_path, manifest, module_name)
         existing = self._available.get(manifest.name)
         if existing is not None:
             raise ValueError(
@@ -276,11 +313,39 @@ class PluginRegistry:
         _register_scopes(manifest)
         self._available[manifest.name] = Discovered(manifest, manifest_path.parent, module_name)
 
-    def _enabled(self, manifest: Manifest) -> bool:
-        """运行期决定 > 白名单/黑名单 > 清单默认。"""
+    def _platform_available(self, manifest: Manifest) -> bool:
+        """部署级:这个东西这个部署提供不提供。显式决定 > 白名单 > 清单默认。"""
         if manifest.name in self._decisions:
             return self._decisions[manifest.name]
         return plugin_enabled(manifest.name, manifest.default_enabled)
+
+    def _enabled(self, manifest: Manifest) -> bool:
+        """部署件要不要装进进程。只看部署级——租户的选择不在这里判。
+
+        租户维度进不了"装不装":同一个插件实例服务所有租户,按某一户的选择决定
+        装不装,等于让第一户替所有人做决定。租户级决定在解析时判(`resolve`)。
+        """
+        return self._platform_available(manifest)
+
+    def set_tenancy(self, tenancy: dict[str, dict[str, bool]]) -> None:
+        """装回租户级决定(启动时由 lifespan 调用)。只记,不加载。"""
+        self._tenancy = {
+            str(tenant): {str(name): bool(value) for name, value in plugins.items()}
+            for tenant, plugins in (tenancy or {}).items()
+        }
+
+    def set_tenant_decisions(self, tenant: str, decisions: dict[str, bool]) -> None:
+        """运行期改一个租户的决定(控制台开关走这里)。"""
+        bucket = self._tenancy.setdefault(tenant or "", {})
+        for name, value in decisions.items():
+            bucket[str(name)] = bool(value)
+
+    def tenancy(self) -> dict[str, dict[str, bool]]:
+        return {tenant: dict(plugins) for tenant, plugins in self._tenancy.items()}
+
+    def tenant_enabled(self, name: str, tenant: str = "") -> bool:
+        """这个租户选没选它。没存过就是"没选过",跟随平台默认(即启用)。"""
+        return self._tenancy.get(tenant or "", {}).get(name, True)
 
     def _decision_reason(self, manifest: Manifest) -> str:
         if manifest.name in self._decisions:
@@ -318,15 +383,20 @@ class PluginRegistry:
 
         进程外插件(清单写了 `endpoint`)不导入任何代码,实例换成一个远程代理。
         """
+        # 来源 = 模块名。清单自己不知道它住在 builtin 目录还是外挂目录里,
+        # 数据声明的判据(外部插件不能读库)要用这个事实。
+        source = found.module_name
         if found.manifest.endpoint:
             from .grpc_loader import make_proxy
 
             instance = make_proxy(found.manifest, found.manifest.endpoint)
-            self.register(found.manifest, instance, plugin_dir=found.plugin_dir)
+            self.register(
+                found.manifest, instance, plugin_dir=found.plugin_dir, source=source
+            )
             return
         module = importlib.import_module(found.module_name)
         instance = getattr(module, found.manifest.class_name)()
-        self.register(found.manifest, instance, plugin_dir=found.plugin_dir)
+        self.register(found.manifest, instance, plugin_dir=found.plugin_dir, source=source)
 
     def plugin_dir(self, name: str) -> Path | None:
         """插件目录(含 plugin.yaml 的目录)。名字可以是实例键,也可以是清单名。"""
@@ -343,6 +413,7 @@ class PluginRegistry:
         instance: PluginBase,
         plugin_dir: Path | None = None,
         key: str | None = None,
+        source: str = "",
     ) -> None:
         """注册一个实例。
 
@@ -361,12 +432,21 @@ class PluginRegistry:
                     f"{manifest.name}: effect {capability} 未列入 capabilities,解析不到提供者"
                 )
 
+        # 数据声明照样要过判据:外部插件装得上、声明却不该被接受时,必须在这里拒。
+        # `source` 是它住的目录(或清单名),判据按"是不是本仓库 plugins.builtin"分。
+        if manifest.data_scopes:
+            builtin = manifest.is_builtin(source)
+            check_data_scopes(
+                manifest.name, manifest, builtin=builtin, external=bool(source) and not builtin
+            )
         # 清单声明的配置先进配置表:直接 register() 进来的实例(进程外代理、
         # 手工挂的替身)不经过发现流程,跳过登记后推下去的值永远是空的。
         _register_scopes(manifest)
         self._manifests.setdefault(manifest.name, manifest)
         self._instances[instance_key] = instance
         self._instance_names[instance_key] = manifest.name
+        # 它住哪由注册表记:数据声明的判据要按"是不是 builtin"分,而清单自己不知道
+        self._sources[instance_key] = source
         if plugin_dir is not None:
             self._dirs[instance_key] = plugin_dir
 
@@ -400,6 +480,7 @@ class PluginRegistry:
         """把一个实例从所有索引里摘掉。"""
         self._instances.pop(key, None)
         self._instance_names.pop(key, None)
+        self._sources.pop(key, None)
         self._dirs.pop(key, None)
         for index in (self._event_index,):
             for event, keys in list(index.items()):
@@ -419,9 +500,11 @@ class PluginRegistry:
     def _reset(self) -> None:
         self._startup_errors.clear()
         self._config_errors.clear()
+        self._tenancy.clear()
         self._manifests.clear()
         self._instances.clear()
         self._instance_names.clear()
+        self._sources.clear()
         self._dirs.clear()
         self._event_index.clear()
         self._capability_index.clear()
@@ -434,6 +517,10 @@ class PluginRegistry:
     # 运行期启停
     # ------------------------------------------------------------------
 
+    def set_decision(self, name: str, enabled: bool) -> None:
+        """记一条**部署级**决定。租户级请用 `set_tenant_decisions`。"""
+        self._decisions[name] = bool(enabled)
+
     def set_decisions(self, decisions: dict[str, bool]) -> None:
         """装回持久化的启停决定(启动时由 lifespan 调用)。只记,不加载。"""
         self._decisions = {str(k): bool(v) for k, v in decisions.items()}
@@ -441,38 +528,46 @@ class PluginRegistry:
     def decisions(self) -> dict[str, bool]:
         return dict(self._decisions)
 
-    def states(self) -> list[PluginState]:
-        """每个被发现清单的当前状态——控制台据此画"已启用/未启用"。"""
+    def states(self, tenant: str = "") -> list[PluginState]:
+        """每个被发现清单的当前状态——控制台据此画"已启用/未启用"。
+
+        `tenant` 给了就按这个租户算 `tenant_enabled` 与最终的 `enabled`:
+        真的在跑 = 平台提供了 且 这个租户选了它。
+        """
         out: list[PluginState] = []
         for name in sorted(self._available):
             manifest = self._available[name].manifest
-            instances = sorted(
-                key for key, owner in self._instance_names.items() if owner == name
-            )
-            out.append(
-                PluginState(
-                    manifest=manifest,
-                    enabled=bool(instances),
-                    instances=instances,
-                    reason=self._decision_reason(manifest),
-                    error=_errors_of(name, self._startup_errors, self._config_errors),
-                )
-            )
+            out.append(self._state_of(manifest, name, tenant))
         # 直接 register() 进来的(进程外代理、单测手工挂的)也列出来
         for name in sorted(set(self._manifests) - set(self._available)):
-            instances = sorted(
-                key for key, owner in self._instance_names.items() if owner == name
-            )
-            out.append(
-                PluginState(
-                    manifest=self._manifests[name],
-                    enabled=bool(instances),
-                    instances=instances,
-                    reason="直接注册(不在插件目录里)",
-                    error=_errors_of(name, self._startup_errors, self._config_errors),
-                )
-            )
+            out.append(self._state_of(self._manifests[name], name, tenant))
         return out
+
+    def _state_of(self, manifest: Manifest, name: str, tenant: str) -> PluginState:
+        instances = sorted(
+            key for key, owner in self._instance_names.items() if owner == name
+        )
+        # 直接 register 的(不在插件目录里)没有"部署是否提供"这回事:它就在进程里
+        platform_available = (
+            name not in self._available or self._platform_available(manifest)
+        )
+        tenant_enabled = self.tenant_enabled(name, tenant)
+        reason = (
+            self._decision_reason(manifest)
+            if name in self._available
+            else "直接注册(不在插件目录里)"
+        )
+        if not tenant_enabled:
+            reason = f"租户 {tenant} 关掉了它"
+        return PluginState(
+            manifest=manifest,
+            enabled=bool(instances) and tenant_enabled,
+            instances=instances,
+            reason=reason,
+            error=_errors_of(name, self._startup_errors, self._config_errors),
+            platform_available=platform_available,
+            tenant_enabled=tenant_enabled,
+        )
 
     def available(self) -> list[Manifest]:
         """发现到的清单,不管启没启用。"""
@@ -483,11 +578,16 @@ class PluginRegistry:
         return bool(self._available) or bool(self._manifests)
 
     async def enable(self, name: str) -> None:
-        """启用一个已发现的插件:导入、注册、启动。已经在跑就什么都不做。"""
+        """把一个插件装进进程:导入、注册、启动。已经在跑就什么都不做。
+
+        **这一步不写部署级决定**。装不装得起与"平台是否提供、租户是否启用"是
+        两件事:前者是运行期动作(控制台点一下、重扫一次),后者要写库。
+        混在一起会让任何一次启停都变成改全局配置——SaaS 上这就是一个租户替
+        所有人做决定。
+        """
         found = self._available.get(name)
         if found is None:
             raise LookupError(f"没有发现插件:{name}")
-        self._decisions[name] = True
         if name in self._manifests:
             return
         self._activate(found)
@@ -507,10 +607,9 @@ class PluginRegistry:
                 await self._push_config(key, instance)
 
     async def disable(self, name: str) -> None:
-        """停用一个插件:关掉它的实例,再从索引里摘掉。"""
+        """把插件摘出进程:关掉实例,再从索引里摘掉。同样不写任何决定。"""
         if name not in self._available:
             raise LookupError(f"没有发现插件:{name}")
-        self._decisions[name] = False
         await self._disable_now_async(name)
 
     def _disable_now(self, name: str) -> None:
@@ -627,8 +726,22 @@ class PluginRegistry:
         providers = self._capability_index.get(capability, [])
         if not providers:
             raise LookupError(f"No provider for capability: {capability}")
+        matches = self._matching(providers, tenant, binding)
+        if not matches and tenant:
+            # 能说到"是这个租户关掉了它",比一句 "No provider" 有用得多
+            stopped = sorted(
+                self._instance_names.get(p.key, "")
+                for p in providers
+                if self._instance_names.get(p.key, "") in self._stopped_for(tenant)
+            )
+            if stopped:
+                raise LookupError(
+                    f"能力 {capability} 在租户 {tenant!r} 上被关掉了:"
+                    f"{', '.join(n for n in stopped if n)};在插件页把它打开,"
+                    "或走别的目标"
+                )
         return self._choose(
-            self._matching(providers, tenant, binding),
+            matches,
             capability,
             tenant,
             binding,
@@ -638,14 +751,23 @@ class PluginRegistry:
     def _matching(
         self, providers: list[_CapabilityProvider], tenant: str, binding: str
     ) -> list[tuple[PluginBase, int]]:
-        """按 (租户, 目标) 过滤,保持优先级顺序;租户精确优先于共享。"""
+        """按 (租户, 目标) 过滤,保持优先级顺序;租户精确优先于共享。
+
+        租户级启停在这里过一遍:该租户明确关掉的插件不参与匹配。放在这一步,
+        而不是放在"装不装"那一步,是因为实例是所有租户共用的——按某一户的选择
+        决定装不装,等于让第一户替所有人做决定。
+        """
         exact: list[tuple[PluginBase, int]] = []
         shared: list[tuple[PluginBase, int]] = []
+        stopped = self._stopped_for(tenant)
         for provider in providers:
             instance = self._instances.get(provider.key)
             if instance is None:
                 continue
             if getattr(instance, "binding", "") != binding:
+                continue
+            owner = self._instance_names.get(provider.key, "")
+            if owner in stopped:
                 continue
             instance_tenant = getattr(instance, "tenant", "")
             if instance_tenant == tenant:
@@ -653,6 +775,14 @@ class PluginRegistry:
             elif instance_tenant == "":
                 shared.append((instance, provider.priority))
         return exact or shared
+
+    def _stopped_for(self, tenant: str) -> set[str]:
+        """该租户明确关掉的清单名。控制面(tenant="")不受租户决定影响。"""
+        if not tenant:
+            return set()
+        return {
+            name for name, enabled in self._tenancy.get(tenant, {}).items() if not enabled
+        }
 
     @staticmethod
     def _choose(
@@ -846,6 +976,9 @@ class PluginRegistry:
         *,
         tenant: str | None = None,
         binding: str | None = None,
+        actor: str = "",
+        incident_id: str = "",
+        workflow_id: str = "",
     ) -> dict:
         """执行一次能力调用。
 
@@ -853,6 +986,10 @@ class PluginRegistry:
         (租户, 目标) 精确解析,选不到直接抛,不回退到别的目标。
 
         任务名来自**被选中提供者**的清单,不是任意一个声明了同名能力的清单。
+
+        被选中的插件在这一步拿到 `ctx`:它服务哪个租户、在哪个资源上、谁让它做的、
+        以及它清单里声明过的数据级别。`ctx.data` 是一条按租户收口的会话,
+        插件不必也不该自己去连接库。
         """
         if tenant is None and binding is None:
             provider = self.best_capability_provider(capability)
@@ -868,7 +1005,16 @@ class PluginRegistry:
             if manifest
             else capability.replace(".", "_")
         )
-        return await provider.execute_task(task, params)
+        ctx = context_for(
+            tenant=str(getattr(provider, "tenant", "") or tenant or ""),
+            binding=str(getattr(provider, "binding", "") or binding or ""),
+            actor=actor,
+            scopes=manifest.data_scopes if manifest else (),
+            capability=capability,
+            incident_id=incident_id,
+            workflow_id=workflow_id,
+        )
+        return await execute(provider, task, params, ctx)
 
 
 # 生产用单例(app lifespan 调 discover/launch;runtime 与总线引用它)

@@ -13,6 +13,8 @@ function toPlugin(m: PluginManifestDTO): Plugin {
     author: 'official',
     price: null,
     enabled: m.enabled === true,
+    platform_available: m.platform_available !== false,
+    tenant_enabled: m.tenant_enabled !== false,
     reason: m.reason ?? '',
     error: m.error ?? '',
     instances: m.instances ?? [],

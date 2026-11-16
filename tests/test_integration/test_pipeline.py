@@ -286,9 +286,10 @@ class TestPipelineImpls:
             patches = await _generate_patches_impl({"title": "T", "body": "B"})
 
         assert [p["type"] for p in patches] == ["HOTFIX"]
-        run_capability.assert_awaited_once_with(
-            "patch.generate", {"title": "T", "body": "B", "file_path": ""}
-        )
+        # workflow_id 取自当前工作流上下文(不在工作流里跑时是 None),这里不钉死它
+        _args, kwargs = run_capability.await_args
+        assert _args == ("patch.generate", {"title": "T", "body": "B", "file_path": ""})
+        assert kwargs["tenant"] == ""
 
     @pytest.mark.asyncio
     async def test_generate_patches_does_not_fall_back_to_direct_import(self):

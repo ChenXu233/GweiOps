@@ -93,7 +93,12 @@ class PluginWidgetDTO(BaseModel):
 
 
 class PluginDTO(BaseModel):
-    """一个被发现过的插件。`enabled` 表示它此刻在不在流程里。"""
+    """一个被发现过的插件。
+
+    启停是两层,DTO 也分两层给:`platform_available` 是部署级(这个部署提供不提供),
+    `tenant_enabled` 是租户级(调用者所在租户选没选它),`enabled` = 两者都真。
+    一个开关表达不了两件事,所以这里不合并成一个布尔。
+    """
 
     name: str
     version: str
@@ -103,6 +108,8 @@ class PluginDTO(BaseModel):
     widgets: list[PluginWidgetDTO] = []
     pages: list[PluginPageDTO] = []
     enabled: bool = False
+    platform_available: bool = True
+    tenant_enabled: bool = True
     instances: list[str] = []
     reason: str = ""
     error: str = ""

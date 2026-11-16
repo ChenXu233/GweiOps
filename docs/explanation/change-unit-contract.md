@@ -244,4 +244,3 @@ GitHub 把 PR 的评论也当作 `issue_comment` 发出来——在"评论"这�
 - 履历:[engine/change_unit/record.py](../../engine/change_unit/record.py) 把账本结论按 (租户, 下游, 能力) 聚成一条,策略据此做第二个问题的判定;intent 提供者也拿得到它。测试见 [test_change_record.py](../../tests/test_integration/test_change_record.py)。
 - 测试:[test_change_unit.py](../../tests/test_integration/test_change_unit.py),真 docker 的用例在守护进程不可用时跳过。
 - 策略与阻断出口:[engine/change_unit/policy.py](../../engine/change_unit/policy.py) 目前仍按"窗口 vs 人的响应时延"判定,属于第 4 节之前的旧口径,改动记在[工作分解](../plan/wbs.md) 1.3;放行 / 否决由 `POST /api/changes/{id}/approve|veto` 触发,各写一行账。`by` 以控制台令牌为准([engine/api/auth.py](../../engine/api/auth.py)),没配令牌时才采信调用方自报的 `by`。
-- `plugins/builtin/actions/k8s-scaler/` 只有空的 `__init__.py`,尚无清单与实现。

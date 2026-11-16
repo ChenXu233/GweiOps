@@ -109,7 +109,15 @@ class UiPage:
         return {"title": self.title, "entry": self.entry}
 
 
-UI_WIDGET_KINDS = ("metric", "list")
+# 插件要读哪些库数据。三级,按"泄露后果"分,不按表分:
+# - read:own —— 本租户只读,走核心给的视图,不碰基表;
+# - write:own —— 本租户内写,只到插件自己的命名空间;
+# - host —— 跨租户。只有核心能发,第三方插件声明它就是加载期错误。
+DATA_SCOPES = ("read:own", "write:own", "host")
+# 本仓库内置插件的导入根。外部插件(root 里的单级目录)不是 builtin。
+BUILTIN_PACKAGE_PREFIX = "plugins.builtin."
+
+UI_WIDGET_KINDS = ("metric", "list", "dock")
 UI_VARIANTS = ("default", "green", "yellow", "red")
 
 
@@ -164,6 +172,8 @@ class Manifest:
     # 插件要的配置块。进程内插件在代码里注册;进程外插件只能在清单里说,
     # 核心据此把 scope 注册进配置表并把值推下去。
     scopes: dict[str, ScopeDecl] = field(default_factory=dict)
+    # 插件要的库数据级别(`data.scopes`)。空 = 不读库。
+    data_scopes: tuple[str, ...] = ()
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -174,6 +184,15 @@ class Manifest:
             if trigger.get("type") == "event"
             for event in trigger.get("events", [])
         ]
+
+    def is_builtin(self, module_name: str) -> bool:
+        """是不是本仓库自带的插件。
+
+        判据是模块名,不是目录:builtin 走 `plugins.builtin.<类别>.<目录>.plugin`,
+        外部根 (`PLUGINS_EXTRA_DIRS`) 走 `<包>.plugin`。进程外插件没有模块名可判,
+        它本来就不在核心进程里跑,权限由 `endpoint` 那一条单独收口。
+        """
+        return not module_name or module_name.startswith(BUILTIN_PACKAGE_PREFIX)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Manifest":
@@ -270,6 +289,7 @@ class Manifest:
 
         effects = _parse_effects(path, raw.get("effects") or {})
         scopes = _parse_scopes(path, raw.get("scopes") or {})
+        data_scopes = _parse_data_scopes(path, raw.get("data") or {})
         schedules = _parse_schedules(
             path, list(raw.get("triggers") or []), list(raw.get("capabilities") or [])
         )
@@ -297,6 +317,7 @@ class Manifest:
             ui_pages=pages,
             effects=effects,
             scopes=scopes,
+            data_scopes=data_scopes,
         )
 
 
@@ -395,6 +416,49 @@ def _parse_scopes(path: Path, raw: Any) -> dict[str, ScopeDecl]:
             optional=tuple(optional),
         )
     return out
+
+
+def _parse_data_scopes(path: Path, raw: Any) -> tuple[str, ...]:
+    """解析 `data: {scopes: [...]}`。写错的名字在加载期就拒,不留到第一次查询。
+
+    `host`(跨租户)在清单里写得出、但在注册时按"是不是内置插件"再判一次——
+    那一条要看模块名,清单解析这一步还看不到。
+    """
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{path}: data 必须是映射")
+    scopes = raw.get("scopes") or []
+    if not isinstance(scopes, list) or not all(isinstance(s, str) for s in scopes):
+        raise ManifestError(f"{path}: data.scopes 必须是字符串列表")
+    cleaned: list[str] = []
+    for scope in scopes:
+        name = scope.strip()
+        if name not in DATA_SCOPES:
+            raise ManifestError(
+                f"{path}: 未知的 data.scopes 项 {name!r};可选:{'、'.join(DATA_SCOPES)}"
+            )
+        if name not in cleaned:
+            cleaned.append(name)
+    return tuple(cleaned)
+
+
+def check_data_scopes(path: Path, manifest: "Manifest", *, builtin: bool, external: bool) -> None:
+    """容器外的插件不许读库;`host` 只发给内置插件。
+
+    两条都是"结构强制"里的第一条:代码跑在核心进程里、手里又有全库连接,
+    分级就只剩下一句口号。这里拒掉的是声明,不是行为——声明被拒,插件装不上,
+    能力也就解析不到。
+    """
+    if not manifest.data_scopes:
+        return
+    if external:
+        raise ManifestError(
+            f"{path}: 外部插件不能声明 data.scopes({', '.join(manifest.data_scopes)})。"
+            "容器外的插件读库等于读整台机器;要读数据就走能力通道,由核心代查"
+        )
+    if "host" in manifest.data_scopes and not builtin:
+        raise ManifestError(
+            f"{path}: data.scopes 里的 host(跨租户)只发给本仓库内置插件"
+        )
 
 
 def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
