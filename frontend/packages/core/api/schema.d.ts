@@ -101,7 +101,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description 我是谁。老路径,回答 `/api/me` 的同一个形状(没写工作区段时是最早的那一个)。
+         */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
@@ -163,6 +166,8 @@ export interface paths {
         /**
          * Change Password
          * @description 改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。
+         *
+         *     改的是**人**的密码:一次改完,他在每个工作区里都是新密码。
          */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;
@@ -288,7 +293,7 @@ export interface paths {
         put?: never;
         /**
          * Setup
-         * @description 第一次跑起来时创建所有者。库里已经有用户就直接 409,不留后门。
+         * @description 第一次跑起来时创建所有者。库里已经有人就直接 409,不留后门。
          */
         post: operations["setup_api_auth_setup_post"];
         delete?: never;
@@ -794,6 +799,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me Root
+         * @description `/api/me`:一个人,以及他在每个工作区里的角色。
+         *
+         *     路径不带工作区段时 `workspace` 取他最早的那条成员关系;带了就是那一个。
+         */
+        get: operations["me_root_api_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics": {
         parameters: {
             query?: never;
@@ -967,6 +994,7 @@ export interface paths {
          *
          *     项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →
          *     某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。
+         *     工作区从路径来,不从查询串来。
          */
         get: operations["list_projects_api_projects_get"];
         put?: never;
@@ -1026,9 +1054,8 @@ export interface paths {
         };
         /**
          * List Repos
-         * @description 这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。
+         * @description 这个工作区里的仓库。工作区从路径来(`/api/workspaces/acme/repos`),不是参数。
          *
-         *     仓库要多到一张列表放不下时才需要按工作区筛,现在就是把"哪些仓库"说清楚:
          *     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,
          *     所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
          */
@@ -1252,10 +1279,11 @@ export interface paths {
         };
         /**
          * List Workspaces
-         * @description 这个部署里的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
+         * @description 我可以进的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
          *
-         *     令牌声明了租户时只返回它自己那一个:看得见另外几个再让列表把它们藏起来,
-         *     既没用又容易给出"它在这儿但你不能点"的坏体验。
+         *     人这一侧问的是"我属于哪几家" —— 这个选择器换的是数据边界,列出一个我进不去
+         *     的工作区,只会给出"它在这儿但你不能点"的坏体验。机器那一侧(静态令牌 / 密钥)
+         *     本来就写死一个租户,回答的还是那一个。
          */
         get: operations["list_workspaces_api_workspaces_get"];
         put?: never;
@@ -3334,7 +3362,6 @@ export interface operations {
     issue_board_api_board_get: {
         parameters: {
             query?: {
-                tenant?: string | null;
                 project?: string | null;
                 repo?: string | null;
                 limit?: number;
@@ -3371,7 +3398,6 @@ export interface operations {
                 verdict?: string | null;
                 binding?: string | null;
                 incident?: string | null;
-                tenant?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3402,9 +3428,7 @@ export interface operations {
     };
     get_change_api_changes__unit_id__get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 unit_id: string;
@@ -3438,7 +3462,6 @@ export interface operations {
             query?: {
                 by?: string;
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3472,7 +3495,6 @@ export interface operations {
         parameters: {
             query?: {
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3507,7 +3529,6 @@ export interface operations {
             query?: {
                 by?: string;
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3884,7 +3905,6 @@ export interface operations {
     list_incidents_api_incidents_get: {
         parameters: {
             query?: {
-                tenant?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3915,9 +3935,7 @@ export interface operations {
     };
     get_incident_api_incidents__incident_id__get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 incident_id: string;
@@ -3948,9 +3966,7 @@ export interface operations {
     };
     continue_issue_api_issues__issue_id__continue_post: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 issue_id: string;
@@ -3985,9 +4001,7 @@ export interface operations {
     };
     issue_timeline_api_issues__issue_id__timeline_get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 issue_id: string;
@@ -4138,6 +4152,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_root_api_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -4364,9 +4400,7 @@ export interface operations {
     };
     list_projects_api_projects_get: {
         parameters: {
-            query?: {
-                workspace?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -4380,15 +4414,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectListDTO"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4460,9 +4485,7 @@ export interface operations {
     };
     list_repos_api_repos_get: {
         parameters: {
-            query?: {
-                workspace?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -4476,15 +4499,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoDTO"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

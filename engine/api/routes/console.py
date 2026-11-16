@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
@@ -24,9 +25,9 @@ from engine.api.schemas import (
     WorkspaceDTO,
     WorkspaceListDTO,
 )
-from engine.api.auth import tenant_scope
+from engine.api.auth import identity_of, workspace_access
 from engine.db import async_session_factory
-from engine.db.models import Issue, Project, Tenant
+from engine.db.models import Issue, Membership, Project, Tenant
 from engine.shared.config import config
 
 
@@ -51,16 +52,23 @@ logger = logging.getLogger(__name__)
 
 @router.get("/api/workspaces")
 async def list_workspaces(request: Request) -> WorkspaceListDTO:
-    """这个部署里的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
+    """我可以进的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
 
-    令牌声明了租户时只返回它自己那一个:看得见另外几个再让列表把它们藏起来,
-    既没用又容易给出"它在这儿但你不能点"的坏体验。
+    人这一侧问的是"我属于哪几家" —— 这个选择器换的是数据边界,列出一个我进不去
+    的工作区,只会给出"它在这儿但你不能点"的坏体验。机器那一侧(静态令牌 / 密钥)
+    本来就写死一个租户,回答的还是那一个。
     """
-    scope = tenant_scope(request, None)
+    scope = workspace_access(request)
+    identity = identity_of(request)
     async with async_session_factory() as session:
         stmt = select(Tenant).order_by(Tenant.created_at)
         if scope:
             stmt = stmt.where(Tenant.slug == scope)
+        elif identity is not None and identity.person_id:
+            stmt = stmt.join(Membership, Membership.tenant_id == Tenant.id).where(
+                Membership.person_id == uuid.UUID(identity.person_id),
+                Membership.status != "disabled",
+            )
         tenants = (await session.execute(stmt)).scalars().all()
 
         counts: dict[str, int] = {}
@@ -92,14 +100,13 @@ async def list_workspaces(request: Request) -> WorkspaceListDTO:
 
 
 @router.get("/api/repos")
-async def list_repos(request: Request, workspace: str | None = None) -> list[RepoDTO]:
-    """这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。
+async def list_repos(request: Request) -> list[RepoDTO]:
+    """这个工作区里的仓库。工作区从路径来(`/api/workspaces/acme/repos`),不是参数。
 
-    仓库要多到一张列表放不下时才需要按工作区筛,现在就是把"哪些仓库"说清楚:
     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,
     所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
     """
-    scope = tenant_scope(request, workspace)
+    scope = workspace_access(request)
     async with async_session_factory() as session:
         stmt = (
             select(
@@ -149,13 +156,14 @@ async def _project_names(session, ids) -> dict:
 
 
 @router.get("/api/projects")
-async def list_projects(request: Request, workspace: str | None = None) -> ProjectListDTO:
+async def list_projects(request: Request) -> ProjectListDTO:
     """这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。
 
     项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →
     某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。
+    工作区从路径来,不从查询串来。
     """
-    scope = tenant_scope(request, workspace)
+    scope = workspace_access(request)
     async with async_session_factory() as session:
         stmt = select(Project).where(Project.parent_id.is_(None)).order_by(Project.created_at)
         if scope:
@@ -213,9 +221,8 @@ async def list_projects(request: Request, workspace: str | None = None) -> Proje
 async def team_settings(request: Request) -> SettingsDTO:
     """团队设置。配额与注册那两块的现状从真实配置算出来,不是写死的字符串。"""
     from engine.quota import QuotaError, limits_for
-    from engine.api.auth import tenant_scope
 
-    tenant = tenant_scope(request, None) or ""
+    tenant = workspace_access(request) or ""
     try:
         issues = limits_for(tenant).get("issues")
     except QuotaError:

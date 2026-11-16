@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from engine.api.auth import require, tenant_scope
+from engine.api.auth import require, workspace_access
 from engine.quota import QuotaError, limits_for, parse_limit
 from engine.quota import store as quota_store
 
@@ -36,7 +36,7 @@ class QuotaDTO(BaseModel):
 async def get_quota(request: Request, tenant: str | None = None) -> QuotaDTO:
     """这个租户每条限量的用量。没声明的资源不出现在里面。"""
     require(request, "settings.read")
-    slug = tenant_scope(request, tenant) or ""
+    slug = workspace_access(request) or ""
     try:
         limits = limits_for(slug)
     except QuotaError as exc:

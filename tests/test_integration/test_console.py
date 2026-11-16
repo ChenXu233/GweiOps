@@ -1,7 +1,8 @@
 # tests/test_integration/test_console.py
-"""控制台剩下的两个读取点 —— 需要 GWEI_TEST_DATABASE_URL(真实 Postgres)。
+"""控制台剩下的读取点 —— 需要 GWEI_TEST_DATABASE_URL(真实 Postgres)。
 
-议题与变更各有自己的测试;这里只管仓库列表与团队设置这两个没有别处可去的接口。
+议题与变更各有自己的测试;这里只管工作区、仓库列表、项目与团队设置这几个没有
+别处可去的接口。工作区写在路径里:{workspace}/repos 就是那个工作区的仓库。
 """
 
 import os
@@ -113,7 +114,7 @@ class TestConsole:
         finally:
             engine.dispose()
 
-        repos = client.get("/api/repos", params={"workspace": slug}).json()
+        repos = client.get(f"/api/workspaces/{slug}/repos").json()
         assert sorted(r["source"] for r in repos) == ["github", "gitlab"]
 
     def test_repos_carry_their_project(self, client):
@@ -151,12 +152,12 @@ class TestConsole:
         finally:
             engine.dispose()
 
-        repos = client.get("/api/repos", params={"workspace": slug}).json()
+        repos = client.get(f"/api/workspaces/{slug}/repos").json()
         # 项目行不是仓库:列表里只该有那个子仓
         assert [r["name"] for r in repos] == [f"{project}/api"]
         assert repos[0]["project"] == project
         assert repos[0]["projectName"] == "Acme"
 
-        projects = client.get("/api/projects", params={"workspace": slug}).json()["items"]
+        projects = client.get(f"/api/workspaces/{slug}/projects").json()["items"]
         row = next(p for p in projects if p["slug"] == project)
         assert row["repos"] == 1

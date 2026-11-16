@@ -200,7 +200,15 @@ def session_expiry(days: int = SESSION_DAYS) -> datetime:
 
 @dataclass(frozen=True)
 class Identity:
-    """一次请求背后的人。token_id 只用于日志,不回显。"""
+    """一次请求背后的人,以及他这次落在哪个工作区里。
+
+    `user_id` 是**成员关系**的 id(这个工作区里的这个人),`person_id` 才是跨工作区
+    的那个人。会话、审计、`UserRole`、"谁点的头"问的一直是前者:同一个人在两个
+    工作区里做的两件事,不该被读成同一件。
+
+    一次请求只在一个工作区里算权限。几个工作区的权限并起来,是越权的起点,所以
+    `permissions` 只对 `tenant` 那一个算数。
+    """
 
     user_id: str
     name: str
@@ -210,6 +218,11 @@ class Identity:
     parent_id: str = ""
     # 只对某几个仓库生效的权限:{权限: {仓库 slug…}}
     scoped_permissions: dict[str, frozenset[str]] = field(default_factory=dict)
+    # 这个人本身。跨工作区不变;会话属于它,不属于成员关系
+    person_id: str = ""
+    person_email: str = ""
+    # 不属于任何工作区时为空:能登录不等于能看账
+    membership_id: str = ""
 
     @property
     def can_write(self) -> bool:

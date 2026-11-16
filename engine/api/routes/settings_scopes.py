@@ -18,7 +18,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from engine.api.auth import actor_of, by_of, require, tenant_scope
+from engine.api.auth import actor_of, by_of, identity_of, require, workspace_access
 from engine.shared.config import config, mask_value
 from engine.shared.settings_store import create_settings_store
 
@@ -72,7 +72,7 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
     require(request, "settings.read")
     actor = actor_of(request)
     caller_scope = actor.scope if actor else "operate"
-    tenant = tenant_scope(request, None) or ""
+    tenant = workspace_access(request) or ""
     out: list[ScopeDTO] = []
     for scope in config.list_scopes():
         values = config.get_scope_config(scope.name, tenant)
@@ -152,7 +152,7 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
     if not values:
         raise HTTPException(status_code=400, detail="没有要写入的值")
 
-    tenant = tenant_scope(request, None) or ""
+    tenant = workspace_access(request) or ""
     try:
         config.validate_values(scope_name, values, tenant)
     except ValidationError as exc:
@@ -172,7 +172,7 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
 
     from engine.auth import audit
 
-    identity = request.state.identity if hasattr(request.state, "identity") else None
+    identity = identity_of(request)
     await audit.record(
         "settings.write",
         identity=identity,
@@ -214,7 +214,7 @@ async def delete_value(scope_name: str, key: str, request: Request) -> dict:
     require(request, "settings.write")
     if config.get_scope(scope_name) is None:
         raise HTTPException(status_code=404, detail=f"没有配置 scope: {scope_name}")
-    tenant = tenant_scope(request, None) or ""
+    tenant = workspace_access(request) or ""
 
     removed = await create_settings_store().delete(scope_name, key, tenant=tenant)
     if not removed:

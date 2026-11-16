@@ -10,7 +10,7 @@ from .change_event import ChangeEvent
 from .incident import Incident
 from .plugin_setting import PluginSetting
 from .plugin_tenancy import PluginTenancy
-from .rbac import AuditLog, Role, User, UserRole, UserSession
+from .rbac import AuditLog, Membership, Person, Role, UserRole, UserSession
 from .registration import (
     ExternalIdentity,
     PasswordResetToken,
@@ -35,7 +35,8 @@ __all__ = [
     "PluginSetting",
     "PluginTenancy",
     "Role",
-    "User",
+    "Person",
+    "Membership",
     "UserRole",
     "UserSession",
     "AuditLog",

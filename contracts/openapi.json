@@ -2721,6 +2721,7 @@
     },
     "/api/auth/me": {
       "get": {
+        "description": "我是谁。老路径,回答 `/api/me` 的同一个形状(没写工作区段时是最早的那一个)。",
         "operationId": "me_api_auth_me_get",
         "responses": {
           "200": {
@@ -2817,7 +2818,7 @@
     },
     "/api/auth/password": {
       "post": {
-        "description": "改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。",
+        "description": "改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。\n\n改的是**人**的密码:一次改完,他在每个工作区里都是新密码。",
         "operationId": "change_password_api_auth_password_post",
         "requestBody": {
           "content": {
@@ -3043,7 +3044,7 @@
     },
     "/api/auth/setup": {
       "post": {
-        "description": "第一次跑起来时创建所有者。库里已经有用户就直接 409,不留后门。",
+        "description": "第一次跑起来时创建所有者。库里已经有人就直接 409,不留后门。",
         "operationId": "setup_api_auth_setup_post",
         "requestBody": {
           "content": {
@@ -3108,22 +3109,6 @@
         "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。\n\n`project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看\n的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,\n而它能被选到,本身就说明它属于当前这一档。",
         "operationId": "issue_board_api_board_get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
-          },
           {
             "in": "query",
             "name": "project",
@@ -3247,22 +3232,6 @@
           },
           {
             "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -3308,22 +3277,6 @@
             "schema": {
               "title": "Unit Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -3385,22 +3338,6 @@
               "title": "Reason",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
           }
         ],
         "responses": {
@@ -3450,22 +3387,6 @@
               "default": "人工回滚",
               "title": "Reason",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -3526,22 +3447,6 @@
               "default": "人工否决",
               "title": "Reason",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -4021,22 +3926,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -4083,22 +3972,6 @@
               "title": "Incident Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
           }
         ],
         "responses": {
@@ -4138,22 +4011,6 @@
             "schema": {
               "title": "Issue Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -4204,22 +4061,6 @@
             "schema": {
               "title": "Issue Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -4380,6 +4221,27 @@
           }
         },
         "summary": "Revoke Key"
+      }
+    },
+    "/api/me": {
+      "get": {
+        "description": "`/api/me`:一个人,以及他在每个工作区里的角色。\n\n路径不带工作区段时 `workspace` 取他最早的那条成员关系;带了就是那一个。",
+        "operationId": "me_root_api_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Me Root Api Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me Root"
       }
     },
     "/api/metrics": {
@@ -4664,26 +4526,8 @@
     },
     "/api/projects": {
       "get": {
-        "description": "这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。\n\n项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →\n某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。",
+        "description": "这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。\n\n项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →\n某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。\n工作区从路径来,不从查询串来。",
         "operationId": "list_projects_api_projects_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "workspace",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Workspace"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -4694,16 +4538,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "List Projects"
@@ -4809,26 +4643,8 @@
     },
     "/api/repos": {
       "get": {
-        "description": "这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。\n\n仓库要多到一张列表放不下时才需要按工作区筛,现在就是把\"哪些仓库\"说清楚:\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,\n所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。",
+        "description": "这个工作区里的仓库。工作区从路径来(`/api/workspaces/acme/repos`),不是参数。\n\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,\n所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。",
         "operationId": "list_repos_api_repos_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "workspace",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Workspace"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -4843,16 +4659,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "List Repos"
@@ -5468,7 +5274,7 @@
     },
     "/api/workspaces": {
       "get": {
-        "description": "这个部署里的工作区(租户),以及每个里面有几个仓库、来自哪些平台。\n\n令牌声明了租户时只返回它自己那一个:看得见另外几个再让列表把它们藏起来,\n既没用又容易给出\"它在这儿但你不能点\"的坏体验。",
+        "description": "我可以进的工作区(租户),以及每个里面有几个仓库、来自哪些平台。\n\n人这一侧问的是\"我属于哪几家\" —— 这个选择器换的是数据边界,列出一个我进不去\n的工作区,只会给出\"它在这儿但你不能点\"的坏体验。机器那一侧(静态令牌 / 密钥)\n本来就写死一个租户,回答的还是那一个。",
         "operationId": "list_workspaces_api_workspaces_get",
         "responses": {
           "200": {

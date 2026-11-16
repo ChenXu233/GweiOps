@@ -15,7 +15,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
-from engine.api.auth import by_of, require, tenant_scope
+from engine.api.auth import by_of, require, workspace_access
 from engine.api.schemas import ChangeDetailDTO, ChangeListDTO
 from engine.db import async_session_factory
 from engine.db.models import Project, Tenant
@@ -124,7 +124,6 @@ async def list_changes(
     verdict: str | None = None,
     binding: str | None = None,
     incident: str | None = None,
-    tenant: str | None = None,
     limit: int = 100,
 ) -> ChangeListDTO:
     """当前状态一栏:每个单元只出现一次,最新的在前。
@@ -133,7 +132,7 @@ async def list_changes(
     total 报的是过滤后的总数。没加过滤时把 limit 下推给账本,省得全表取回。
     """
     require(request, "changes.read")
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     filtering = bool(verdict or binding or incident)
     rows = await _ledger().latest(
         tenant=tenant, limit=None if filtering else max(0, limit)
@@ -149,10 +148,10 @@ async def list_changes(
 
 @router.get("/api/changes/{unit_id}")
 async def get_change(
-    unit_id: str, request: Request, tenant: str | None = None
+    unit_id: str, request: Request
 ) -> ChangeDetailDTO:
     require(request, "changes.read")
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     rows = await _ledger().history(unit_id, tenant=tenant)
     if not rows:
         raise HTTPException(status_code=404, detail="unknown change")
@@ -167,7 +166,6 @@ async def approve_change(
     request: Request,
     by: str = "人工",
     reason: str = "人工放行",
-    tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """放行一个阻断的单元。
 
@@ -176,7 +174,7 @@ async def approve_change(
 
     by 以控制台令牌为准;没有配置令牌时才采信调用方写的那一个。
     """
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
     # 按这一行账落在哪个仓库上判:只被授了 acme/api 的人放不了 acme/web 的单元。
@@ -210,10 +208,9 @@ async def veto_change(
     request: Request,
     by: str = "人工",
     reason: str = "人工否决",
-    tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """不做这次变更。否决也写一行账——它和放行一样是一次决定。"""
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
     repo = _repo_of(latest)
@@ -243,10 +240,9 @@ async def rollback_change(
     unit_id: str,
     request: Request,
     reason: str = "人工回滚",
-    tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     ledger, latest = await _latest_or_404(unit_id, tenant)
     repo = _repo_of(latest)
     require(

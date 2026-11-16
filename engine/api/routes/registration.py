@@ -19,7 +19,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from engine.api.routes.auth import _cookie_secure, _identity_dto, _set_session_cookie
+from engine.api.routes.auth import _cookie_secure, _set_session_cookie, me_dto
 from engine.auth import SESSION_COOKIE
 from engine.auth import audit
 from engine.auth import oidc as oidc_client
@@ -209,7 +209,7 @@ async def register_verify(payload: VerifyDTO, request: Request, response: Respon
     await audit.record(
         "auth.register", identity=identity, target=user.email, detail={"channel": channel}, ip=_ip(request)
     )
-    return {"user": _identity_dto(identity)}
+    return {"user": await me_dto(str(user.id), identity.tenant)}
 
 
 @router.post("/api/auth/password/reset")

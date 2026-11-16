@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import aliased
 
-from engine.api.auth import require, tenant_scope
+from engine.api.auth import require, workspace_access
 from engine.api.schemas import (
     ContinueRoundDTO,
     ContinuedDTO,
@@ -121,11 +121,11 @@ def _session_row(session: AgentSession) -> dict:
 
 @router.get("/api/issues/{issue_id}/timeline")
 async def issue_timeline(
-    issue_id: str, request: Request, tenant: str | None = None
+    issue_id: str, request: Request
 ) -> IssueTimelineDTO:
     """一个议题的完整时间线。还没有变更也返回:那是"还没发生",不是"查不到"。"""
     require(request, "changes.read")
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
     try:
         wanted = UUID(issue_id)
     except ValueError:
@@ -158,7 +158,6 @@ async def issue_timeline(
 @router.get("/api/board")
 async def issue_board(
     request: Request,
-    tenant: str | None = None,
     project: str | None = None,
     repo: str | None = None,
     limit: int = 100,
@@ -174,7 +173,7 @@ async def issue_board(
     而它能被选到,本身就说明它属于当前这一档。
     """
     require(request, "changes.read")
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
 
     parent = aliased(Project)
     async with async_session_factory() as db:
@@ -300,14 +299,13 @@ async def continue_issue(
     issue_id: str,
     body: ContinueRoundDTO,
     request: Request,
-    tenant: str | None = None,
 ) -> ContinuedDTO:
     """从界面发起新一轮:话题不变、分支不变、PR 不新开。
 
     权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。
     真要细分的话是加一条新权限,不是在这里各自判断。
     """
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
     try:
         wanted = UUID(issue_id)
     except ValueError:

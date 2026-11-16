@@ -27,7 +27,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 from engine.agent import ToolCall, run_tool, tool_specs
-from engine.api.auth import actor_of, by_of, tenant_scope
+from engine.api.auth import actor_of, by_of, workspace_access
 from engine.auth.keys import permission_for_tool, resource_allowed, tool_visible
 from engine.change_unit import create_ledger
 from engine.plugin_manager import registry
@@ -131,8 +131,9 @@ async def _call_tool(request: Request, name: str, arguments: Any) -> dict[str, A
             },
             True,
         )
-    requested = args.pop("tenant", "")
-    tenant = tenant_scope(request, str(requested) if isinstance(requested, str) else None) or ""
+    # 工作区只从路径与凭据来:`_tenant` 这个工具参数以前能改查询范围,现在不收。
+    args.pop("tenant", None)
+    tenant = workspace_access(request) or ""
 
     is_effect = name in registry.declared_effects()
     # 只读身份调不动效果这一条已经由上面那次 tool_visible 判过(效果要 changes.execute,
@@ -223,6 +224,7 @@ async def mcp_describe(request: Request) -> JSONResponse:
             "tools": [tool["name"] for tool in _tools(actor)],
             "resources": sorted(registry.resources()) if hasattr(registry, "resources") else [],
             "auth": "X-Gwei-Token",
+            # 机器那侧的调用不带工作区段:令牌本来就写死一个租户
             "identity": {
                 "name": actor.name if actor else "",
                 "tenant": actor.tenant if actor else "",

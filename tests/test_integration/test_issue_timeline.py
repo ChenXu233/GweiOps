@@ -291,7 +291,11 @@ def test_route_wires_the_aggregation_together():
         async def latest(self, tenant=None, limit=None):
             return [_comment_row()]
 
-    request = SimpleNamespace(state=SimpleNamespace(actor=None))
+    # 工作区从路径来(/api/workspaces/{slug}/…),所以替身也要有 url
+    request = SimpleNamespace(
+        state=SimpleNamespace(actor=None, identity=None),
+        url=SimpleNamespace(path=f"/api/workspaces/default/issues/{uuid.uuid4()}/timeline"),
+    )
     with patch.object(
         issues_mod,
         "_load_issue",

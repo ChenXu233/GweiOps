@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from engine.agent import ToolCall, run_tool, tool_specs
-from engine.api.auth import actor_of, by_of, tenant_scope
+from engine.api.auth import actor_of, by_of, workspace_access
 from engine.auth.keys import permission_for_tool, resource_allowed, tool_visible
 from engine.change_unit import create_ledger
 from engine.plugin_manager import registry
@@ -120,7 +120,7 @@ async def call_exit(name: str, request: Request, call: ExitCallDTO) -> dict:
             status_code=403,
             detail=f"这个身份没有 {permission_for_tool(name)} 权限,或者够不着它作用的那几个资源,调不动 {name}",
         )
-    tenant = tenant_scope(request, call.tenant or None) or ""
+    tenant = workspace_access(request) or ""
     binding = call.binding or config.settings.default_binding
     if not resource_allowed(binding, actor):
         reachable = getattr(registry, "tool_bindings", lambda _n: ())(name)

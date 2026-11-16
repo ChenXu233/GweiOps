@@ -19,7 +19,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from engine.api.auth import actor_of, require, tenant_scope
+from engine.api.auth import actor_of, require, workspace_access, identity_of
 from engine.api.schemas import (
     KeyCreateDTO,
     KeyDTO,
@@ -42,10 +42,10 @@ def _identity_tenant(request: Request) -> str:
     """这一把该落在谁的账上。令牌与密钥的租户优先;都空就只有默认租户。"""
     from engine.shared.config import config
 
-    tenant = tenant_scope(request, None)
+    tenant = workspace_access(request)
     if tenant:
         return tenant
-    identity = getattr(request.state, "identity", None)
+    identity = identity_of(request)
     if identity is not None and identity.tenant:
         return identity.tenant
     return config.settings.default_tenant_slug
@@ -173,7 +173,7 @@ async def create_key(payload: KeyCreateDTO, request: Request) -> KeyIssuedDTO:
     )
     await audit.record(
         "key.create",
-        identity=getattr(request.state, "identity", None),
+        identity=identity_of(request),
         target=record.id,
         detail={
             "hint": record.hint,
@@ -195,7 +195,7 @@ async def revoke_key(key_id: str, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="没有这把密钥")
     await audit.record(
         "key.revoke",
-        identity=getattr(request.state, "identity", None),
+        identity=identity_of(request),
         target=key_id,
         detail={"tenant": tenant},
         ip=request.client.host if request.client else "",
