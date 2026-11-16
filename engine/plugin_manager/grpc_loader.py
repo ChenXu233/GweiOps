@@ -12,6 +12,14 @@
 覆盖规则是「清单声明 endpoint」优先于「环境变量里同名条目」的默认地址;环境变量里
 列出的名字即使清单没声明,也按最小清单(一个能力都没有的适配器)接上,便于临时接入。
 
+效果(execute / undo / window / verify)也走这条代理:进程内提供者实现四个方法,
+远端只实现 `execute_task`,四个阶段靠 `metadata["phase"]` 区分。两边对核心的输出
+形状一致——单元不知道自己在跟一个远端进程说话。
+
+**句柄是不透明字符串**,与进程内插件同一条规则:远端在 execute 的返回值里给
+`handle`,核心原样存进账本、再原样带回来。核心从不解释它,所以远端可以把它当
+自增 id、文件名或签过名的令牌用。
+
 失败隔离的边界在这里:
 
 - 对面连不上、超时、抛错,**只影响这一个插件**——异常在代理内被翻译成本插件的失败,
@@ -26,15 +34,22 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import PluginBase, PluginType
 from .manifest import Manifest
 from .registry import PluginRegistry, registry as default_registry
 
+if TYPE_CHECKING:  # 只为注解:运行期不导入,免得插件管理器依赖变更单元
+    from engine.change_unit.model import Effect, Window
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S = 10.0
+
+# TaskResponse.error_kind 的取值:远端确定没碰到下游。核心据此把单元记成 failed
+# (可以照原样重试),而不是 unknown(要人去核)。
+NOT_APPLIED = "not_applied"
 
 
 class GrpcPluginError(RuntimeError):
@@ -189,6 +204,77 @@ class GrpcPluginProxy(PluginBase):
         )
         return _decode_result(response, "ExecuteTask")
 
+    # -- 效果四方法:与进程内提供者同名同语义 -------------------------
+
+    async def _phase(self, phase: str, task: str, params: dict, method: str) -> dict:
+        """跑一个效果阶段。与能力调用同为 ExecuteTask,靠 metadata 里的 phase 区分。
+
+        阶段声明的解释权在核心(清单里的 effects 块),远端只需要知道"这一步该干
+        什么"——它不认识效果名,也不该认识。
+        """
+        from .grpc_proto import plugin_pb2
+
+        payload = json.dumps(params, ensure_ascii=False, default=str).encode("utf-8")
+        response = await self._call(
+            "ExecuteTask",
+            plugin_pb2.TaskRequest(
+                task=task, params=payload, metadata={"phase": phase}
+            ),
+        )
+        return _decode_result(response, f"{method}({phase})")
+
+    async def execute(self, task: str, args: dict) -> dict:
+        return await self._phase("execute", task, args, "execute")
+
+    async def undo(self, task: str, args: dict, handle: str) -> dict:
+        # 撤销拿到的既有参数也有句柄:参数说明这是哪个对象,句柄说明是哪一次改动。
+        return await self._phase(
+            "undo", task, {"args": dict(args), "handle": handle}, "undo"
+        )
+
+    async def window(self, effect, handle: str | None) -> "Window":
+        raw = await self._phase(
+            "window",
+            effect.capability,
+            {"effect": _effect_payload(effect), "handle": handle},
+            "window",
+        )
+        return _window_from(raw)
+
+    async def verify(self, effect, handle: str) -> tuple[bool, dict]:
+        raw = await self._phase(
+            "verify",
+            effect.capability,
+            {"effect": _effect_payload(effect), "handle": handle},
+            "verify",
+        )
+        facts = raw.get("facts") if isinstance(raw.get("facts"), dict) else {}
+        return bool(raw.get("ok")), dict(facts)
+
+    # -- 配置 -------------------------------------------------------
+
+    async def configure(self, scope: str, values: dict, missing: list[str]) -> None:
+        """把核心那边的配置值交给远端的这个进程。
+
+        远端的 `config.get_scope_config()` 读不到核心的环境变量与库,所以值只能
+        从这条 RPC 过来。粗粒度、全量、一 scope 一次:远端不需要知道值是怎么来的。
+        """
+        from .grpc_proto import plugin_pb2
+
+        response = await self._call(
+            "Configure",
+            plugin_pb2.ConfigureRequest(
+                scope=scope,
+                config={str(k): str(v) for k, v in values.items()},
+                missing=list(missing or []),
+            ),
+        )
+        if not response.success:
+            # 插件拒收(它自己校验不过):说出来,但这一次推失败不拦住其它 scope
+            raise GrpcPluginError(
+                f"{self._name}.configure({scope}) 被拒:{response.message or '(没有说明)'}"
+            )
+
     async def handle_hook(self, point: str, payload: dict) -> Any:
         """Hook 回调。远端拿到 mode 与载荷,回 allowed / payload。
 
@@ -229,12 +315,50 @@ def _proto_type(kind: PluginType) -> int:
     }.get(kind, plugin_pb2.ADAPTER)
 
 
+def _effect_payload(effect) -> dict:
+    """效果在 wire 上的样子。与账本里存的那份同形,远端读得出参数与验证规则。"""
+    return {
+        "task": effect.task,
+        "args": dict(effect.args),
+        "undo_task": effect.undo_task,
+        "undo_kind": effect.undo_kind,
+        "label": effect.label,
+        "capability": effect.capability,
+        "verify": [dict(rule) for rule in effect.verify],
+    }
+
+
+def _window_from(raw: dict) -> "Window":
+    """window 阶段的返回值 → Window。
+
+    只有远端知道"还能撤多久",所以这里不替它猜:报不出 seconds 也不报 unbounded
+    就是 unknown,单元按不可逆处理。
+    """
+    from engine.change_unit.model import Window
+
+    seconds = raw.get("seconds")
+    return Window(
+        seconds=seconds if isinstance(seconds, int) and not isinstance(seconds, bool) else None,
+        unbounded=bool(raw.get("unbounded")),
+        source=str(raw.get("source") or ""),
+        estimated=bool(raw.get("estimated")),
+    )
+
+
 def _decode_result(response, method: str) -> dict:
-    """TaskResponse / EventResponse → dict。失败在这里就变成这次调用的失败。"""
-    if response.error:
-        raise GrpcPluginError(f"{method}: {response.error}")
-    if not response.success:
-        raise GrpcPluginError(f"{method}: 远端报告失败但没有说明")
+    """TaskResponse / EventResponse → dict。失败在这里就变成这次调用的失败。
+
+    远端说得出"确定没碰到下游"(`error_kind == "not_applied"`)时,翻成
+    `EffectNotApplied`:那不是一次含糊的失败,是可以照原样重试的失败。说不清就
+    保持 GrpcPluginError,单元据此记 unknown。
+    """
+    if response.error or not response.success:
+        message = response.error or "远端报告失败但没有说明"
+        if getattr(response, "error_kind", "") == NOT_APPLIED:
+            from engine.change_unit.errors import EffectNotApplied
+
+            raise EffectNotApplied(f"{method}: {message}")
+        raise GrpcPluginError(f"{method}: {message}")
     if not response.result:
         return {}
     try:
@@ -321,6 +445,7 @@ def _register_one(
 
 __all__ = [
     "DEFAULT_TIMEOUT_S",
+    "NOT_APPLIED",
     "GrpcPluginError",
     "GrpcPluginProxy",
     "make_proxy",
