@@ -247,20 +247,18 @@ async def ensure_schema() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(lambda c: Incident.__table__.create(c, checkfirst=True))
-        # checkfirst 只补"没有这张表",补不了"这张表少一列"。老库到此为止会缺
-        # diff;一行幂等 ALTER 比要求手工跑迁移工具更接近"启动就能用"。
-        await conn.execute(
-            text(
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS diff JSON NOT NULL "
-                "DEFAULT '[]'"
-            )
-        )
-        await conn.execute(
-            text(
-                "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS intent JSON NOT NULL "
-                "DEFAULT '{}'"
-            )
-        )
+        # checkfirst 只补"没有这张表",补不了"这张表少一列"。比迁移 007/008/009 早
+        # 建过 incidents 的库,起来就会缺下面这几列;一行幂等 ALTER 比要求手工跑
+        # 迁移工具更接近"启动就能用"。
+        for ddl in (
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS topic VARCHAR(255) "
+            "NOT NULL DEFAULT ''",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS diff JSON NOT NULL "
+            "DEFAULT '[]'",
+            "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS intent JSON NOT NULL "
+            "DEFAULT '{}'",
+        ):
+            await conn.execute(text(ddl))
 
 
 __all__ = [
