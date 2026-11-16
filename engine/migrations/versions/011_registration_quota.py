@@ -3,16 +3,16 @@
 注册要落地四张表:联系方式、一次性验证码、待核验申请、重置令牌;OIDC 的 sub
 还要与本地用户绑定。配额的用量单独一张,不去改 tenants 的列 —— 策略留在配置里。
 
-Revision ID: 010
-Revises: 009
+Revision ID: 011
+Revises: 010
 """
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "010"
-down_revision = "009"
+revision = "011"
+down_revision = "010"
 branch_labels = None
 depends_on = None
 
