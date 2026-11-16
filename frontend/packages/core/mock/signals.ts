@@ -18,6 +18,9 @@ export const mockSignalRepos: Repo[] = [
   {
     id: '1',
     name: 'acme/api-gateway',
+    slug: 'github:acme/api-gateway',
+    project: 'acme',
+    projectName: 'Acme',
     icon: '📦',
     source: 'github',
     status: 'running',
@@ -28,6 +31,9 @@ export const mockSignalRepos: Repo[] = [
   {
     id: '2',
     name: 'acme/auth-service',
+    slug: 'github:acme/auth-service',
+    project: 'acme',
+    projectName: 'Acme',
     icon: '📦',
     source: 'github',
     status: 'running',
@@ -38,6 +44,9 @@ export const mockSignalRepos: Repo[] = [
   {
     id: '3',
     name: 'acme/frontend',
+    slug: 'github:acme/frontend',
+    project: 'acme',
+    projectName: 'Acme',
     icon: '📦',
     source: 'github',
     status: 'configuring',
@@ -48,6 +57,9 @@ export const mockSignalRepos: Repo[] = [
   {
     id: '4',
     name: 'acme/data-pipeline',
+    slug: 'github:acme/data-pipeline',
+    project: 'acme',
+    projectName: 'Acme',
     icon: '📦',
     source: 'github',
     status: 'paused',

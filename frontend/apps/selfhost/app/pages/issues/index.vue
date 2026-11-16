@@ -94,6 +94,9 @@ const counts = computed(() => data.value?.counts ?? {})
       </label>
     </div>
 
+    <!-- 范围闸:整张板子收窄到某个项目或某个仓库。板子只有一个,档是筛上去的 -->
+    <ScopePicker />
+
     <div v-if="error" class="panel border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
       拉不到议题板。{{ error }}
     </div>

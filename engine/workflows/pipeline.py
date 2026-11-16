@@ -79,6 +79,63 @@ async def _analyze_with_cache(payload: dict) -> dict:
     )
 
 
+def repo_slug(source: str, full_name: str) -> str:
+    """仓库在这棵树上的名字:来源前缀 + `来源:` + 仓库全名。
+
+    `acme/api` 在 GitHub 与 CNB 上是两份不同的代码,而 slug 在租户内唯一,
+    所以来源不同就得叫不同的名字。前缀里的 `:` 不是层级 —— 层级是 `-`,
+    两种标识符因此不会撞在一起。
+    """
+    name = full_name or ""
+    if not source:
+        return name
+    return f"{source}:{name}"
+
+
+def project_slug_of(full_name: str) -> str:
+    """仓库全名所属的项目:取路径里的第一段。`acme/api` 属于项目 `acme`。
+
+    这只是**没有更好信息时**的默认归属。真要把 `acme/api` 与 `acme/web` 放进同一个
+    项目,靠的是同一个前缀;要放到别处,改 `parent_id` 就行,这里不猜第二次。
+    """
+    head, _, _ = (full_name or "").partition("/")
+    return head
+
+
+async def _resolve_project(session, tenant_id, payload: dict):
+    """这次投递里的仓库属于哪个项目。已经有了就用,没有就按默认归属建一个。
+
+    项目与仓库同一张表(见 models/project.py):`parent_id` 空的那一行是项目。
+    同一条投递重试十次不该建出十个项目,所以按 slug 幂等取。
+    """
+    slug = str(payload.get("project_slug") or "") or project_slug_of(
+        payload.get("repo_full_name", "")
+    )
+    if not slug:
+        return None
+    found = (
+        await session.execute(
+            select(Project).where(
+                Project.tenant_id == tenant_id,
+                Project.slug == slug,
+                Project.parent_id.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if found is not None:
+        return found
+    created = Project(
+        tenant_id=tenant_id,
+        parent_id=None,
+        slug=slug,
+        source="",
+        name=str(payload.get("project_name") or slug),
+    )
+    session.add(created)
+    await session.flush()
+    return created
+
+
 async def _find_issue(session, project_id, payload: dict) -> Issue | None:
     """这个仓库里已有那条议题吗。
 
@@ -124,27 +181,37 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
                 await session.flush()
 
             source = str(payload.get("source_adapter") or "") or "github"
+            full_name = payload["repo_full_name"]
+            # 仓库的 slug 带上来源前缀:同一个 `acme/api` 在 github 与 cnb 上是两份代码,
+            # 而 slug 在租户内唯一(见 models/project.py)。前缀里的 `:` 不是层级,
+            # 层级用 `-`,两种标识符因此不会撞。
+            slug = repo_slug(source, full_name)
             project = (
                 await session.execute(
-                    select(Project).where(
-                        Project.tenant_id == tenant.id,
-                        Project.source == source,
-                        Project.name == payload["repo_full_name"],
-                    )
+                    select(Project).where(Project.tenant_id == tenant.id, Project.slug == slug)
                 )
             ).scalar_one_or_none()
             if project is None:
+                parent = await _resolve_project(session, tenant.id, payload)
                 project = Project(
                     tenant_id=tenant.id,
+                    parent_id=parent.id if parent is not None else None,
+                    slug=slug,
                     source=source,
                     github_id=payload.get("repo_github_id"),
-                    name=payload["repo_full_name"],
+                    name=full_name,
                 )
                 session.add(project)
                 await session.flush()
-            elif project.github_id is None and payload.get("repo_github_id") is not None:
-                # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
-                project.github_id = payload["repo_github_id"]
+            else:
+                if project.parent_id is None:
+                    # 头一次投递时它还没有父、后来攒出了项目:补上。父只往上补,不换。
+                    parent = await _resolve_project(session, tenant.id, payload)
+                    if parent is not None:
+                        project.parent_id = parent.id
+                if project.github_id is None and payload.get("repo_github_id") is not None:
+                    # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
+                    project.github_id = payload["repo_github_id"]
 
             issue = await _find_issue(session, project.id, payload)
             if issue is None:

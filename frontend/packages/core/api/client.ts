@@ -25,7 +25,9 @@ export const IssuesApi = {
   timeline: (id: string) =>
     api.get('/api/issues/{issue_id}/timeline', { path: { issue_id: id } }),
   // 首页那张板:三段、三个数。空在第一个议题之前也是一次安排,不是错误。
-  board: (limit?: number) => api.get('/api/board', { query: { limit } }),
+  // project / repo 是范围闸的两档(项目、仓库),不给就是整个工作区。
+  board: (params?: { limit?: number; tenant?: string; project?: string; repo?: string }) =>
+    api.get('/api/board', { query: params }),
   // 接着这条线再改一轮:话题与分支不变,PR 不会新开。
   continueRound: (id: string, instruction: string) =>
     api.post('/api/issues/{issue_id}/continue', {
@@ -43,6 +45,11 @@ export const WorkspacesApi = {
 export const ReposApi = {
   // 不给 workspace 就是令牌那一个(没有令牌时是全部)
   list: (workspace?: string) => api.get('/api/repos', { query: { workspace } }),
+}
+
+// 项目 = 仓库上面那一级。范围闸的中间档,也是项目级配置与凭据将来要落的地方。
+export const ProjectsApi = {
+  list: (workspace?: string) => api.get('/api/projects', { query: { workspace } }),
 }
 
 export const PluginsApi = {

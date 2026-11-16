@@ -331,6 +331,10 @@ export interface paths {
          *     一块板子三个段,判据与详情页同源(`normalize_state`)——列表说"在跑"、
          *     点进去说"落了"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得
          *     最久在前,跑着与落了的按最新在前。
+         *
+         *     `project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看
+         *     的范围 —— 整个工作区 → 某个项目 → 某个仓库。仓库档优先于项目档(更窄的那一
+         *     个说了算),两档都给时按仓库存的父判定,不额外相信调用方拼的一致性。
          */
         get: operations["issue_board_api_board_get"];
         put?: never;
@@ -944,6 +948,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projects
+         * @description 这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。
+         *
+         *     项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →
+         *     某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。
+         */
+        get: operations["list_projects_api_projects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quota": {
         parameters: {
             query?: never;
@@ -996,7 +1023,8 @@ export interface paths {
          * @description 这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。
          *
          *     仓库要多到一张列表放不下时才需要按工作区筛,现在就是把"哪些仓库"说清楚:
-         *     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源。
+         *     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,
+         *     所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
          */
         get: operations["list_repos_api_repos_get"];
         put?: never;
@@ -2206,6 +2234,40 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * ProjectDTO
+         * @description 一个项目 —— 仓库上面那一级。
+         *
+         *     项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在
+         *     工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是
+         *     行自己的 slug。
+         */
+        ProjectDTO: {
+            /** Id */
+            id: string;
+            /**
+             * Issues
+             * @default 0
+             */
+            issues: number;
+            /** Name */
+            name: string;
+            /**
+             * Repos
+             * @default 0
+             */
+            repos: number;
+            /** Slug */
+            slug: string;
+        };
+        /** ProjectListDTO */
+        ProjectListDTO: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ProjectDTO"][];
+        };
         /** QuotaDTO */
         QuotaDTO: {
             /** Items */
@@ -2255,6 +2317,21 @@ export interface components {
             lastSyncAt: string;
             /** Name */
             name: string;
+            /**
+             * Project
+             * @default
+             */
+            project: string;
+            /**
+             * Projectname
+             * @default
+             */
+            projectName: string;
+            /**
+             * Slug
+             * @default
+             */
+            slug: string;
             /**
              * Source
              * @default github
@@ -3238,6 +3315,8 @@ export interface operations {
         parameters: {
             query?: {
                 tenant?: string | null;
+                project?: string | null;
+                repo?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -4250,6 +4329,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_projects_api_projects_get: {
+        parameters: {
+            query?: {
+                workspace?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListDTO"];
                 };
             };
             /** @description Validation Error */

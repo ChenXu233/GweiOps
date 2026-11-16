@@ -16,7 +16,14 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
-from engine.api.schemas import RepoDTO, SettingsDTO, WorkspaceDTO, WorkspaceListDTO
+from engine.api.schemas import (
+    ProjectDTO,
+    ProjectListDTO,
+    RepoDTO,
+    SettingsDTO,
+    WorkspaceDTO,
+    WorkspaceListDTO,
+)
 from engine.api.auth import tenant_scope
 from engine.db import async_session_factory
 from engine.db.models import Issue, Project, Tenant
@@ -89,7 +96,8 @@ async def list_repos(request: Request, workspace: str | None = None) -> list[Rep
     """这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。
 
     仓库要多到一张列表放不下时才需要按工作区筛,现在就是把"哪些仓库"说清楚:
-    同一个仓库名在两个工作区里是两份数据,所以每行都带上来源。
+    同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,
+    所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
     """
     scope = tenant_scope(request, workspace)
     async with async_session_factory() as session:
@@ -100,12 +108,15 @@ async def list_repos(request: Request, workspace: str | None = None) -> list[Rep
                 func.max(Issue.created_at).label("last_activity"),
             )
             .outerjoin(Issue, Issue.project_id == Project.id)
+            .where(Project.parent_id.is_not(None))
             .group_by(Project.id)
             .order_by(Project.created_at)
         )
         if scope:
             stmt = stmt.join(Tenant, Project.tenant_id == Tenant.id).where(Tenant.slug == scope)
         rows = (await session.execute(stmt)).all()
+        parents = await _project_names(session, [project.parent_id for project, _, _ in rows])
+
     return [
         RepoDTO(
             id=str(project.id),
@@ -116,9 +127,86 @@ async def list_repos(request: Request, workspace: str | None = None) -> list[Rep
             activeAgents=0,
             lastSyncAt=(last_activity or project.created_at).isoformat(),
             source=project.source or "github",
+            slug=project.slug,
+            project=(parents.get(project.parent_id) or ("", ""))[0],
+            projectName=(parents.get(project.parent_id) or ("", ""))[1],
         )
         for project, issue_count, last_activity in rows
     ]
+
+
+async def _project_names(session, ids) -> dict:
+    """父行的 (slug, name)。一次取回:一页仓库不该按行各查一次父。"""
+    wanted = [i for i in {pid for pid in ids if pid is not None}]
+    if not wanted:
+        return {}
+    rows = (
+        await session.execute(
+            select(Project.id, Project.slug, Project.name).where(Project.id.in_(wanted))
+        )
+    ).all()
+    return {row[0]: (row[1], row[2]) for row in rows}
+
+
+@router.get("/api/projects")
+async def list_projects(request: Request, workspace: str | None = None) -> ProjectListDTO:
+    """这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。
+
+    项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →
+    某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。
+    """
+    scope = tenant_scope(request, workspace)
+    async with async_session_factory() as session:
+        stmt = select(Project).where(Project.parent_id.is_(None)).order_by(Project.created_at)
+        if scope:
+            stmt = stmt.join(Tenant, Project.tenant_id == Tenant.id).where(Tenant.slug == scope)
+        parents = (await session.execute(stmt)).scalars().all()
+        if not parents:
+            return ProjectListDTO(items=[])
+
+        children = (
+            await session.execute(
+                select(Project.parent_id, Project.id).where(
+                    Project.parent_id.in_([p.id for p in parents])
+                )
+            )
+        ).all()
+        repos_of: dict = {}
+        for parent_id, _ in children:
+            repos_of[parent_id] = repos_of.get(parent_id, 0) + 1
+        # 子仓的议题数一次取回再按父汇总:项目一多,逐个查就成了 N 次。
+        child_to_parent = {child_id: parent_id for parent_id, child_id in children}
+        child_ids = list(child_to_parent)
+        issues_of: dict = {}
+        if child_ids:
+            for project_id, count in (
+                await session.execute(
+                    select(Issue.project_id, func.count(Issue.id))
+                    .where(Issue.project_id.in_(child_ids))
+                    .group_by(Issue.project_id)
+                )
+            ).all():
+                issues_of[project_id] = int(count)
+
+    # 一个项目有几条议题,问的是它下面所有仓库的合计。
+    by_parent: dict = {}
+    for child_id, count in issues_of.items():
+        parent_id = child_to_parent.get(child_id)
+        if parent_id is not None:
+            by_parent[parent_id] = by_parent.get(parent_id, 0) + count
+
+    return ProjectListDTO(
+        items=[
+            ProjectDTO(
+                id=str(p.id),
+                slug=p.slug,
+                name=p.name,
+                repos=repos_of.get(p.id, 0),
+                issues=by_parent.get(p.id, 0),
+            )
+            for p in parents
+        ]
+    )
 
 
 @router.get("/api/settings")

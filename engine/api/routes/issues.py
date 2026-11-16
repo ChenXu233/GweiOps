@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.orm import aliased
 
 from engine.api.auth import require, tenant_scope
 from engine.api.schemas import (
@@ -142,19 +143,30 @@ async def issue_timeline(
             truncated=len(incidents) >= INCIDENT_SCAN or len(changes) >= LEDGER_SCAN,
         )
     )
+
+
 @router.get("/api/board")
 async def issue_board(
-    request: Request, tenant: str | None = None, limit: int = 100
+    request: Request,
+    tenant: str | None = None,
+    project: str | None = None,
+    repo: str | None = None,
+    limit: int = 100,
 ) -> IssueBoardDTO:
     """议题板:首页那一张列表。
 
     一块板子三个段,判据与详情页同源(`normalize_state`)——列表说"在跑"、
     点进去说"落了"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得
     最久在前,跑着与落了的按最新在前。
+
+    `project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看
+    的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,
+    而它能被选到,本身就说明它属于当前这一档。
     """
     require(request, "changes.read")
     scope = tenant_scope(request, tenant)
 
+    parent = aliased(Project)
     async with async_session_factory() as db:
         stmt = (
             select(Issue, Project.name, Tenant.slug)
@@ -165,6 +177,12 @@ async def issue_board(
         )
         if scope:
             stmt = stmt.where(Tenant.slug == scope)
+        if repo:
+            # 仓库档:slug 是来源前缀的写法(github:acme/api),与 /api/repos 同一栏
+            stmt = stmt.where(Project.slug == repo)
+        elif project:
+            # 项目档:仓库行的 parent_id 指向项目那一行
+            stmt = stmt.join(parent, parent.id == Project.parent_id).where(parent.slug == project)
         rows = (await db.execute(stmt)).all()
         if not rows:
             return IssueBoardDTO(items=[], counts={"waiting": 0, "running": 0, "landed": 0})

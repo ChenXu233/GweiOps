@@ -70,7 +70,7 @@ export function useNavCounts() {
     try {
       waiting.value = useMock
         ? mockIssueBoard.counts.waiting ?? 0
-        : (await IssuesApi.board(200)).counts.waiting ?? 0
+        : (await IssuesApi.board({ limit: 200 })).counts.waiting ?? 0
     } catch {
       waiting.value = 0
     }

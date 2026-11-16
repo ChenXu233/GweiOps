@@ -41,6 +41,30 @@ class RepoDTO(BaseModel):
     lastSyncAt: str
     # 这个仓库来自哪个平台(github / cnb / gitlab …):同名仓库在不同平台上不是同一个
     source: str = "github"
+    # 它在这棵树上的名字,也是范围闸里的那一档(来源前缀的 `来源:仓库全名`)
+    slug: str = ""
+    # 所属项目。空串 = 还没归到任何项目
+    project: str = ""
+    projectName: str = ""
+
+
+class ProjectDTO(BaseModel):
+    """一个项目 —— 仓库上面那一级。
+
+    项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在
+    工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是
+    行自己的 slug。
+    """
+
+    id: str
+    slug: str
+    name: str
+    repos: int = 0
+    issues: int = 0
+
+
+class ProjectListDTO(BaseModel):
+    items: list[ProjectDTO] = []
 
 
 class WorkspaceDTO(BaseModel):

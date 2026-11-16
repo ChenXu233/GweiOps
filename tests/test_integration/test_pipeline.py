@@ -673,3 +673,35 @@ class TestReplyOnTheTopic:
 
         assert out["posted"] is False
         assert "已经回过话" in out["reason"]
+
+
+# ============================================================================
+# 仓库的身份与它的项目:slug 在租户内唯一,项目是它上面那一级
+# ============================================================================
+
+
+class TestRepoProjectLayer:
+    """这两件事一旦错了,多仓库就只是把一锅粥分成几碗。"""
+
+    def test_slug_is_source_prefixed(self):
+        """同一仓库名在两个来源上是两份代码,slug 因此要带来源前缀。"""
+        from engine.workflows.pipeline import project_slug_of, repo_slug
+
+        assert repo_slug("github", "acme/api") == "github:acme/api"
+        assert repo_slug("cnb", "acme/api") == "cnb:acme/api"
+        assert repo_slug("github", "acme/api") != repo_slug("cnb", "acme/api")
+        # 没有来源时就是全名,不凭空造一个前缀
+        assert repo_slug("", "acme/api") == "acme/api"
+        # 默认归属的项目是路径第一段
+        assert project_slug_of("acme/api") == "acme"
+        assert project_slug_of("acme") == "acme"
+        assert project_slug_of("") == ""
+
+    def test_source_prefix_cannot_impersonate_a_repo_name(self):
+        """来源叫 acme、仓库叫 api 的写法,不该和 github 上的 acme/api 撞成一行。"""
+        from engine.workflows.pipeline import repo_slug
+
+        # 来源叫 acme、仓库叫 api 的写法,与仓库 acme/api 在 github 上,是两行
+        assert repo_slug("acme", "api") == "acme:api"
+        assert repo_slug("github", "acme/api") == "github:acme/api"
+        assert repo_slug("acme", "api") != repo_slug("github", "acme/api")

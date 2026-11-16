@@ -77,6 +77,7 @@ class TestConsole:
                             tenant_id=tenant.id,
                             source=source,
                             name=name,
+                            slug=f"{source}:{name}",
                         )
                     )
                 db.commit()
@@ -106,8 +107,56 @@ class TestConsole:
                 db.add(tenant)
                 db.flush()
                 # 来源不同的两行,名字一样;id 都没有(有的来源根本不给)
-                db.add(Project(tenant_id=tenant.id, source="github", name=name))
-                db.add(Project(tenant_id=tenant.id, source="gitlab", name=name))
+                db.add(Project(tenant_id=tenant.id, source="github", name=name, slug=f"github:{name}"))
+                db.add(Project(tenant_id=tenant.id, source="gitlab", name=name, slug=f"gitlab:{name}"))
                 db.commit()
         finally:
             engine.dispose()
+
+        repos = client.get("/api/repos", params={"workspace": slug}).json()
+        assert sorted(r["source"] for r in repos) == ["github", "gitlab"]
+
+    def test_repos_carry_their_project(self, client):
+        """仓库上面还有项目:每行说清自己属于谁,范围闸的中间档才立得住。"""
+        import uuid
+
+        import sqlalchemy as sa
+        from sqlalchemy.orm import Session
+
+        from engine.db.models import Project, Tenant
+
+        slug = f"ws-{uuid.uuid4().hex[:8]}"
+        project = f"acme-{uuid.uuid4().hex[:6]}"
+        engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
+        try:
+            with Session(engine) as db:
+                tenant = Tenant(slug=slug, name="有项目的工作区")
+                db.add(tenant)
+                db.flush()
+                parent = Project(
+                    tenant_id=tenant.id, parent_id=None, slug=project, source="", name="Acme"
+                )
+                db.add(parent)
+                db.flush()
+                db.add(
+                    Project(
+                        tenant_id=tenant.id,
+                        parent_id=parent.id,
+                        slug=f"github:{project}/api",
+                        source="github",
+                        name=f"{project}/api",
+                    )
+                )
+                db.commit()
+        finally:
+            engine.dispose()
+
+        repos = client.get("/api/repos", params={"workspace": slug}).json()
+        # 项目行不是仓库:列表里只该有那个子仓
+        assert [r["name"] for r in repos] == [f"{project}/api"]
+        assert repos[0]["project"] == project
+        assert repos[0]["projectName"] == "Acme"
+
+        projects = client.get("/api/projects", params={"workspace": slug}).json()["items"]
+        row = next(p for p in projects if p["slug"] == project)
+        assert row["repos"] == 1

@@ -30,7 +30,20 @@ export interface Plugin {
   pageTitle?: string
 }
 
-// 工作区:租户在控制台的名字。repo / source 只是列表上要说清的两件事,
-// 不是新的筛选维度——工作区本身就是筛选维度。
+// 工作区:租户在控制台的名字。repo / source 只是列表上要说清的两件事。
 export type Workspace = S['WorkspaceDTO']
 export type WorkspaceList = S['WorkspaceListDTO']
+
+/**
+ * 项目:仓库上面那一级,也是范围闸的中间档。
+ *
+ * 它是资源不只是标签——项目级的可见性、默认动作、凭据都摆在这里。`repos` /
+ * `issues` 是它下面那些仓库的数,用来在选择器里说清"这一档有多大"。
+ */
+export type Project = S['ProjectDTO']
+
+/** 范围闸的三档:整个工作区 → 某个项目 → 某个仓库。 */
+export interface ScopePicker {
+  project: string
+  repo: string
+}

@@ -1389,6 +1389,54 @@
         "title": "PluginWidgetMetricDTO",
         "type": "object"
       },
+      "ProjectDTO": {
+        "description": "一个项目 —— 仓库上面那一级。\n\n项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在\n工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是\n行自己的 slug。",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issues": {
+            "default": 0,
+            "title": "Issues",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repos": {
+            "default": 0,
+            "title": "Repos",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "title": "ProjectDTO",
+        "type": "object"
+      },
+      "ProjectListDTO": {
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProjectDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "ProjectListDTO",
+        "type": "object"
+      },
       "QuotaDTO": {
         "properties": {
           "items": {
@@ -1490,6 +1538,21 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "projectName": {
+            "default": "",
+            "title": "Projectname",
+            "type": "string"
+          },
+          "slug": {
+            "default": "",
+            "title": "Slug",
             "type": "string"
           },
           "source": {
@@ -3032,7 +3095,7 @@
     },
     "/api/board": {
       "get": {
-        "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。",
+        "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。\n\n`project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看\n的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,\n而它能被选到,本身就说明它属于当前这一档。",
         "operationId": "issue_board_api_board_get",
         "parameters": [
           {
@@ -3049,6 +3112,38 @@
                 }
               ],
               "title": "Tenant"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
             }
           },
           {
@@ -4557,6 +4652,53 @@
         "summary": "Plugin Ui Asset"
       }
     },
+    "/api/projects": {
+      "get": {
+        "description": "这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。\n\n项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →\n某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。",
+        "operationId": "list_projects_api_projects_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "workspace",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Projects"
+      }
+    },
     "/api/quota": {
       "get": {
         "description": "这个租户每条限量的用量。没声明的资源不出现在里面。",
@@ -4657,7 +4799,7 @@
     },
     "/api/repos": {
       "get": {
-        "description": "这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。\n\n仓库要多到一张列表放不下时才需要按工作区筛,现在就是把\"哪些仓库\"说清楚:\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源。",
+        "description": "这个工作区里的仓库。`workspace` 不给就是令牌那一个(没有令牌时是全部)。\n\n仓库要多到一张列表放不下时才需要按工作区筛,现在就是把\"哪些仓库\"说清楚:\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,\n所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。",
         "operationId": "list_repos_api_repos_get",
         "parameters": [
           {
