@@ -89,7 +89,9 @@ async def lifespan(app: FastAPI):
             logger.warning("插件配置缺项 %s: %s", scope.name, ", ".join(missing))
 
     # 鉴权:配了机器令牌或者库里已经有人,就要求身份。首启初始化之后由
-    # /api/auth/setup 自己把它翻过来,不用重启。
+    # /api/auth/setup 当场翻转,不用重启。所以"要不要鉴权"只能在这里判定并在
+    # 这里说一次——在 import 时按 api_tokens 是否为空去说,会把已有用户的实例
+    # 说成"不鉴权"。
     from engine.auth import store as auth_store
 
     try:
@@ -102,7 +104,20 @@ async def lifespan(app: FastAPI):
         from engine.auth import keys as key_store
 
         await key_store.ensure_schema()
-    set_auth_required(bool(API_TOKENS) or has_users)
+    auth_on = bool(API_TOKENS) or has_users
+    set_auth_required(auth_on)
+    if auth_on:
+        reasons = []
+        if API_TOKENS:
+            reasons.append(f"{len(API_TOKENS)} 条控制台令牌")
+        if has_users:
+            reasons.append("库里已有用户")
+        logger.info("控制台鉴权已开启:%s", "、".join(reasons))
+    else:
+        logger.warning(
+            "控制台鉴权已关闭:没有控制台令牌,库里也没有用户;"
+            "by 与 tenant 采信调用方自报。单机自用可以,对外必须配"
+        )
 
     # Startup: 账本表(仓库没有迁移工具,checkfirst 建一次)
     if config.settings.change_ledger_backend != "file":
@@ -179,12 +194,7 @@ app.include_router(mcp_router)
 app.include_router(api_keys_router)
 app.include_router(console_agent_router)
 
-# 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。
+# 令牌在 import 时就得读出来(中间件要它算 X-Gwei-Auth),但"要不要鉴权"由
+# 启动末尾的 lifespan 判定:那时才知道库里有没有用户。判定本身只在一处发声。
 API_TOKENS = load_tokens(config.settings.api_tokens)
-if API_TOKENS:
-    logger.info("Console auth enabled: %d token(s)", len(API_TOKENS))
-else:
-    logger.warning(
-        "API 未配置控制台令牌(api_tokens 为空):服务不鉴权,by 与 tenant 由调用方自报"
-    )
 app.middleware("http")(make_middleware(API_TOKENS))

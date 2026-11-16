@@ -15,6 +15,7 @@ import sqlalchemy as sa
 
 from engine.auth import hash_password
 from engine.auth import registration as policy_mod
+from engine.shared.config import config as app_config
 from engine.auth import registration_store as reg
 from engine.db.models import User, UserActivation, UserContact, VerificationCode
 from engine.quota import store as quota_store
@@ -52,8 +53,9 @@ async def _bootstrap() -> None:
 
 @pytest.fixture
 def policy(monkeypatch):
-    monkeypatch.setattr("engine.shared.config.config.settings.registration_enabled", True)
-    monkeypatch.setattr("engine.shared.config.config.settings.registration_test_code", "")
+    # 按对象打补丁:字符串形式会被当成模块路径去 import,而 config 是单例不是模块
+    monkeypatch.setattr(app_config.settings, "registration_enabled", True)
+    monkeypatch.setattr(app_config.settings, "registration_test_code", "")
     return policy_mod.policy_for("")
 
 
@@ -86,7 +88,7 @@ def test_a_wrong_code_burns_an_attempt(policy):
 
 
 def test_too_many_attempts_kills_the_code(policy, monkeypatch):
-    monkeypatch.setattr("engine.shared.config.config.settings.registration_max_attempts", 2)
+    monkeypatch.setattr(app_config.settings, "registration_max_attempts", 2)
 
     async def run():
         await _bootstrap()
