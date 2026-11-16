@@ -53,15 +53,10 @@ class PluginServiceStub:
                 request_serializer=plugin__pb2.HealthRequest.SerializeToString,
                 response_deserializer=plugin__pb2.HealthResponse.FromString,
                 _registered_method=True)
-        self.RegisterScope = channel.unary_unary(
-                '/gweiops.plugin.PluginService/RegisterScope',
-                request_serializer=plugin__pb2.RegisterScopeRequest.SerializeToString,
-                response_deserializer=plugin__pb2.RegisterScopeResponse.FromString,
-                _registered_method=True)
-        self.GetScopeConfig = channel.unary_unary(
-                '/gweiops.plugin.PluginService/GetScopeConfig',
-                request_serializer=plugin__pb2.GetScopeConfigRequest.SerializeToString,
-                response_deserializer=plugin__pb2.GetScopeConfigResponse.FromString,
+        self.Configure = channel.unary_unary(
+                '/gweiops.plugin.PluginService/Configure',
+                request_serializer=plugin__pb2.ConfigureRequest.SerializeToString,
+                response_deserializer=plugin__pb2.ConfigureResponse.FromString,
                 _registered_method=True)
         self.HandleEvent = channel.unary_unary(
                 '/gweiops.plugin.PluginService/HandleEvent',
@@ -106,15 +101,10 @@ class PluginServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def RegisterScope(self, request, context):
-        """Scope 注册
+    def Configure(self, request, context):
+        """配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件这一面，
+        所以配置是"推"下来的，插件不反向索取。
         """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def GetScopeConfig(self, request, context):
-        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -158,15 +148,10 @@ def add_PluginServiceServicer_to_server(servicer, server):
                     request_deserializer=plugin__pb2.HealthRequest.FromString,
                     response_serializer=plugin__pb2.HealthResponse.SerializeToString,
             ),
-            'RegisterScope': grpc.unary_unary_rpc_method_handler(
-                    servicer.RegisterScope,
-                    request_deserializer=plugin__pb2.RegisterScopeRequest.FromString,
-                    response_serializer=plugin__pb2.RegisterScopeResponse.SerializeToString,
-            ),
-            'GetScopeConfig': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetScopeConfig,
-                    request_deserializer=plugin__pb2.GetScopeConfigRequest.FromString,
-                    response_serializer=plugin__pb2.GetScopeConfigResponse.SerializeToString,
+            'Configure': grpc.unary_unary_rpc_method_handler(
+                    servicer.Configure,
+                    request_deserializer=plugin__pb2.ConfigureRequest.FromString,
+                    response_serializer=plugin__pb2.ConfigureResponse.SerializeToString,
             ),
             'HandleEvent': grpc.unary_unary_rpc_method_handler(
                     servicer.HandleEvent,
@@ -280,7 +265,7 @@ class PluginService:
             _registered_method=True)
 
     @staticmethod
-    def RegisterScope(request,
+    def Configure(request,
             target,
             options=(),
             channel_credentials=None,
@@ -293,36 +278,9 @@ class PluginService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/gweiops.plugin.PluginService/RegisterScope',
-            plugin__pb2.RegisterScopeRequest.SerializeToString,
-            plugin__pb2.RegisterScopeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def GetScopeConfig(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/gweiops.plugin.PluginService/GetScopeConfig',
-            plugin__pb2.GetScopeConfigRequest.SerializeToString,
-            plugin__pb2.GetScopeConfigResponse.FromString,
+            '/gweiops.plugin.PluginService/Configure',
+            plugin__pb2.ConfigureRequest.SerializeToString,
+            plugin__pb2.ConfigureResponse.FromString,
             options,
             channel_credentials,
             insecure,
