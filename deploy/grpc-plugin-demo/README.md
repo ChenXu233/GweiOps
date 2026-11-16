@@ -1,7 +1,15 @@
 # 进程外插件示例
 
 一个最小的 gRPC 插件:自己的进程、自己的依赖,核心只通过 `plugin.yaml` 里的
-`endpoint` 找到它。能力、任务名映射、Hook 订阅全在清单里声明——wire 只承载调用。
+`endpoint` 找到它。能力、任务名映射、效果声明、配置声明全在清单里声明——wire 只承载调用。
+
+它演示的不是"能连上",而是两件在进程外最容易漏的事:
+
+- **当一个效果提供者**:`scan.todos` 是一条真效果。执行在目标目录落一个印记,句柄就是那个
+  印记的文件名,撤销 = 删掉它,验证 = 印记还在不在。变更单元推得完、撤得掉。
+- **拿到自己的配置**:进程外读不到核心的环境变量与库,值由核心经 `Configure` 推下来。
+
+字段与失败语义见[插件系统参考](../../docs/reference/plugin-system.md#进程外grpc插件)。
 
 字段与失败语义见[插件系统参考](../../docs/reference/plugin-system.md#进程外grpc插件)。
 
@@ -20,8 +28,19 @@ PLUGINS_EXTRA_DIRS=$PWD/deploy PLUGINS_ENABLED=demo-remote-scan \
 
 # 3) 看它有没有被认出来
 curl -sS localhost:8000/api/plugins | jq '.[] | select(.name=="demo-remote-scan")'
-# 4) 调一次它的能力(走能力通道,与进程内插件没有区别)
+#    返回值里 capabilities 有 scan.todos,enabled 为 true
+
+# 4) 给它的配置(核心会推下去;插件把它写进印记)
+curl -sS -X PUT localhost:8000/api/settings/scopes/demo-remote-scan \
+  -H 'content-type: application/json' \
+  -d '{"values": {"note": "手工验证的印记"}}'
+
+# 5) 当效果用:走出口或 intent 都会落成一个变更单元,
+#    执行后在目标目录里能看到 <句柄>.gwei-scan.json
 ```
+
+清单里 `default_enabled: false` 是有意的:它和 `PLUGINS_ENABLED` 白名单一样,写错一个字母
+不该长得跟"这个部署确实一个插件都不装"一样。`GET /api/plugins` 会把它列出来并说明原因。
 
 `PLUGINS_GRPC` 形式的临时接入也给支持(`name=host:port`),但那种方式拿不到清单,
 插件一个能力都不会有——它只是让人确认"对面在不在"。把 `plugin.yaml` 放进插件目录

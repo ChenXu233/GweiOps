@@ -1,11 +1,11 @@
 # 进程外插件示例:自己的进程,自己的依赖,核心只通过 gRPC 调它。
 #
 # 与进程内插件的差别只有一个:`endpoint` 代替 `class_name`。能力、任务名映射、
-# Hook 订阅、周期这些声明照旧写在这里——声明留在清单,wire 只承载调用。
+# 效果声明、配置声明、Hook 订阅、周期这些照旧写在这里——声明留在清单,wire 只承载调用。
 name: demo-remote-scan
 version: 0.1.0
-type: agent
-description: 进程外扫描插件示例,演示 gRPC 接入形状(读一个目录里的待办标记)
+type: action
+description: 进程外扫描插件示例,演示 gRPC 接入形状(数一个目录里的待办标记)
 default_enabled: false
 
 # 核心按这个地址连它;编排里可用 PLUGINS_GRPC=name=host:port 覆盖
@@ -18,3 +18,22 @@ capabilities:
   - scan.todos
 tasks:
   scan.todos: scan_todos
+
+# 一次效果。四个阶段的任务名照旧由核心解释,远端只认 "该干什么":
+#   execute -> scan_todos,undo -> undo_scan_todos,window / verify 交回能力名
+# 句柄是远端自己定的不透明字符串(这里是一个印记文件名),核心原样存、原样带回来。
+effects:
+  scan.todos:
+    label: 扫一遍目标目录里的待办标记,并落一个印记
+    execute: { task: scan_todos, args: [path] }
+    undo: { task: undo_scan_todos, kind: symmetric }
+    window: { read: marker_present }
+    verify:
+      - { query: marker_exists, expect: "true" }
+
+# 插件要的配置。进程外插件没有代码可导入,声明只能落在清单里;核心据此在设置页
+# 列出字段,并在插件启动后与改配置后把值推下来。
+scopes:
+  demo-remote-scan:
+    prefix: DEMO_REMOTE_SCAN_
+    optional: [note]
