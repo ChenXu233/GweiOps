@@ -309,9 +309,15 @@ def test_a_tool_whitelist_narrows_the_session(env):
 # ---------------------------------------------------------------------------
 
 
-def _session(**kw) -> store.ConsoleSession:
+def _session(*, storage: bool = False, **kw) -> store.ConsoleSession:
+    """默认不落库:这一批用例判的是权限与闸门,不判持久化。
+
+    查审计、重开还能看到的那几条要真库 —— env 里那份内存 SQLite —— 传 `storage=True`。
+    """
     actor = Role({"changes.read", "changes.execute"}, bindings={BINDING})
-    return asyncio.run(store.open_session(actor=actor, tenant="acme", binding=BINDING, **kw))
+    return asyncio.run(
+        store.open_session(actor=actor, tenant="acme", binding=BINDING, storage=storage, **kw)
+    )
 
 
 def _call(session, name: str, args: dict, registry) -> dict:
@@ -576,7 +582,7 @@ def test_a_session_survives_the_process_cache(env):
 
 
 def test_a_refusal_is_on_the_record(env):
-    session = _session()
+    session = _session(storage=True)
 
     async def scenario():
         task = asyncio.create_task(store.call_tool(session, env.stub, "compose.scale", {"replicas": 2}))
@@ -598,7 +604,7 @@ def test_a_refusal_is_on_the_record(env):
 
 
 def test_a_permission_refusal_is_on_the_record(env):
-    session = _session(permissions=["changes.read"])
+    session = _session(permissions=["changes.read"], storage=True)
 
     asyncio.run(store.call_tool(session, env.stub, "compose.scale", {}))
 
@@ -671,9 +677,9 @@ def test_the_agent_uses_bubs_model_not_a_translation(monkeypatch):
         from bub.builtin.model import BubModel  # noqa: F401
     except ImportError:
         pytest.skip("没装 bub")
-    real = pytest.importorskip("engine.agent.loop")
+    import engine.agent.loop as real
+
     monkeypatch.setattr(real, "HAS_BUB", True)
-    monkeypatch.setattr("engine.agent.loop.session_agent", real.session_agent, raising=False)
 
     session = _session()
     agent = real.session_agent(session=session, registry=Registry())

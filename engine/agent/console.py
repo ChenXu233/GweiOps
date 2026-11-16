@@ -372,8 +372,13 @@ async def open_session(
     tools: list[str] | None = None,
     confirm: bool = True,
     model: str = "",
+    storage: bool = True,
 ) -> ConsoleSession:
-    """开一个新会话。默认给到这个身份的全部 —— 只有它自己能收窄自己。"""
+    """开一个新会话。默认给到这个身份的全部 —— 只有它自己能收窄自己。
+
+    `storage=False` 只给口令判据本身的用例用:会话不落库,也没有审计。默认是
+    落库 —— 一个只在内存里的会话没有审计依据,生产上不能这么开。
+    """
     held = _held_permissions(actor)
     # 不填 = 按这个人能给的来。填了就核对一遍:会话只能越用越窄。
     granted = frozenset(permissions) if permissions is not None else held
@@ -401,9 +406,13 @@ async def open_session(
         model=model or "",
         binding=binding or "",
     )
-    await _insert(session)
+    if storage:
+        await _insert(session)
     _SESSIONS[session.id] = session
-    await _audit(session, "session.open", {"permissions": sorted(granted), "confirm": session.confirm})
+    if storage:
+        await _audit(
+            session, "session.open", {"permissions": sorted(granted), "confirm": session.confirm}
+        )
     return session
 
 
