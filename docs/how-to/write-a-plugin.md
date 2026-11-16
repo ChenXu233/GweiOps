@@ -117,12 +117,52 @@ class MyPlugin:
 serve(MyPlugin(), host="0.0.0.0", port=50051)
 ```
 
-`serve` 兜住 JSON 编解码、生命周期、Hook 回调;你只实现业务方法。任务名映射、
-能力名、Hook 订阅仍旧写在清单里——核心解释声明,wire 只承载调用。
+`serve` 兜住 JSON 编解码、生命周期、Hook 回调、配置下发;你只实现业务方法。任务名映射、
+能力名、Hook 订阅、要哪些配置仍旧写在清单里——核心解释声明,wire 只承载调用。
 
 失败语义:远端连不上、超时、抛错,都只让**这一次调用**失败(`GrpcPluginError`),
 不拖垮核心,也不影响其他插件。完整字段与超时配置见[插件系统参考](../reference/plugin-system.md#进程外grpc插件),可跑的示例在
 [deploy/grpc-plugin-demo](../../deploy/grpc-plugin-demo/README.md)。
+
+两件在进程外会碰到、进程内不会碰到的事:
+
+**配置要靠核心推下来。** 你的进程读不到核心的环境变量与业务库,所以 `config.get_scope_config()`
+在你这一侧什么都不返回。在清单里声明,核心登记进配置表并在启动后与改配置后把值送过来:
+
+```yaml
+scopes:
+  adapter-acme:
+    prefix: ACME_
+    required: [token]
+```
+
+```python
+class MyPlugin:
+    async def configure(self, scope: str, values: dict, missing: list[str]) -> None:
+        if scope == "adapter-acme":
+            self.token = values.get("token", "")
+            # missing 里是"必填但还没填"的键名,想拒收就抛错,核心会把原因报到页面上
+```
+
+**要当效果提供者就把四个方法写上。** 名字与进程内一致,入参也一样(`window` / `verify`
+收到的是 `Effect`),从进程内迁过来一行都不用改:
+
+```python
+class MyPlugin:
+    async def execute(self, task: str, args: dict) -> dict:
+        return {"handle": "这次变更的凭证"}
+
+    async def undo(self, task: str, args: dict, handle: str) -> dict: ...
+
+    async def window(self, effect: Effect, handle: str | None) -> Window:
+        return Window(unbounded=True, source="marker_present")
+
+    async def verify(self, effect: Effect, handle: str) -> tuple[bool, dict]:
+        return True, {"checked": True}
+```
+
+句柄是不透明字符串:核心存下来再原样带回来,你拿它当文件名、自增 id 都行。
+确定没碰到下游时抛 `EffectNotApplied`,账本会把这次记成"可重试"而不是"不知道动没动"。
 
 ## 5 接一个来源:Webhook 适配器
 
@@ -243,7 +283,7 @@ async def verify(self, effect, handle) -> tuple[bool, dict]: ...
 
 **抛什么决定这次失败怎么记账。**认得出没碰到下游(构造请求就失败、下游明确 4xx)时抛 `EffectNotApplied`,单元记 `failed`,重试是安全的;抛别的异常一律记 `unknown`——请求可能已经到了对面,重试前得先去下游看一眼。分不清就别猜着抛 `failed`。
 
-窗口的完整口径见[变更单元契约](../explanation/change-unit-contract.md)第 5 节。
+窗口的完整口径见[变更单元契约](../explanation/change-unit-contract.md)第 5 节。进程外插件的这四个方法同名同签名,协议层负责分派,见[4.1](#41-想让插件跑在自己的进程里)。
 
 ## 7 声明一个周期
 

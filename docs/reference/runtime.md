@@ -247,8 +247,8 @@
 | GET | `/api/repos` | 仓库列表 |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
-| PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
-| DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键;删的是调用方租户那一份,读的时候落回公共值 |
+| PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库、推给声明了这个 scope 的插件并立即生效;`push_error` 说推失败的原因(值仍然存下了) |
+| DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键并重推;删的是调用方租户那一份,读的时候落回公共值 |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `reason`)/ 已启用插件的插槽声明 |
 | POST | `/api/plugins/{name}/enable`、`/disable` | 运行期启停一个插件:导入注册、或摘索引,不用重启 |
 | POST | `/api/plugins/rescan` | 重扫插件目录:新出现的按决定启用,删掉的停用 |

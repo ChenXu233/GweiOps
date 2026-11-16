@@ -46,8 +46,9 @@ v2 留下的真实骨架是:清单、注册表、能力通道、Hook、UI 插槽
 
 **直接 monkey-patch 其他插件或核心代码是明确禁止的**。系统原生与插件行为的变更只能经:
 
-1. **配置旋钮(Config Scopes)**——已有机制(RegisterScope/GetScopeConfig)。行为开关与参数,
-   启动时读取;改动后需重启,核心没有热重载。
+1. **配置旋钮(Config Scopes)**——已有机制(`config.register_scope` / `get_scope_config`,
+   进程外插件写清单 `scopes` 块)。行为开关与参数,插件在启动时读取;进程内插件改完配置要重启
+   才生效,进程外插件由核心把新值推下去(见[配置下发](../reference/plugin-system.md#配置下发))。
 2. **Hook 管线**——在命名扩展点上按优先级执行订阅者,语义分三档:
    `observe`(只读)/ `transform`(修改载荷)/ `veto`(否决操作)。
    扩展点选自领域主干,首批 ~12 个:`webhook.received`、`issue.triaged`、`analysis.completed`、

@@ -58,6 +58,8 @@ ui:
 | `capabilities_priority` | 同名能力的覆盖优先级,高者优先 |
 | `hooks.offered` | 本插件发布的扩展点(声明用途) |
 | `hooks.subscribe` | 扩展点订阅;mode/priority/failure_mode/handler 见 Hook 一节 |
+| `scopes` | 插件要的配置块(scope 名 → `prefix` / `required` / `optional`),见[配置(Scope)](#配置scope) |
+| `effects` | 能力的效果声明,见[效果声明](#效果声明) |
 | `ui.widgets` | 声明式卡片;slot 为插槽名,kind 为 metric 或 list,span 为 1–4 |
 | `ui.pages` | iframe 页面;entry 缺省 index.html,禁止绝对路径、`..` 与反斜杠 |
 | `effects` | 效果声明:execute / undo / window / verify,核心加载期校验 |
@@ -115,14 +117,49 @@ tasks:
 ```
 
 - **同一条注册路径**:发现流程见到 `endpoint` 就建代理,不走 `import`。之后的事件、能力解析、Hook、周期与进程内插件一字不差。
-- **wire 只承载调用**:`proto/plugin.proto` 的 `PluginService` 覆盖 Startup / Shutdown / HealthCheck / RegisterScope / GetScopeConfig / HandleEvent / ExecuteTask / HandleHook。效果不开新 rpc:execute / undo / window / verify 都是"任务名 + JSON 参数"。
+- **wire 只承载调用**:`proto/plugin.proto` 的 `PluginService` 覆盖 Startup / Shutdown / HealthCheck / Configure / HandleEvent / ExecuteTask / HandleHook。效果不开新 rpc:execute / undo / window / verify 都走 `ExecuteTask`,靠 `metadata["phase"]` 分阶段。
 - **连接方向是核心 → 插件**,只有这一面。插件进程监听端口,核心按清单的 `endpoint` 连过去;没有"插件连回控制面注册"的反向面——插件是什么由清单声明,核心不需要在运行时被通知一遍。
 - **载荷是 JSON**,`bytes` 字段里放 UTF-8 的 JSON;返回值同样。
 - **失败隔离**:连不上、超时、远端抛错、远端返回非 JSON,一律在代理里翻成 `GrpcPluginError`——"这个插件这一次没成"。grpc 的异常类型不泄漏给工作流。
 - **超时**:`PLUGINS_GRPC_TIMEOUT_S`(默认 10 秒)统一收口;`health_check` 与 `on_shutdown` 用 2 秒,那是探活与收尾,不该跟着业务超时走。
 - **握手不阻塞启动**:`on_startup` 连不上只记日志。远端此刻没起来不等于部署错了,`health_check()` 会让它在页面上显示为不健康。
 - **桩生成**:`python scripts/gen_grpc_stubs.py`,生成物在 `engine/plugin_manager/grpc_proto/`,提交进仓库(运行时不依赖 protoc)。`--check` 用来抓"改了 proto 没重生成"。
-- **写服务端**:用 `engine/plugin_manager/grpc_server.py` 的 `serve(plugin)`,只实现 `execute_task` / `handle_event` / `handle_hook`,协议细节它兜住。
+- **写服务端**:用 `engine/plugin_manager/grpc_server.py` 的 `serve(plugin)`,只实现 `execute_task` / `handle_event` / `handle_hook` / `configure`,协议细节它兜住。
+
+### 效果四方法:与进程内提供者同名同语义
+
+声明了 `effects` 的进程外插件照样当效果提供者。四个阶段靠 `metadata["phase"]` 区分,任务名来自清单 `effects` 块:
+
+| phase | 远端收到的 `task` | `params` | 期望返回 |
+| --- | --- | --- | --- |
+| `execute` | `effects.<cap>.execute.task` | 效果参数 | `{"handle": "...", ...}` |
+| `undo` | `effects.<cap>.undo.task` | `{"args": {...}, "handle": "..."}` | 任意 dict |
+| `window` | 能力名 | `{"effect": {...}, "handle": null}` | `{"seconds": n}` / `{"unbounded": true}` / `{"source": "..."}` |
+| `verify` | 能力名 | `{"effect": {...}, "handle": "..."}` | `{"ok": bool, "facts": {...}}` |
+
+插件写了 `execute` / `undo` / `window` / `verify` 四个方法时,`grpc_server` 直接交给它们,入参与进程内提供者一样(`window` / `verify` 收到的 `effect` 就是 `engine.change_unit.Effect`):从进程内迁到进程外,这四个方法一行都不用改。没写就退回 `execute_task(task, params)`,`params` 里带着 `phase` / `effect` / `handle`,自己分派。
+
+- **句柄是不透明字符串**:远端在 `execute` 的返回值里给,核心原样存进账本、再原样带回来,从不解开它。远端可以拿它当自增 id、文件名或签过名的令牌。
+- **`window` 报不出可撤性就不能自动执行**:只报 `source` 而不报 `seconds` / `unbounded` 等于"读不到窗口",单元按不可逆处理。这一点与进程内提供者一致。
+- **失败性质由远端声明**:`TaskResponse.error_kind = "not_applied"` 表示"确定没碰到下游",核心据此把单元记成 `failed`(可照原样重试);其它值或不填一律 `unknown`(要人去核)。远端抛 `engine.change_unit.EffectNotApplied` 时,`grpc_server` 自动翻成这个值。
+
+### 配置下发
+
+进程外插件读不到核心的环境变量与业务库,`config.get_scope_config()` 在它那一侧什么都不返回。所以配置是**推**下去的,不是插件来取的(连接方向只有核心 → 插件):
+
+```yaml
+scopes:
+  adapter-acme:
+    prefix: ACME_
+    required: [token]
+    optional: [base_url]
+```
+
+- 声明登记进配置表:控制台的设置页因此列得出字段,`validate_scope` 说得出缺哪一项(报的是人去补的那个环境变量名)。同名 scope 已在代码里注册过时不覆盖——那份带模型、带字段说明,比清单里这份粗的声明更准。
+- 推的时机:插件 `on_startup` 成功之后、以及人改完配置(`PUT` / `DELETE /api/settings/scopes/{scope}`)之后。改配置不用重启。
+- 一次推一个 scope 的**全量**值,不做增量:增量会让"删掉一个键"与"这个键没改过"在插件侧长得一样。空值不下发。
+- 插件实现 `configure(scope, values, missing)` 收下即可;它抛错就是拒收,核心把失败写进 `GET /api/plugins` 的 `error`(写成"配置没推下去:…"),不让它跟"启动失败"混在一起——插件在跑,差别只是它手里是旧配置。
+- 没实现 `configure` 就不推:进程内插件自己读得到配置表,再送一份只是两份会漂移的事实。
 - **示例**:`deploy/grpc-plugin-demo/`(`server.py` + `plugin.yaml` + 说明),e2e 用例在 `tests/test_integration/test_grpc_plugins.py`。
 - `PLUGINS_GRPC="name=host:port,..."` 是给"临时接一个不在插件目录里的插件"用的兜底:那种接法拿不到清单,也就没有任何能力,只能用来确认对面在不在。
 
@@ -224,6 +261,7 @@ config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GIT
 - 删除按租户生效:删掉租户那一份,读的时候落回公共值而不是落空。要彻底去掉公共值,用运维通配令牌删。
 - `plugin_settings` 的表结构变过一次(加了 `tenant` 列),仓库没有迁移工具:`ensure_schema` 是 checkfirst,老库要先 `DROP TABLE plugin_settings;` 让它重建。
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
+- **进程外插件在清单 `scopes` 块里声明**同一组事实,核心登记之后把值推下去(见[配置下发](#配置下发))。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`、`plugins/builtin/adapters/alertmanager/`。
 
@@ -264,7 +302,7 @@ effects:
 - 声明的能力必须同时列在 `capabilities` 里,否则注册即报错。
 - 同名效果由多个插件声明时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
 
-效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。进程外插件不必实现这四个方法名:`execute_task` 认清单 `effects` 里那四个任务名即可(handle 与窗口查询走 `params`)。
+效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。进程外插件同样实现这四个方法,协议层负责把阶段分派过去,见[效果四方法](#效果四方法与进程内提供者同名同语义);不实现也能用,`execute_task` 会收到带 `phase` 的 `params`。
 
 适配器还负责"这场运行的代码从哪来",三件事各有各的方法:
 
