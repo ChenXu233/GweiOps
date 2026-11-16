@@ -350,3 +350,5 @@ effects:
 - `tests/test_integration/test_intent_llm.py`:模型提供者的正常路径、各类降级(不编)、菜单剔除、履历进提示词与 evidence。
 - `tests/test_integration/test_plugin_enablement_runtime.py`:运行期启停改真实行为、未启用的插件也列得出来、决定活过重启、白名单写错点名、内置插件声明的能力真的调得通。
 - `tests/test_integration/test_grpc_plugins.py`:真起一个 gRPC 服务端,覆盖能力解析、Hook 往返、超时隔离、连不上时的行为,以及 `deploy/grpc-plugin-demo` 的端到端跑通。
+- `tests/test_integration/test_grpc_effect_provider.py`:进程外插件当效果提供者——四方法与进程内一致、句柄往返、两种失败分得开、verify 不过照样回滚、示例插件跑完一条完整单元。
+- `tests/test_integration/test_grpc_plugin_config.py`:清单声明的 scope 进配置表、启动后与改配置后推送、只推相关插件、拒收与缺项都说得出、没实现 `configure` 就不推。
