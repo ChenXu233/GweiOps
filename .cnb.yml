@@ -163,4 +163,5 @@ master:
           image: alpine:3.20
           script: |
             apk add --no-cache openssh-client bash >/dev/null
-            bash deploy/ci/deploy-via-ssh.sh "$CNB_BRANCH" "$CNB_REPO_SLUG_LOWERCASE"
+            # tag 名走 .cnb/tag_deploy.yml 里声明的 tag_name;CNB_BRANCH 兜底
+            bash deploy/ci/deploy-via-ssh.sh "${tag_name:-$CNB_BRANCH}" "$CNB_REPO_SLUG_LOWERCASE"

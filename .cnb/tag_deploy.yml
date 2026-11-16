@@ -6,3 +6,4 @@ environments:
     description: 初始 dogfood 部署——把指定 tag 的镜像切到腾讯内网目标机
     env:
       name: dogfood
+      tag_name: $CNB_BRANCH

@@ -79,9 +79,17 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
+      # harness 是引擎用 HARNESS_COMMAND(docker run)拉起来的,回调要带令牌。
+      # 鉴权开着时少了它们:沙箱起不来,或者起来后第一次出口调用 401。
+      HARNESS_COMMAND: ${HARNESS_COMMAND:-}
+      HARNESS_TOKEN: ${HARNESS_TOKEN:-}
+      SANDBOX: ${SANDBOX:-local}
     volumes:
       - harness-workspace:/workspaces
       - ${PLUGINS_EXTRA_DIR:-./plugins-extra}:/plugins-extra:ro
+      # 本地沙箱要替事故起 harness 容器:引擎容器里得有宿主 docker 的入口。
+      # 用远端沙箱(SSH / CNB)时删掉这一行。
+      - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "${DOCKER_GID:-999}"
     depends_on:
