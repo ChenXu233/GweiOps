@@ -15,8 +15,8 @@ CNB / GitLab 的 id 与 GitHub 的 id 不在同一个身份证体系里,同一�
 from alembic import op
 import sqlalchemy as sa
 
-revision = "012"
-down_revision = "011"
+revision = "016"
+down_revision = "015"
 branch_labels = None
 depends_on = None
 

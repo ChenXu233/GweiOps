@@ -1,6 +1,6 @@
 """项目这一级:projects 加 parent_id + slug,唯一键换成 (租户, slug)
 
-上一版(012)把仓库身份定成 (租户, 来源, 仓库全名),解决了"两个来源的 12345
+上一版(016)把仓库身份定成 (租户, 来源, 仓库全名),解决了"两个来源的 12345
 不是同一份代码";但仓库上面没有父,`租户 → 仓库` 只有一层。于是项目级的东西
 (可见性、默认动作、凭据)没有地方摆,子仓 `platform/team-a` 也无处安放。
 
@@ -21,8 +21,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = "013"
-down_revision = "012"
+revision = "017"
+down_revision = "016"
 branch_labels = None
 depends_on = None
 
