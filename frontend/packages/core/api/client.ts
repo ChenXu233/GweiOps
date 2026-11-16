@@ -61,6 +61,7 @@ export const SettingsApi = {
 }
 
 // 插件/接入层声明的配置项——回显规则由每个字段自己声明,前端不猜。
+// put 的响应里带 push_error:值已经存下了,只是没推到插件那边。两件事要分开说。
 export const SettingsScopesApi = {
   list: () => api.get('/api/settings/scopes'),
   put: (scope: string, values: Record<string, string>) =>
