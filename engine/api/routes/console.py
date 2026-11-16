@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from engine.api.schemas import RepoDTO, SettingsDTO
 from engine.db import async_session_factory
 from engine.db.models import Issue, Project
+from engine.shared.config import config
 
 
 def _any_read(request: Request) -> None:
@@ -70,15 +71,27 @@ async def list_repos() -> list[RepoDTO]:
 
 
 @router.get("/api/settings")
-async def team_settings() -> SettingsDTO:
-    # selfhost 单租户默认值;多租户/订阅接入后由计费插件提供
+async def team_settings(request: Request) -> SettingsDTO:
+    """团队设置。配额与注册那两块的现状从真实配置算出来,不是写死的字符串。"""
+    from engine.quota import QuotaError, limits_for
+    from engine.api.auth import tenant_scope
+
+    tenant = tenant_scope(request, None) or ""
+    try:
+        issues = limits_for(tenant).get("issues")
+    except QuotaError:
+        issues = None
     return SettingsDTO(
         teamName="Self-hosted",
         memberCount=1,
         adminCount=1,
         plan="selfhost",
         planPrice="-",
-        issueQuota="无限",
+        # 没声明限量才是"不限";写错的值在上面的 except 里按不限展示,设置页会报错
+        issueQuota=(
+            "不限" if issues is None or not issues.window_hours
+            else f"{issues.amount} / {issues.window_hours}h"
+        ),
         notificationChannels=[],
-        ssoProvider="—",
+        ssoProvider="OIDC" if config.settings.oidc_issuer else "—",
     )

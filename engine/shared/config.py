@@ -431,6 +431,48 @@ class Settings(BaseSettings):
     # token:tenant:actor:scope,逗号分隔;tenant 写 * 表示不限租户;空 = 不鉴权
     api_tokens: str = ""
 
+    # ---- 注册与账号核验 ----
+    # 注册默认关:一台已经跑起来的实例,不该因为升级就开始接受陌生人注册。
+    # 租户在控制台里可以覆盖这几项(见 engine/auth/registration.py 的 merge)。
+    registration_enabled: bool = False
+    # 自助注册的方式,逗号分隔:email(邮箱+密码+验证码)| phone(手机号+短信码)| oidc(身份提供方)
+    registration_methods: str = "email"
+    registration_requires_verification: bool = True
+    registration_default_role: str = "viewer"
+    # 已经实名核验过的人再拉进来的人,还核不核验
+    registration_trust_invited: bool = True
+    # 自助注册进哪个租户:空 = 落在 default_tenant_slug
+    registration_tenant: str = ""
+    registration_code_ttl_minutes: int = 15
+    registration_reset_ttl_minutes: int = 30
+    registration_test_code: str = ""  # 空 = 不公开验证码;配了就固定用它,只在自部署联调时用
+    registration_max_attempts: int = 5
+    registration_rate_limit: int = 5  # 同一收件人一小时最多发几条验证码
+    # 邮件链接与 OIDC 回跳要落到前台的哪个地址;空 = 按这次请求的 Host 推(反代后面常推错)
+    registration_public_base_url: str = ""
+
+    # ---- 账号核验通道 ----
+    email_provider: str = "console"  # console(打到日志)| smtp | resend | webhook
+    email_from: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    resend_api_key: str = ""
+    sms_provider: str = "webhook"  # console | webhook;手机号核验默认走 webhook —— 短信商的 API 各家不一样
+    sms_webhook_url: str = ""
+    sms_webhook_token: str = ""  # 以 X-Gwei-Token 头发给 webhook
+
+    # ---- OIDC ----
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_button_label: str = "用统一身份登录"
+    oidc_auto_create: bool = True  # 首次用 OIDC 登录时按注册策略建号
+    oidc_default_role: str = ""  # 空 = 跟 registration_default_role 一致
+
     # ---- Harness ----
     # 一条命令,把一次事故交给外部 agent;{workspace} 会被替换成沙箱里这一场的目录。
     # 留空 = 不用外部 harness,回落到进程内的 operator。
