@@ -1,16 +1,10 @@
 # engine/shared/runtime.py
 """插件运行时单例 —— 供 webhook 路由与工作流管道共用。
 
-取插件只有一条路:注册表。**没有直连兜底**——有兜底时 `PLUGINS_DISABLED`
-对主链路只是装饰:关掉之后工作流照样直连一个临时实例把活干完,日志里一句
-INFO 都不会多。开关看着存在、其实不存在,比没有开关更费解。
+取插件只有一条路:注册表,没有直连兜底。两种"取不到"各自处理:
 
-两种"取不到",各自的处理不同:
-
-- **注册表还没跑过发现**(单测直接导入、引擎还没起来):这是"还没查",返回
-  `None` 或抛 `LookupError`,调用方如实报告没开工——不拿一个临时对象假装插件在;
-- **跑过发现但没这个插件**(没装、被停用、白名单没列):这是部署事实,同样抛,
-  日志点名是哪个插件,让人知道去开什么。
+- 注册表还没跑过发现(单测直接导入、引擎还没起来):抛 `LookupError`,说明"还没查";
+- 跑过发现但没这个插件(没装、被停用、白名单没列):同样抛,日志点名是哪个插件。
 """
 
 import logging
@@ -27,9 +21,7 @@ def _registry():
 def get_adapter(source: str):
     """按来源取适配器(github / gitlab / cnb ...)。
 
-    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError`,
-    **不返回任何默认实现**:拿 GitHub 的身份去处理 CNB 的投递,会拿错仓库、
-    在别处留评论——错目标比报错糟。
+    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError`。
     """
     from engine.ingest.source import source_adapter
 
@@ -37,12 +29,7 @@ def get_adapter(source: str):
 
 
 def get_sensor():
-    """取 sense 能力的提供者。
-
-    **没有直连兜底**:这个部署没启用 sensor-agent,就没有感知这一步。工作流会
-    如实返回"没做感知",而不是偷偷用一个临时实例把活干完——那样 PLUGINS_DISABLED
-    对主链路是装饰,人以为自己关掉了,实际上什么都没关掉。
-    """
+    """取 sense 能力的提供者;没有直连兜底,没启用就没有感知这一步。"""
     registry = _registry()
     instance = registry.get("sensor-agent")
     if instance is not None:

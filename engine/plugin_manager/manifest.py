@@ -192,7 +192,7 @@ class Manifest:
             raise ManifestError(f"{path}: 缺少必填字段 class_name(或进程外插件的 endpoint)")
         if class_name and endpoint:
             raise ManifestError(
-                f"{path}: class_name 与 endpoint 只能给一个:同一份声明不该有两个实现"
+                f"{path}: class_name 与 endpoint 只能给一个"
             )
         try:
             plugin_type = PluginType(raw["type"])
@@ -398,7 +398,7 @@ def _parse_scopes(path: Path, raw: Any) -> dict[str, ScopeDecl]:
 
 
 def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:
-    """解析 effects 块。形状不对即拒绝注册——坏声明不该活到执行期。"""
+    """解析 effects 块。形状不对即拒绝注册。"""
     if not isinstance(raw, dict):
         raise ManifestError(f"{path}: effects 必须是映射")
 

@@ -4,12 +4,7 @@ import { mockRepos, mockPlugins } from '../mock'
 import type { Repo, Plugin } from '../types/repos'
 import type { PluginManifestDTO } from '../types/plugin'
 
-/**
- * engine 清单 DTO → 前端 Plugin 形状。
- *
- * `enabled` 一律取引擎给的值:前端没有任何依据判断一个插件是不是在跑。在这里
- * 猜一个 true,页面顶上那个"X / N 已启用"就会恒等于 N/N——那不是指标,是装饰。
- */
+/** engine 清单 DTO → 前端 Plugin 形状。`enabled` 取引擎给的值。 */
 function toPlugin(m: PluginManifestDTO): Plugin {
   return {
     id: m.name,
@@ -56,7 +51,6 @@ export function useRepoList() {
 
   if (import.meta.client) fetch()
 
-  // 启停与重扫:改完立刻重拉,页面上的数就是引擎此刻的事实
   const toggling = ref<string | null>(null)
   const actionError = ref('')
 

@@ -529,7 +529,7 @@ export interface paths {
         };
         /**
          * List Plugins
-         * @description 发现到的全部清单。未启用的也在里面——否则页面上没有地方把它打开。
+         * @description 发现到的全部清单,含未启用的。
          */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
@@ -551,7 +551,7 @@ export interface paths {
         put?: never;
         /**
          * Rescan Plugins
-         * @description 重扫插件目录:新出现的按决定启用,已经删掉的停用。已在跑且没变的不动。
+         * @description 重扫插件目录:新出现的按决定启用,磁盘上没了的停用,已在跑且没变的不动。
          */
         post: operations["rescan_plugins_api_plugins_rescan_post"];
         delete?: never;
@@ -605,10 +605,7 @@ export interface paths {
         put?: never;
         /**
          * Enable Plugin
-         * @description 打开一个已发现但没启用的插件。
-         *
-         *     没有清单就 404:目录里根本没有这个东西,给它记一条"已启用"只会让下次启动
-         *     对着一行谁也对不上的配置发呆。
+         * @description 打开一个已发现但没启用的插件。没有清单就 404。
          */
         post: operations["enable_plugin_api_plugins__name__enable_post"];
         delete?: never;
@@ -626,10 +623,7 @@ export interface paths {
         };
         /**
          * Plugin Ui Asset
-         * @description 服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。
-         *
-         *     安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
-         *     权限与同组其它端点一致,由 `require` 拦——同一组接口不该有两种口径。
+         * @description 服务插件自带 UI 资产;resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
          */
         get: operations["plugin_ui_asset_api_plugins__name__ui__file_path__get"];
         put?: never;
@@ -1609,10 +1603,7 @@ export interface components {
         };
         /**
          * PluginDTO
-         * @description 一个被发现过的插件。**发现 ≠ 启用**:`enabled` 才是它此刻在不在流程里。
-         *
-         *     只列已加载实例的话,未启用的插件在页面上根本不存在,人就没法把它打开——
-         *     所以这里按"发现的清单"枚举,`enabled` 与 `instances` 说清它此刻的状态。
+         * @description 一个被发现过的插件。`enabled` 表示它此刻在不在流程里。
          */
         PluginDTO: {
             /**

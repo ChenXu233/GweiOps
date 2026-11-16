@@ -93,11 +93,7 @@ class PluginWidgetDTO(BaseModel):
 
 
 class PluginDTO(BaseModel):
-    """一个被发现过的插件。**发现 ≠ 启用**:`enabled` 才是它此刻在不在流程里。
-
-    只列已加载实例的话,未启用的插件在页面上根本不存在,人就没法把它打开——
-    所以这里按"发现的清单"枚举,`enabled` 与 `instances` 说清它此刻的状态。
-    """
+    """一个被发现过的插件。`enabled` 表示它此刻在不在流程里。"""
 
     name: str
     version: str
@@ -106,14 +102,9 @@ class PluginDTO(BaseModel):
     capabilities: list[str] = []
     widgets: list[PluginWidgetDTO] = []
     pages: list[PluginPageDTO] = []
-    # 此刻能不能被解析到。false 时下面的 capabilities 只是声明,不是可用能力。
     enabled: bool = False
-    # 活着的实例键。同一清单按租户/目标挂多实例时这里会有多个。
     instances: list[str] = []
-    # 为什么是这个状态(在 PLUGINS_ENABLED 里 / 清单 default_enabled: false / 运行期停用)
     reason: str = ""
-    # 注册成功但起不来时的原因(如密钥没配)。空 = 没有已知的启动失败。
-    # "已启用"与"能用"是两件事,两者对不上时页面得说得出为什么。
     error: str = ""
 
 
@@ -286,7 +277,7 @@ class IssueTimelineDTO(BaseModel):
     rounds: list[TimelineRoundDTO] = []
     truncated: bool = False
 
-# 等你做什么:钉在一条具体的变更单元上,不是一句"待处理"。
+# 等你做什么:每条都钉在具体的变更单元上
 IssueAction = Literal["approve", "investigate", ""]
 
 
@@ -306,7 +297,7 @@ class IssueCardDTO(BaseModel):
     waiting_since: str = ""
     updated_at: str = ""
     conclusion: str = ""
-    # 空串 = 还没有任何变更。空不是第七种结论,所以单独留在联合类型里。
+    # 空串 = 还没有任何变更
     verdict: Verdict | Literal[""] = ""
     undoable: bool = False
     undo_reason: str = ""

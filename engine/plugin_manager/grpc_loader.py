@@ -1,7 +1,7 @@
 # engine/plugin_manager/grpc_loader.py
 """进程外 gRPC 插件 —— 插件跑在自己的进程里,核心只持有一个代理。
 
-形态:`plugin.yaml` 里写 `endpoint: host:port`,不写 `class_name`。声明仍旧在清单里
+形态:`plugin.yaml` 里写 `endpoint: host:port`(代替 `class_name`)。声明在清单里
 (能力、效果、Hook 订阅、周期),wire 只承载调用——两边因此走同一条注册路径,控制台
 在对面进程没起来时也能把它讲清楚。
 
@@ -53,14 +53,13 @@ NOT_APPLIED = "not_applied"
 
 
 class GrpcPluginError(RuntimeError):
-    """远端插件调用失败。调用方据此记一次失败,不当成"核心坏了"。"""
+    """远端插件调用失败。"""
 
 
 class GrpcPluginProxy(PluginBase):
-    """远端 gRPC 插件的进程内代理。
+    """远端 gRPC 插件的进程内代理:把每一次调用翻成一次 RPC。
 
-    它只做一件看起来不像插件的事:把每一次调用翻成一次 RPC。清单里声明的能力名、
-    任务名映射、Hook 订阅都由核心解释,代理不认识它们——远端改了实现不用改核心。
+    清单里声明的能力名、任务名映射、Hook 订阅都由核心解释,代理不认识它们。
     """
 
     def __init__(
@@ -75,7 +74,7 @@ class GrpcPluginProxy(PluginBase):
         self._name = manifest.name
         self._target = target
         self._timeout_s = timeout_s
-        # 声明在清单里,实例属性照抄一份:核心按实例属性解析 (租户, 目标)
+        # 实例属性照抄清单声明,核心按它们解析 (租户, 目标)
         self.binding = manifest.binding
         self.tenant = manifest.tenant
         self._channel_factory = channel_factory
@@ -108,11 +107,7 @@ class GrpcPluginProxy(PluginBase):
         return self._stub
 
     async def _call(self, method: str, request, *, timeout_s: float | None = None):
-        """跑一次 RPC,把 grpc 的异常翻译成本插件的失败。
-
-        远端抛的错、连不上、超时,对核心来说都是"这个插件这一次没成"——不该让
-        一个坏掉的插件用 RpcError 把上层工作流的语义搅乱。
-        """
+        """跑一次 RPC,把 grpc 的异常翻译成本插件的失败(GrpcPluginError)。"""
         stub = self._ensure_stub()
         fn = getattr(stub, method, None)
         if fn is None:  # pragma: no cover - 只有桩版本不匹配才会走到
@@ -129,10 +124,9 @@ class GrpcPluginProxy(PluginBase):
     # -- 生命周期 ---------------------------------------------------
 
     async def on_startup(self) -> None:
-        """握手一次:告诉远端它是谁、要哪些配置,顺手把健康状态核一遍。
+        """握手:告诉远端它是谁、要哪些配置,顺带核一遍健康状态。
 
-        连不上只记日志——远端此刻没起来不等于这个部署错了,下一次调用还能成。
-        真的不能用时,`health_check()` 会说 false,页面上看得见。
+        连不上只记日志,下一次调用还能成;真的不能用时 `health_check()` 会说 false。
         """
         from .grpc_proto import plugin_pb2
 
@@ -168,7 +162,7 @@ class GrpcPluginProxy(PluginBase):
         if self._channel is not None:
             try:
                 self._channel.close()
-            except Exception:  # noqa: BLE001 - 关不掉也不该拦住核心退出
+            except Exception:  # noqa: BLE001 - 关不掉只记日志
                 pass
         self._channel = None
         self._stub = None
@@ -298,7 +292,7 @@ class GrpcPluginProxy(PluginBase):
 
 
 def make_proxy(manifest: Manifest, target: str, *, timeout_s: float | None = None) -> GrpcPluginProxy:
-    """发现期建代理。超时取自环境,单点配置:所有远端插件一个口径。"""
+    """发现期建代理。超时取自环境(`PLUGINS_GRPC_TIMEOUT_S`)。"""
     return GrpcPluginProxy(
         manifest, target, timeout_s=timeout_s if timeout_s is not None else _timeout_from_env()
     )
@@ -346,11 +340,10 @@ def _window_from(raw: dict) -> "Window":
 
 
 def _decode_result(response, method: str) -> dict:
-    """TaskResponse / EventResponse → dict。失败在这里就变成这次调用的失败。
+    """TaskResponse / EventResponse → dict,失败在这里变成这次调用的失败。
 
     远端说得出"确定没碰到下游"(`error_kind == "not_applied"`)时,翻成
-    `EffectNotApplied`:那不是一次含糊的失败,是可以照原样重试的失败。说不清就
-    保持 GrpcPluginError,单元据此记 unknown。
+    `EffectNotApplied`(可照原样重试);说不清就保持 `GrpcPluginError`,单元据此记 unknown。
     """
     if response.error or not response.success:
         message = response.error or "远端报告失败但没有说明"
@@ -387,7 +380,7 @@ def parse_grpc_targets(raw: str | None = None) -> list[tuple[str, str]]:
 def register_grpc_plugins(
     parse=parse_grpc_targets, target_registry: PluginRegistry | None = None
 ) -> int:
-    """接上 `PLUGINS_GRPC` 里点名、但插件目录里没有清单的远端插件,返回数量。
+    """接上 `PLUGINS_GRPC` 里点名、插件目录里没有清单的远端插件,返回数量。
 
     常规形态不经过这里:清单里写 `endpoint` 的插件由发现流程直接建成代理
     (`PluginRegistry._activate`),和进程内插件走完全同一条路。这个函数只服务

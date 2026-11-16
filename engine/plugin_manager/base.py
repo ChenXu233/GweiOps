@@ -13,13 +13,7 @@ class PluginType(str, Enum):
 
 
 class PluginBase(ABC):
-    """插件基类。
-
-    **没有 `info()`**:插件是什么由清单(`plugin.yaml`)唯一声明,核心在加载期
-    就校验过。再让插件用代码回答一遍"我叫什么、我有什么能力",等于把同一个事实
-    存两份——两份会漂移,而漂移的那份在页面上看不出是错的。这里只留"做事"的
-    那几个方法。
-    """
+    """插件基类。插件是什么由清单(`plugin.yaml`)唯一声明,这里只留做事的方法。"""
 
     @abstractmethod
     async def on_startup(self):

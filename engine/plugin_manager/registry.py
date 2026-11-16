@@ -13,14 +13,13 @@
 - 带 tenant/binding 时按 (租户, 目标) 精确匹配,选不到直接抛,不跨目标回退。
 
 启停语义:
-- 发现 ≠ 启用。发现只把清单记进 `available()`,启用的才 import、注册、进索引;
+- 发现与启用是两步:发现只把清单记进 `available()`,启用的才 import、注册、进索引;
 - 启停可以在运行期做(`enable` / `disable` / `rescan`),不用重启进程:启用是
   "导入 + 注册 + on_startup",停用是"on_shutdown + 摘掉索引"。停用后这个插件
   既不在 `names()` 里,也解析不到它的能力;
 - 决定从哪来:运行期显式决定(`set_decisions`,由控制台写入并持久化)> 
-  `PLUGINS_ENABLED` 白名单 > `PLUGINS_DISABLED` > 清单 `default_enabled`。
-  白名单里写了没人认领的名字时点名告警——写错一个字母不该长得像"这个部署确实
-  一个插件都不装"。
+  `PLUGINS_ENABLED` 白名单 > `PLUGINS_DISABLED` > 清单 `default_enabled`;
+  白名单里写了没人认领的名字时点名告警。
 """
 
 import importlib
@@ -90,11 +89,7 @@ class _CapabilityProvider:
 
 @dataclass
 class Discovered:
-    """发现阶段记下的一件事:清单 + 它在哪 + 怎么导入。
-
-    导入推迟到真要启用时:清单能读出来就说明控制台能把它讲清楚,而坏掉的实现
-    不该在"只是看一眼插件列表"时把引擎拖下水。
-    """
+    """发现阶段记下的一件事:清单 + 它在哪 + 怎么导入。导入推迟到真要启用时。"""
 
     manifest: Manifest
     plugin_dir: Path
@@ -105,9 +100,7 @@ class Discovered:
 class PluginState:
     """一个清单此刻的状态:声明、启用与否、在哪些实例键上活着、为什么是这个状态。
 
-    `enabled` 与"能用"是两件事:注册成功但 on_startup 抛错的插件(比如密钥没配)
-    实例还在,能力却调不通。`error` 就是这一种——页面上说"已启用"而实际不可用,
-    是最难查的一类。
+    `error` 存注册成功但 on_startup 抛错的原因(比如密钥没配):实例还在,能力调不通。
     """
 
     manifest: Manifest
@@ -130,7 +123,7 @@ class PluginRegistry:
         self._available: dict[str, Discovered] = {}
         # 运行期显式决定(清单名 -> 启停);由控制台写入,启动时从库里装回来
         self._decisions: dict[str, bool] = {}
-        # 清单名 -> on_startup 的失败原因。注册成功不等于能用。
+        # 清单名 -> on_startup 的失败原因
         self._startup_errors: dict[str, str] = {}
         # 清单名 -> 配置没推到插件那边的原因。它不属于"起不来":插件在跑,
         # 差别是它手里是旧配置——两种失败混在一起会让人去查错的地方。
@@ -178,9 +171,8 @@ class PluginRegistry:
     def rescan(self, extra_dirs: list[str] | None = None) -> dict[str, list[str]]:
         """重新扫一遍目录,不重启进程。
 
-        只处理两件事:**新出现的**清单按决定启用,**已经不在磁盘上的**停掉。
-        已加载且清单没变的实例原样留着——一次点"重新扫描"不该把所有插件的连接
-        都断一遍。返回 {"added": [...], "removed": [...], "changed": [...]}。
+        新出现的清单按决定启用,已经不在磁盘上的停掉,已加载且清单没变的原样留着。
+        返回 {"added": [...], "removed": [...], "changed": [...]}。
         """
         added: list[str] = []
         removed: list[str] = []
@@ -300,7 +292,7 @@ class PluginRegistry:
         return "清单默认启用" if manifest.default_enabled else "清单声明 default_enabled: false"
 
     def _warn_unmatched_whitelist(self) -> None:
-        """白名单写了没人认领的名字:这是配置事故,不能和"确实没装插件"长得一样。"""
+        """白名单写了没人认领的名字时点名告警。"""
         wanted = _env_names("PLUGINS_ENABLED")
         if not wanted:
             return
@@ -324,8 +316,7 @@ class PluginRegistry:
     def _activate(self, found: Discovered) -> None:
         """实例化 + 注册。原子性由 register 保证:注册不成功就什么都不留。
 
-        进程外插件(清单写了 `endpoint`)不导入任何代码,实例换成一个远程代理——
-        声明与进程内的那份完全一样,所以这里只有一个分支,不在调用方分两套。
+        进程外插件(清单写了 `endpoint`)不导入任何代码,实例换成一个远程代理。
         """
         if found.manifest.endpoint:
             from .grpc_loader import make_proxy
@@ -356,10 +347,7 @@ class PluginRegistry:
         """注册一个实例。
 
         key 默认取清单名;同一清单要挂多个实例时(每租户/每目标一个)显式给 key。
-        同名清单内容必须一致,否则视为配置错误。
-
-        **全部校验在任何写入之前完成**:注册失败的插件不该在索引里留下半分痕迹。
-        留下残影时,日志说"加载失败"而它还能被解析到——这种状态没人能查。
+        同名清单内容必须一致,否则视为配置错误。全部校验在任何写入之前完成。
         """
         instance_key = key or manifest.name
         existing = self._manifests.get(manifest.name)
@@ -402,15 +390,14 @@ class PluginRegistry:
             self._effect_index[capability].sort(key=lambda p: (p.priority, p.key), reverse=True)
 
         for sub in manifest.hooks_subscribed:
-            # 订阅声明跟着索引一起存:同一个插件对同一扩展点写两条订阅(observe + veto)
-            # 时,反查第一条会把两条都变成第一条的 mode——链上执行的行为就错了。
+            # 订阅声明跟着索引一起存,同一插件对同一扩展点的多条订阅各保留各的 mode
             self._hook_index.setdefault(sub.point, []).append(
                 (sub.priority, instance_key, sub)
             )
             self._hook_index[sub.point].sort(key=lambda item: item[0], reverse=True)
 
     def _drop_instance(self, key: str) -> None:
-        """把一个实例从所有索引里摘掉。停用不是"打个标记",是它真的不再被解析到。"""
+        """把一个实例从所有索引里摘掉。"""
         self._instances.pop(key, None)
         self._instance_names.pop(key, None)
         self._dirs.pop(key, None)
@@ -455,13 +442,8 @@ class PluginRegistry:
         return dict(self._decisions)
 
     def states(self) -> list[PluginState]:
-        """每个被发现清单的当前状态——控制台据此画"已启用/未启用"。
-
-        发现 ≠ 启用这件事只有在这个列表里才看得见:只列 `names()` 的话,
-        未启用的插件在页面上根本不存在,人就没法把它打开。
-        """
+        """每个被发现清单的当前状态——控制台据此画"已启用/未启用"。"""
         out: list[PluginState] = []
-        # 发现到的:启没启用都列出来,否则页面上没有地方把它打开
         for name in sorted(self._available):
             manifest = self._available[name].manifest
             instances = sorted(
@@ -476,8 +458,7 @@ class PluginRegistry:
                     error=_errors_of(name, self._startup_errors, self._config_errors),
                 )
             )
-        # 直接 register() 进来的(进程外代理、单测手工挂的):没有目录,不能启停,
-        # 但它们确实在流程里——不列出来等于把活着的东西藏起来
+        # 直接 register() 进来的(进程外代理、单测手工挂的)也列出来
         for name in sorted(set(self._manifests) - set(self._available)):
             instances = sorted(
                 key for key, owner in self._instance_names.items() if owner == name
@@ -498,12 +479,7 @@ class PluginRegistry:
         return [self._available[name].manifest for name in sorted(self._available)]
 
     def is_loaded(self) -> bool:
-        """注册表跑过发现没有。
-
-        这个回答决定了"取不到插件"该怎么理解:注册表没跑过(单测直接调、引擎还没起)
-        是"还没查",而跑过之后取不到是"这个部署确实没启用它"。两件事混在一起,
-        开关就会变成装饰——关掉的插件靠一条直连兜底照常干活。
-        """
+        """注册表跑过发现没有。"""
         return bool(self._available) or bool(self._manifests)
 
     async def enable(self, name: str) -> None:
@@ -531,14 +507,14 @@ class PluginRegistry:
                 await self._push_config(key, instance)
 
     async def disable(self, name: str) -> None:
-        """停用一个插件:关掉它的实例,再从索引里摘掉。已经停了也不报错。"""
+        """停用一个插件:关掉它的实例,再从索引里摘掉。"""
         if name not in self._available:
             raise LookupError(f"没有发现这个插件:{name}")
         self._decisions[name] = False
         await self._disable_now_async(name)
 
     def _disable_now(self, name: str) -> None:
-        """同步摘除(磁盘上已经不在了的那种),不留 on_shutdown 的机会。"""
+        """同步摘除(磁盘上已经不在了的那种)。"""
         self._startup_errors.pop(name, None)
         self._config_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
@@ -717,8 +693,8 @@ class PluginRegistry:
     def tool_bindings(self, capability: str) -> tuple[str, ...]:
         """这个能力能在哪些资源(下游目标)上执行。
 
-        资源这一栏的判据来源:提供者实例自己声明的 binding。都空(控制面能力)
-        就返回空 —— "说不出在哪"不等于"哪儿都不能",调用方据此不拿资源拦人。
+        判据来源是提供者实例自己声明的 binding;都空(控制面能力)就返回空,
+        调用方不拿资源拦人。
         """
         out: list[str] = []
         for provider in self._capability_index.get(capability, []):

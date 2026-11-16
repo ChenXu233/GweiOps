@@ -1,14 +1,11 @@
 # engine/api/routes/plugins.py
 """插件清单与启停 API —— 前端插件页与 UI 插槽的数据源。
 
-两条读口问的是不同的事:
+- `GET /api/plugins` 列发现到的全部清单(含未启用的),`enabled` 表示它此刻在不在流程里;
+- `GET /api/plugins/widgets` 只取已启用插件声明的卡片。
 
-- `GET /api/plugins` 列**发现到的**清单(含未启用的),`enabled` 说它此刻在不在流程里;
-- `GET /api/plugins/widgets` 只取**已启用**插件声明的卡片——一张卡片只有在插件
-  活着的时候才拿得到数,不该在页面上留一个永远"暂时取不到"的格子。
-
-启停是运行期的事:打开 = 导入 + 注册 + on_startup,关掉 = on_shutdown + 摘索引,
-不用重启进程。决定写进库里,下次启动按它来。
+启停是运行期的事:打开 = 导入 + 注册 + on_startup,关掉 = on_shutdown + 摘索引。
+决定写进库里,下次启动按它来。
 """
 
 import logging
@@ -54,7 +51,7 @@ def _state_of(name: str):
 
 @router.get("/api/plugins")
 async def list_plugins(request: Request) -> list[PluginDTO]:
-    """发现到的全部清单。未启用的也在里面——否则页面上没有地方把它打开。"""
+    """发现到的全部清单,含未启用的。"""
     require(request, "plugins.read")
     return [_plugin_dto(state) for state in registry.states()]
 
@@ -96,11 +93,7 @@ async def list_metrics(prefix: str = Query("")) -> list[MetricDTO]:
 
 @router.post("/api/plugins/{name}/enable")
 async def enable_plugin(name: str, request: Request) -> PluginDTO:
-    """打开一个已发现但没启用的插件。
-
-    没有清单就 404:目录里根本没有这个东西,给它记一条"已启用"只会让下次启动
-    对着一行谁也对不上的配置发呆。
-    """
+    """打开一个已发现但没启用的插件。没有清单就 404。"""
     require(request, "plugins.write")
     try:
         await registry.enable(name)
@@ -128,10 +121,10 @@ async def disable_plugin(name: str, request: Request) -> PluginDTO:
 
 @router.post("/api/plugins/rescan")
 async def rescan_plugins(request: Request) -> dict:
-    """重扫插件目录:新出现的按决定启用,已经删掉的停用。已在跑且没变的不动。"""
+    """重扫插件目录:新出现的按决定启用,磁盘上没了的停用,已在跑且没变的不动。"""
     require(request, "plugins.write")
     outcome = registry.rescan()
-    # 重扫之后把"新出现且该启用"的实例启动起来(启动期那次不分青红皂白都会启动)
+    # 重扫之后把新出现且该启用的实例启动起来
     for name in outcome["added"]:
         state = _state_of(name)
         if state is not None and state.enabled:
@@ -140,20 +133,16 @@ async def rescan_plugins(request: Request) -> dict:
 
 
 async def _remember(name: str, enabled: bool, by: str) -> None:
-    """把决定写进库。写不进去只告警:开关已经生效了,差别只是能不能活过重启。"""
+    """把决定写进库;写不进去只告警,开关本身已生效。"""
     try:
         await enablement.save_decision(name, enabled, by=by)
-    except Exception:  # noqa: BLE001 - 库不可用不该让这次启停整体失败
+    except Exception:  # noqa: BLE001 - 库不可用只告警
         logger.warning("插件的启停决定没存下来(%s=%s),重启后会回到清单默认", name, enabled)
 
 
 @router.get("/api/plugins/{name}/ui/{file_path:path}")
 async def plugin_ui_asset(name: str, file_path: str, request: Request) -> FileResponse:
-    """服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。
-
-    安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
-    权限与同组其它端点一致,由 `require` 拦——同一组接口不该有两种口径。
-    """
+    """服务插件自带 UI 资产;resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。"""
     require(request, "plugins.read")
     plugin_dir = registry.plugin_dir(name)
     manifest = registry.manifest(name)

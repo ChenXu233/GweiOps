@@ -39,12 +39,11 @@ curl -sS -X PUT localhost:8000/api/settings/scopes/demo-remote-scan \
 #    执行后在目标目录里能看到 <句柄>.gwei-scan.json
 ```
 
-清单里 `default_enabled: false` 是有意的:它和 `PLUGINS_ENABLED` 白名单一样,写错一个字母
-不该长得跟"这个部署确实一个插件都不装"一样。`GET /api/plugins` 会把它列出来并说明原因。
+清单里 `default_enabled: false`:不被显式打开就不会加载,`GET /api/plugins`
+会把它列出来并说明原因。
 
-`PLUGINS_GRPC` 形式的临时接入也给支持(`name=host:port`),但那种方式拿不到清单,
-插件一个能力都不会有——它只是让人确认"对面在不在"。把 `plugin.yaml` 放进插件目录
-才是正道。
+`PLUGINS_GRPC` 形式的临时接入也给支持(`name=host:port`),但那种方式没有清单,
+也就没有任何能力声明,只能用来确认远端可达。正式接入把 `plugin.yaml` 放进插件目录。
 
 ## 换个语言写
 

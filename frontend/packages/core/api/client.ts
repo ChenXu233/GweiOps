@@ -43,12 +43,10 @@ export const PluginsApi = {
   // engine 原始清单(含 capabilities/widgets/pages 声明、enabled 状态)
   manifests: () => api.get('/api/plugins'),
   widgets: (slot: string) => api.get('/api/plugins/widgets', { query: { slot } }),
-  // 运行期启停:不用重启进程。决定写进库里,下次启动按它来。
   enable: (name: string) =>
     api.post('/api/plugins/{name}/enable', { path: { name } }),
   disable: (name: string) =>
     api.post('/api/plugins/{name}/disable', { path: { name } }),
-  // 重扫插件目录:新出现的按决定启用,已经删掉的停用
   rescan: () => api.post('/api/plugins/rescan'),
 }
 

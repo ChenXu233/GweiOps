@@ -44,7 +44,7 @@ class_name: MyPlugin       # plugin.py 里要实例化的类名
 
 capabilities: [issue.read]
 tasks:
-  issue.read: read_issue   # 不写就默认把能力的点换成下划线
+  issue.read: read_issue   # 缺省为能力名的下划线形式
 ```
 
 - 同名能力由多个插件提供时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
@@ -53,9 +53,9 @@ tasks:
 
 ## 4 写实现
 
-类名必须与 `class_name` 一致,直接 `from engine.plugin_manager.base import ...` 导入——**不要**再改 `sys.path`,加载器已经注入包路径。
+类名必须与 `class_name` 一致,直接 `from engine.plugin_manager.base import ...` 导入,加载器已注入包路径。
 
-实现里**没有 `info()`**:插件叫什么、有什么能力、订阅什么,全在 `plugin.yaml` 里声明过一遍了。让代码再回答一次等于把同一个事实存两份,而两份一定会在某次改动后漂移。
+实现里没有 `info()`:名称、能力、订阅全部在 `plugin.yaml` 里声明。
 
 ```python
 from engine.plugin_manager.base import PluginBase
@@ -188,7 +188,7 @@ def verify_webhook(self, headers, body) -> bool: # 验签;不过就是 401
 
 ### 5.1 产事件:一次投递 = 一个归一化事件
 
-事件只有一种说法(`kind` / `repo` / `number` / `title` / `merge_sha` ……),定义在 [events.py](../../engine/ingest/events.py);用 `event(...)` 组装,**形状不对它会当场抛**,不要自己拼字典。
+事件只有一种说法(`kind` / `repo` / `number` / `title` / `merge_sha` ……),定义在 [events.py](../../engine/ingest/events.py);用 `event(...)` 组装,形状不对会当场抛。
 
 ```python
 from engine.ingest.events import event as normalized_event, header_value
@@ -196,7 +196,7 @@ from engine.ingest.events import event as normalized_event, header_value
 def parse_webhook(self, headers, body):
     payload = json.loads(body)
     if payload.get("action") != "closed" or not payload.get("merged"):
-        return None                       # 不关心的投递:返回 None,不是造一个空事件
+        return None                       # 不关心的投递
     return normalized_event(
         kind="merge", source=self.source,
         repo=payload["repo"], number=payload["pr"], merge_sha=payload["sha"],
@@ -214,7 +214,7 @@ from engine.ingest.signal import normalize
 def parse_signals(self, headers, body):
     payload = json.loads(body)
     if payload.get("state") != "expiring":
-        return []                          # 这次没查出什么:空列表,不是一条空事故
+        return []                          # 这次没查出什么
     return [normalize(
         source=self.source,
         subject=payload["host"],
@@ -268,7 +268,7 @@ async def execute(self, task: str, args: dict) -> dict:
 async def undo(self, task: str, args: dict, handle: str) -> dict: ...
 
 async def window(self, effect, handle) -> Window:
-    """读,不是声明。读不出来抛异常,平台按不可逆处理。
+    """读取当前窗口;读不出来抛异常,平台按不可逆处理。
 
     三种答案,按下游真实情况给:
       Window(seconds=3600, source="snapshot")                   # 有到期时间
@@ -299,9 +299,9 @@ triggers:
 
 能力必须同时列在 `capabilities` 里。周期换算、幂等与对账规则见[插件系统参考](../reference/plugin-system.md#周期巡检)。
 
-周期适合"只会被问、不会主动说"的来源;能主动投递的系统(绝大多数告警与代码托管)用上一节的 Webhook 适配器,不要绕成轮询。
+周期适合"只会被问、不会主动说"的来源;能主动投递的系统(绝大多数告警与代码托管)用上一节的 Webhook 适配器。
 
-## 8 配置:不要自己读环境变量
+## 8 配置:用 Scope 声明,不直接读环境变量
 
 配置走 Scope:字段、必填、能否回显在一处说清,值可以存进业务库,页面上改完立即生效。
 
@@ -323,7 +323,7 @@ config.register_model_scope("adapter-my", MySettings, prefix="MY_")
 settings = MySettings(**config.get_scope_config("adapter-my", config.settings.default_tenant_slug))
 ```
 
-顺序是 `Settings` 同名字段 → 环境变量 → `.env` → 库里存的值(库里的排在前面,人在页面上填过的不该被环境变量盖掉)。秘密字段不要 `expose` 成 `always`;要换行(私钥、证书)就加 `"multiline": true`。
+顺序是 `Settings` 同名字段 → 环境变量 → `.env` → 库里存的值(库里的排在前面,人在页面上填过的不该被环境变量盖掉)。秘密字段 `expose` 不要用 `always`;要换行(私钥、证书)就加 `"multiline": true`。
 
 ## 9 在页面上加一块
 
@@ -350,7 +350,7 @@ ui:
         - { label: 夜间自动变更, value: 12, sub: 近 7 天, variant: green }
 ```
 
-`list` 用 `items`(每项 `{text: "..."}`)。卡片是数据,不是代码:配色只有 default / green / yellow / red 四档——要复杂界面走下一节。
+`list` 用 `items`(每项 `{text: "..."}`)。卡片是声明式数据,配色只有 default / green / yellow / red 四档;要复杂界面走下一节。
 
 ### 9.2 整页进 iframe
 
@@ -391,5 +391,5 @@ python -m pytest tests/ -q
 | 投递回 200 但没有工作流 | 产事件时返回了 `None`、`kind` 不在这四类里,或信号被去重(同一 `ref + occurrence`) |
 | 效果被记成 `blocked` | 能力没人提供、缺 `binding`、或 intent 点了清单里没声明的参数 |
 | 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉那一项 |
-| 插件在列表里但能力调不通 | 看 `enabled` 是不是 false;清单里没写 `tasks` 而实现的任务名又不是"能力名换下划线",会一路 `Unknown task` |
+| 插件在列表里但能力调不通 | 看 `enabled` 是不是 false;`tasks` 缺省为能力名的下划线形式,对不上会一路 `Unknown task` |
 | 进程外插件 `endpoint` 连不上 | 看核心日志里的 `gRPC plugin <name> 没有握手成功`;超时由 `PLUGINS_GRPC_TIMEOUT_S` 控制 |

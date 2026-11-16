@@ -44,12 +44,7 @@ WORKFLOW_QUEUE = "gwei-agents"
 
 
 async def _analyze_via_sensor(payload: dict) -> dict:
-    """调用 Sensor 智能体做感知分析(规则 + LLM)。
-
-    没有提供者时**不假装做了**:返回一份"没做感知"的结论,让下游的回评与账本
-    都说得出来。拿一个临时实例顶上会把 PLUGINS_DISABLED 变成装饰——那个开关
-    的意义是"这一步不要了",不是"换个方式照做"。
-    """
+    """调用 Sensor 智能体做感知分析(规则 + LLM);没有提供者时返回"没做感知"。"""
     try:
         sensor = get_sensor()
     except LookupError as e:
@@ -168,12 +163,7 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
 
 
 async def _generate_patches_impl(payload: dict) -> list[dict]:
-    """经能力通道生成补丁。没有提供者就是没有补丁,不直连兜底。
-
-    直连兜底是"让单测和老部署不炸"的权宜:代价是 `PLUGINS_DISABLED=fixer-agent`
-    之后引擎照样生成补丁,人以为自己关掉了。这一步的输出会进回评,所以没有
-    提供者时返回空列表 + 一条点名日志,报告里说得清"这次没生成补丁"。
-    """
+    """经能力通道生成补丁;没有提供者时返回空列表,报告里写明这次没生成补丁。"""
     try:
         result = await registry.run_capability(
             "patch.generate",
@@ -182,7 +172,7 @@ async def _generate_patches_impl(payload: dict) -> list[dict]:
     except LookupError as e:
         logger.warning("没有补丁生成的提供者,这一场不产出补丁:%s", e)
         return []
-    except Exception as e:  # noqa: BLE001 - 插件自己的失败,不该让工作流记成成功
+    except Exception as e:  # noqa: BLE001 - 插件自己的失败不记成成功
         logger.warning("patch.generate 调用失败,这一场不产出补丁:%s", e)
         return []
     return list(result.get("patches", []))
@@ -227,7 +217,7 @@ async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict
     """经能力通道拿 intent;没有提供者时用现有结论兜底,工作流不因缺插件停摆。"""
     signal = signal_from_payload(payload)
     params: dict[str, Any] = {"signal": signal, "analysis": analysis, "patches": patches}
-    # 只有明确要证据的提供者才去读账本:没人读的时候,这个读只是把库的延迟加进工作流。
+    # 只有声明了 wants_history 的提供者才读账本
     provider = registry.best_capability_provider("intent.propose")
     if provider is not None and getattr(provider, "wants_history", False):
         history = await _recent_conclusions(payload.get("tenant_slug", ""))
@@ -239,8 +229,7 @@ async def _propose_intent_impl(payload: dict, analysis: dict, patches: list[dict
         logger.info("No provider for intent.propose; falling back to local intent")
 
     if not payload.get("repo_full_name"):
-        # 本地兜底只会把 GitHub issue 信号翻成一条回评。别的来源没有提供者就是没有动作,
-        # 这里如实返回空 effects:编一个动作出来,比什么都不做更危险。
+        # 本地兜底只处理 GitHub issue 信号,其余来源返回空 effects
         return {
             "version": 1,
             "summary": f"信号「{signal['title']}」没有可执行的意图",
@@ -292,9 +281,7 @@ async def _apply_effects_impl(
     binding = binding or config.settings.default_binding
     ledger = create_ledger()
 
-    # 第一遍:把每个候选拆成"能做"或"为什么不做"。理由必须先定下来——放弃的
-    # 候选也是这一轮的决策,得写进同一轮每个单元的 intent 里,否则界面上只剩
-    # 一张"打算做的名单",看不出哪几个为什么没做。
+    # 先把每个候选拆成"能做"或"为什么不做";放弃的候选也写进同一轮的 intent
     plans: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for index, effect in enumerate(parsed.effects):
@@ -327,8 +314,7 @@ async def _apply_effects_impl(
         try:
             provider, decl = registry.effect_decl(capability, tenant=tenant, binding=binding)
         except LookupError as e:
-            # intent 点了一个没人提供的能力(比如告警声明的动作还没装):
-            # 记成阻断,不让整个工作流因为一个效果崩掉。
+            # intent 点了没人提供的能力,记成阻断,不影响其他效果
             reason = f"没有提供者声明这个能力: {e}"
             skipped.append({"capability": capability, "reason": reason})
             plans.append(
@@ -485,7 +471,7 @@ async def _thread_for(payload: dict) -> dict | None:
         return None
     try:
         pull = await read_pull(payload, repo, int(number))
-    except Exception as exc:  # noqa: BLE001 - 问不到就当没有,不猜一个分支
+    except Exception as exc:  # noqa: BLE001 - 问不到就当没有
         logger.info("could not read pull %s#%s: %s", repo, number, exc)
         return None
     head = ((pull or {}).get("head") or {}).get("ref") or ""
@@ -626,7 +612,7 @@ async def _round_diff(incident_id: str, payload: dict) -> list[dict]:
         return await ws.diff_stat(
             ws.repo_of(root, incident_id), ws.workspace_of(root, incident_id)
         )
-    except Exception:  # noqa: BLE001 - 数不出改动不该让这一场失败
+    except Exception:  # noqa: BLE001 - 数不出改动返回空
         logger.warning("算不出这一轮的 diff(%s)", incident_id, exc_info=True)
         return []
 

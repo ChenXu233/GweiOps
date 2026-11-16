@@ -20,9 +20,8 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
 是否与 `app.openapi()` 一致、再查迁移是不是一条链、再比 gRPC 桩,最后跑 `pytest tests/`。
-比对只是重复断言,不是第二套判据——`tests/test_integration/test_openapi_contract.py`
-测的是同一件事;单拎出来是因为跑静态检查只要一份装好的依赖,几十毫秒就能红,
-不必等整轮测试跑完。
+比对是 `tests/test_integration/test_openapi_contract.py` 同一件事的重复断言;单拎出来
+是因为跑静态检查只要一份装好的依赖,几十毫秒就能红,不必等整轮测试跑完。
 
 两个脚本都能在本地原样跑,工作目录是仓库根:
 
@@ -64,8 +63,8 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 ## gRPC 桩也要跟着 proto
 
 `proto/plugin.proto` 是进程外插件的 wire 契约,桩生成后提交进仓库(`engine/plugin_manager/grpc_proto/`)——
-运行时不依赖 protoc,部署镜像里也不必装编译器。桩过期不会立刻炸:远端插件照样注册得上,
-只是调用时字段对不上,那是最难查的一类。
+运行时不依赖 protoc,部署镜像里也不必装编译器。桩过期不会立刻报错:远端插件照样注册得上,
+只是调用时字段对不上。
 
 改了 proto 就重跑:
 
@@ -73,7 +72,7 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 python scripts/gen_grpc_stubs.py
 ```
 
-判据由生成脚本自己给(`--check`):重新生成一份、逐字节比。不另写一份比对逻辑。
+判据由生成脚本自己给(`--check`):重新生成一份、逐字节比。
 
 ## Python 依赖是锁住的
 

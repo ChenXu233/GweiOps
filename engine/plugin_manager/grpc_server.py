@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 
 class PluginHandlers(Protocol):
-    """插件要实现的东西。没实现的按"不做"回。"""
+    """插件要实现的业务方法;没实现的按"不做"回。"""
 
     async def execute_task(self, task: str, params: dict) -> dict: ...
 
@@ -184,7 +184,7 @@ def build_servicer(plugin: Any):
                 return plugin_pb2.HealthResponse(healthy=True, message="ok")
             try:
                 healthy = bool(run(hook()))
-            except Exception as e:  # noqa: BLE001 - 探活本身不该把服务掀翻
+            except Exception as e:  # noqa: BLE001 - 探活失败只影响健康状态
                 return plugin_pb2.HealthResponse(healthy=False, message=str(e))
             return plugin_pb2.HealthResponse(healthy=healthy, message="ok")
 
@@ -240,7 +240,7 @@ def build_servicer(plugin: Any):
             handler = getattr(plugin, "handle_hook", None)
             payload = _loads(request.payload)
             if handler is None:
-                # 没订阅 Hook 的插件被问到,保持"允许 + 原样返回":它不该改变载荷
+                # 没订阅 Hook 的插件被问到:允许 + 原样返回
                 return plugin_pb2.HookResponse(allowed=True, payload=_dumps(payload))
             try:
                 result = run(handler(request.point, payload))

@@ -4,13 +4,10 @@ import { useRepoList } from '@gwei/core/composables/useRepoList'
 const { plugins, enabledCount, loading, error, actionError, toggling, setEnabled, rescan } =
   useRepoList()
 
-// 没有写权限就只读:按钮禁掉,后端也会拦(403)
 const { can } = useAuth()
 const canManage = computed(() => can('plugins.write'))
 
 function forgot(reason: string): string {
-  // 引擎给的是人话("在 PLUGINS_DISABLED 里""清单声明 default_enabled: false"),
-  // 页面上原样显示——那句话就是"为什么它没在跑"的答案。
   return reason || '未启用'
 }
 </script>
@@ -38,13 +35,11 @@ function forgot(reason: string): string {
       </template>
     </PageHeader>
 
-    <!-- 发现 ≠ 启用 -->
     <div class="flex items-start gap-3 rounded-panel border border-line bg-well/50 px-5 py-4">
       <AppIcon name="shield-check" :size="15" class="mt-0.5 text-ink-faint" />
       <p class="text-[12px] leading-relaxed text-ink-soft">
         <span class="font-medium text-ink">发现不等于启用。</span>
         装进插件目录、能解析出能力，都不代表它会在流程里被执行——只有被显式打开、且声明了对应效果单元的插件才会真正动手。
-        这里的状态来自引擎，不在这里猜。
       </p>
     </div>
 
@@ -96,7 +91,6 @@ function forgot(reason: string): string {
           {{ plugin.description }}
         </p>
 
-        <!-- 为什么是现在这个状态:那句话就是答案,不该让人去翻日志 -->
         <p v-if="plugin.error" class="mt-2 font-mono text-[11px] text-coral">
           {{ plugin.error }}
         </p>
