@@ -332,8 +332,48 @@ def test_a_scoped_only_identity_cannot_act_workspace_wide():
         with pytest.raises(HTTPException) as raised:
             require(request, "changes.approve")
         assert raised.value.status_code == 403
-        assert "只对具体仓库生效" in raised.value.detail
+        assert "只对具体范围生效" in raised.value.detail
         # 点名那个仓库就放行
         require(request, "changes.approve", "github-acme-api")
+    finally:
+        set_auth_required(False)
+
+
+def test_a_project_scoped_identity_covers_the_whole_project():
+    """授在项目上的人,对项目下每一个仓库都放行 —— 判定链 repo → project → 工作区。
+
+    这一档必须问出来,不能在建身份时展开:项目下新加一个仓库时,没有人回来改
+    这份身份,展开的那一份会漏掉它(engine/api/auth.py 的 require)。
+    """
+    from fastapi import HTTPException
+
+    from engine.api.auth import Actor, require, set_auth_required
+
+    actor = Actor(
+        token_id="key",
+        name="只管 acme",
+        tenant="acme",
+        scope="operate",
+        permissions=frozenset({"changes.read"}),
+        scoped_permissions={"changes.approve": frozenset({"acme"})},
+    )
+
+    class Request:
+        class state:  # noqa: N801 - 形似 request.state
+            actor = None
+
+    request = Request()
+    request.state.actor = actor
+    set_auth_required(True)
+    try:
+        # 项目下的仓库,带上项目就放行
+        require(request, "changes.approve", "github-acme-api", "acme")
+        # 不带项目,只写仓库 slug:那一档没点这个仓库,不放行
+        with pytest.raises(HTTPException) as raised:
+            require(request, "changes.approve", "github-acme-api")
+        assert raised.value.status_code == 403
+        # 项目外的仓库不放行,即使它也叫 api
+        with pytest.raises(HTTPException):
+            require(request, "changes.approve", "github-other-api", "other")
     finally:
         set_auth_required(False)

@@ -150,20 +150,22 @@ flowchart LR
 
 `operator` 带 `keys.manage`:运维接一个 agent 不必先找所有者。签出去的权限不能超过运维自己持有的权限。
 
-### 按仓库授权
+### 按范围授权:项目与仓库两档
 
-角色与个人追加里的权限可以带一个范围,写法 `权限@仓库slug`:
+角色与个人追加里的权限可以带一个范围,写法 `权限@范围slug`。范围是 `projects` 里的 slug,**项目与仓库共用同一个名字空间**:
 
 ```text
 changes.approve                     整个工作区都能放行
-changes.approve@github-acme-api     只在这个仓库上能放行
+changes.approve@acme                 整个 acme 项目,含以后新增的仓库
+changes.approve@github-acme-api     只在这一个仓库上能放行
 ```
 
 - 能收窄的只有 `SCOPED_PERMISSIONS` 里的四个(`changes.read` / `execute` / `approve` / `rollback`):它们最终都落在一个仓库上。管人、管密钥、改配置是工作区级的事,写成 `users.manage@…` 会被丢掉,不当工作区级权限用。
-- 带范围的授权**不算**工作区级权限:不点名仓库的判定(`require(request, "changes.approve")`)在只有这份授权的身份上返回 403,并说明"这个权限只对具体仓库生效"。
-- 子用户与父取交集时按仓库逐个算:父没有的仓库留不下来。
-- 落点:放行 / 否决 / 撤销按账本行的 `repo` 判,议题的"再来一轮"按议题所属仓库判。仓库 slug 的写法见[工作区模型](../explanation/workspace-model.md) §3。
-- 成员页(`/team`)勾权限时,能收窄的权限旁边会列出当前工作区的仓库,勾哪几个就只在那几个上生效。
+- 带范围的授权**不算**工作区级权限:不点名范围的判定(`require(request, "changes.approve")`)在只有这份授权的身份上返回 403,并说明"这个权限只对具体范围生效"。
+- 判定链是 **repo → project → 工作区**,`require(request, permission, repo, project)`。项目授权对项目下每一个仓库算数,包括登录之后才加进项目里的那个 —— 所以这一档只能在判定时问,不能在建身份时展开成一份仓库清单。
+- 子用户与父取交集时按范围逐个算:父没有的范围留不下来。
+- 落点:放行 / 否决 / 撤销按账本行的 `repo` 判(项目档由它反查所属项目),议题的"再来一轮"按议题所属仓库判。仓库 slug 的写法见[工作区模型](../explanation/workspace-model.md) §3。
+- 成员页(`/team`)勾权限时,能收窄的权限旁边会先列当前工作区的项目、再列仓库,勾哪几个就只在那几个上生效。
 
 ## 控制台鉴权
 
@@ -179,7 +181,7 @@ changes.approve@github-acme-api     只在这个仓库上能放行
 
 ### 成员身份的现状
 
-一个人的身份今天就是一行 `users`(`tenant_id` + `email` 唯一)。同一份身份跨两个工作区共用还没有落地:同一个人被邀进第二个工作区时会建第二行。目标形状(人 / 成员关系两份)与待拍板的决定见[身份模型](../explanation/identity-model.md)。
+一个人的身份今天就是一行 `users`(`tenant_id` + `email` 唯一)。同一份身份跨两个工作区共用还没有落地:同一个人被邀进第二个工作区时会建第二行。目标形状(person / membership)与迁移四步见[身份与授权](../explanation/identity-and-authorization.md) §5。
 
 `GET /api/me` 已经是拆开之后的形状(`ActorDTO`:一个人 + 他在每个工作区的角色),现在填的是一个工作区的那一份。
 

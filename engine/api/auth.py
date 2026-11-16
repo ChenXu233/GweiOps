@@ -72,8 +72,10 @@ class Actor:
     # 这是一个只带 read/operate 的静态令牌。默认不是:没有细粒度权限时按 scope 放行
     # 是个陷阱 —— 权限为空的会话会因此看到全部只读工具。
     static: bool = False
-    # 只在这个范围内生效的权限:{"changes.approve": frozenset({"github-acme-api"})}。
-    # 同一个权限在工作区级与仓库级都可能有,所以两者分开记 —— 见 engine/auth/scope.py
+    # 只在这个范围内生效的权限:{"changes.approve": frozenset({"acme"})}。
+    # 同一个权限在工作区级与范围级都可能有,所以两者分开记;范围是 projects 里的
+    # slug,项目与仓库共用一个名字空间,判定链见 require() 与
+    # docs/explanation/identity-and-authorization.md。
     scoped_permissions: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @property
@@ -84,12 +86,32 @@ class Actor:
         return self.scope == "operate"
 
     def has(self, permission: str) -> bool:
-        """工作区级的权限。带范围的权限**不**算在这里:它得指名道姓地说要哪个仓库。"""
+        """工作区级的权限。带范围的权限**不**算在这里:它得指名道姓说范围。"""
         return permission in self.permissions
 
     def has_scope(self, permission: str) -> bool:
         """这个权限是不是收了范围。接口据此多接一个 `repo`,在判定处再说一次话。"""
         return permission in self.scoped_permissions
+
+    def allows(
+        self,
+        permission: str,
+        repo: str | None = None,
+        project: str | None = None,
+    ) -> bool:
+        """这次判定算不算数。`repo` 与 `project` 都空 = 整个工作区。判据只此一处。
+
+        授在项目上的授权,对项目下每一个仓库都算数 —— 包括登录之后才加进
+        来的那个。所以这一档不能在建身份时展开成仓库,只能在判定时问。
+        """
+        if permission in self.permissions:
+            return True
+        if not permission:
+            return False
+        granted = self.scoped_permissions.get(permission, frozenset())
+        if repo and repo in granted:
+            return True
+        return bool(project and project in granted)
 
     @property
     def scoped(self) -> bool:
@@ -243,13 +265,22 @@ def actor_of(request: Request) -> Actor | None:
     return getattr(request.state, "actor", None)
 
 
-def require(request: Request, permission: str, repo: str | None = None) -> None:
+def require(
+    request: Request,
+    permission: str,
+    repo: str | None = None,
+    project: str | None = None,
+) -> None:
     """按权限拦。没配鉴权时不拦——那种部署是单机自用,拦了反而没法用。
 
-    `repo` 是这道判定的范围:给空 = 整个工作区;给一个仓库 slug = 只在那一个仓库上
-    算数。带范围的授权(`changes.approve` 只授给 `acme/api`)在工作区级**不算**
-    有权限:同一个权限在工作区级与仓库级都可能有,混在一起,"只管这一个仓库"
-    就没有答案了。
+    `repo` 是这道判定的范围,`project` 是仓库所属项目的 slug:两者都空 = 整个
+    工作区;给一个仓库 slug = 只在那一个仓库上算数。带范围的授权(`changes.approve`
+    只授给 `acme/api`,或只授给项目 `acme`)在工作区级**不算**有权限:同一个
+    权限在工作区级与带范围都可能有,混在一起,"只管这一个仓库"就没有答案了。
+
+    判定链是 repo → project → 工作区:项目授权对项目下每一个仓库算数,包括
+    登录之后才加进项目里的那个。所以项目这一档只能在判定时问,不能在建身份时
+    展开成一份仓库清单。
     """
     if not auth_required():
         return
@@ -263,12 +294,13 @@ def require(request: Request, permission: str, repo: str | None = None) -> None:
         return
     if actor.has(permission):
         return
-    if repo and repo in actor.scoped_permissions.get(permission, frozenset()):
-        return
-    if actor.has_scope(permission) and not repo:
+    if repo or project:
+        if actor.allows(permission, repo, project):
+            return
+    if actor.has_scope(permission) and not repo and not project:
         raise HTTPException(
             status_code=403,
-            detail=f"这个身份的 {permission} 只对具体仓库生效,这个操作覆盖整个工作区",
+            detail=f"这个身份的 {permission} 只对具体范围生效,这个操作覆盖整个工作区",
         )
     raise HTTPException(status_code=403, detail=f"缺少权限 {permission}")
 

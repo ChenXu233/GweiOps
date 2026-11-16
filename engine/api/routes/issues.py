@@ -64,6 +64,14 @@ async def _load_issue(wanted: UUID, scope: str | None) -> dict:
         if scope and slug != scope:
             raise HTTPException(status_code=404, detail="Issue not found")
 
+        # 仓库所属项目的 slug:按项目授的授权,对项目下每一个仓库算数
+        # (engine/api/auth.py 的 require)。一次取回,别让每处判定各查一次父。
+        project_slug = ""
+        if project.parent_id is not None:
+            parent = await db.get(Project, project.parent_id)
+            if parent is not None:
+                project_slug = parent.slug
+
         sessions = (
             (
                 await db.execute(
@@ -89,6 +97,7 @@ async def _load_issue(wanted: UUID, scope: str | None) -> dict:
             },
             "repo": project.name,
             "repo_slug": project.slug,
+            "project_slug": project_slug,
             "repo_id": project.github_id,
             "tenant": slug,
             "sessions": [_session_row(s) for s in sessions],
@@ -308,8 +317,15 @@ async def continue_issue(
     if not instruction:
         raise HTTPException(status_code=422, detail="写一句要改什么再来")
     loaded = await _load_issue(wanted, scope)
-    # 按议题所在的仓库判:只被授了 acme/api 的人,对 acme/web 的议题发起不动。
-    require(request, "changes.approve", loaded["repo_slug"])
+    # 按议题所在的仓库判,仓库所属的项目是判定链上的上一档:只被授了 acme/api
+    # 的人,对 acme/web 的议题发起不动;授了整个项目 acme 的人,对 acme 下面
+    # 任何一个仓库都发得动。
+    require(
+        request,
+        "changes.approve",
+        loaded["repo_slug"],
+        loaded["project_slug"],
+    )
     topic = topic_of(loaded["repo"], loaded["issue"]["number"])
     payload = continue_payload(
         issue=loaded["issue"],

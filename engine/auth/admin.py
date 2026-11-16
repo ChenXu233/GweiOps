@@ -43,9 +43,14 @@ async def _tenant_id(session: AsyncSession, slug: str) -> uuid.UUID:
 def _clean_permissions(raw: list[str] | None) -> list[str]:
     """只留看得懂的权限,顺序固定,方便前端比对。
 
-    带范围的写法(`changes.approve@github-acme-api`)也在这里过一遍:权限名得在
-    目录里,收窄必须落在 `SCOPED_PERMISSIONS` 里,仓库 slug 不能是空串。写错的
-    条目丢掉而不是猜 —— 猜成工作区级会多给。
+    带范围的写法(`changes.approve@github-acme-api`,或 `changes.approve@acme`)
+    也在这里过一遍:权限名得在目录里,收窄必须落在 `SCOPED_PERMISSIONS` 里,范围
+    名不能是空串。写错的条目丢掉而不是猜 —— 猜成工作区级会多给。
+
+    范围名是 `projects` 里的 slug,项目与仓库共用一个名字空间,所以这里不区分
+    两者:范围指着一个项目时,它下面每一个仓库都算数(含以后新增的)。**这里不查
+    库**——slug 是否存在是数据问题,不是权限问题;写个不存在的名字,后果只是
+    判定永远不命中,不会多给。
     """
     picked: set[str] = set()
     for entry in raw or []:

@@ -87,13 +87,17 @@ READ_PERMISSIONS = frozenset(
     {"changes.read", "settings.read", "users.read", "audit.read", "plugins.read", "keys.read"}
 )
 
-# 可以只授给某几个仓库的权限。**只有会落到具体仓库上的动作**进这张表:
+# 可以只授给某几个仓库或项目的权限。**只有会落到具体仓库上的动作**进这张表:
 # 放行、撤销、执行都作用在一个仓库上;管人与管密钥是工作区级的事,收窄到仓库
 # 没有意义 —— 一个仓库没有自己的用户表。
 #
 # 不在这张表里的权限没法收窄:角色里给 `changes.read` 收窄到 acme/api,那个人
 # 会**看不到任何**东西(包括 acme/api 的账),而不是看到一部分。这是保守那一侧:
 # 收窄没生效时不该多给,只该少给。
+#
+# 范围写的是 `projects` 表里的 slug,那一列在 (租户, slug) 上唯一,**项目与仓库
+# 共用同一个名字空间**:所以 `changes.approve@acme` 是项目授权,覆盖它下面每一个
+# 仓库(含以后新增);`changes.approve@github-acme-api` 是仓库授权,只管那一个。
 SCOPED_PERMISSIONS = frozenset({"changes.read", "changes.execute", "changes.approve", "changes.rollback"})
 
 WRITE_PREFIXES = ("changes.approve", "changes.rollback", "settings.write")
@@ -215,19 +219,32 @@ class Identity:
         )
 
     def has(self, permission: str) -> bool:
-        """工作区级的权限。带范围的不算:它得指名道姓地说要哪个仓库。"""
+        """工作区级的权限。带范围的不算:它得指名道姓地说要哪个仓库或项目。"""
         return permission in self.permissions
 
     def has_scope(self, permission: str) -> bool:
         return permission in self.scoped_permissions
 
-    def allows(self, permission: str, scope: str | None = None) -> bool:
-        """这次判定算不算数。`scope` 空 = 整个工作区。判据只此一处。"""
+    def allows(
+        self,
+        permission: str,
+        scope: str | None = None,
+        project: str | None = None,
+    ) -> bool:
+        """这次判定算不算数。`scope` 空 = 整个工作区。判据只此一处。
+
+        `scope` 是仓库 slug,`project` 是它所属项目的 slug。授在项目上的授权
+        对项目下每一个仓库都算数,**包括登录之后才加进来的那个** —— 所以这一档
+        不能在建身份时展开成仓库,只能在判定时带上项目问一次。
+        """
         if permission in self.permissions:
             return True
-        if not scope or not permission:
+        if not permission:
             return False
-        return scope in self.scoped_permissions.get(permission, frozenset())
+        granted = self.scoped_permissions.get(permission, frozenset())
+        if scope and scope in granted:
+            return True
+        return bool(project and project in granted)
 
 
 def effective_permissions(
@@ -254,7 +271,7 @@ def split_scoped(
 ) -> tuple[set[str], dict[str, set[str]]]:
     """把 "changes.approve" 与 "changes.approve@github-acme-api" 拆成两份。
 
-    前者是工作区级的授权,后者只对那一个仓库生效(仓库用 slug 指名,见
+    前者是工作区级的授权,后者只对一个范围生效(范围用 slug 指名,见
     `engine/workflows/pipeline.py` 的 `repo_slug`)。同一个权限两边都可能有:
     工作区级那份管别的仓库,带范围那份只管这几个。
     """

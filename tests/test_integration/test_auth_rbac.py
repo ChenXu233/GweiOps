@@ -113,6 +113,48 @@ def test_a_sub_user_scoped_grants_are_intersected_per_repo():
     assert scoped == {"changes.approve": frozenset({"github-acme-api"})}
 
 
+def test_a_project_scoped_grant_covers_every_repo_under_it():
+    """授在项目上 = 项目下每一个仓库,包括登录之后才加进来的那个。
+
+    所以这一档不能在建身份时展开成一份仓库清单:新仓库进来时没有人回来改
+    这份身份,展开的那一份会漏掉它。判定时带上项目问一次(Identity.allows 的
+    project 参数)才对得上。
+    """
+    perms, scoped = effective_permissions(["changes.approve@acme"], [])
+    assert perms == frozenset()
+    assert scoped == {"changes.approve": frozenset({"acme"})}
+
+    identity = Identity(
+        user_id="u", name="n", tenant="t", permissions=perms, scoped_permissions=scoped
+    )
+    # 项目下的仓库都算数
+    assert identity.allows("changes.approve", "github-acme-api", "acme")
+    # 项目外的仓库不算,即使它恰好也叫 acme-api
+    assert not identity.allows("changes.approve", "github-other-api", "other")
+    # 不点名仓库也不点名项目 = 整个工作区,不该放行
+    assert not identity.allows("changes.approve", None, None)
+    # 只点名项目(覆盖整个项目的动作)算数 —— 项目档就是那一档的边界
+    assert identity.allows("changes.approve", None, "acme")
+    # 项目外的那一档不算
+    assert not identity.allows("changes.approve", None, "other")
+
+
+def test_repo_and_project_grants_do_not_leak_across():
+    """项目与仓库共用 projects 的一个名字空间,两条授权各管各的。"""
+    perms, scoped = effective_permissions(
+        ["changes.approve@acme", "changes.approve@github-other-api"], []
+    )
+    identity = Identity(
+        user_id="u", name="n", tenant="t", permissions=perms, scoped_permissions=scoped
+    )
+    # 仓库授权只管那一个仓库:它所在的 project 是 other,照样算数
+    assert identity.allows("changes.approve", "github-other-api", "other")
+    # 项目授权覆盖 acme 下每一个仓库,与 other 无关
+    assert identity.allows("changes.approve", "github-acme-web", "acme")
+    # 两条授权都没点名的仓库,不因为项目这一档没写它就放行
+    assert not identity.allows("changes.approve", "github-other-web", "other")
+
+
 def test_read_permissions_are_not_writes():
     assert not is_write_permission("changes.read")
     assert not is_write_permission("audit.read")

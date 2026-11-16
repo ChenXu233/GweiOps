@@ -13,9 +13,12 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select
 
 from engine.api.auth import by_of, require, tenant_scope
 from engine.api.schemas import ChangeDetailDTO, ChangeListDTO
+from engine.db import async_session_factory
+from engine.db.models import Project, Tenant
 from engine.change_unit import (
     ChangeUnit,
     approve,
@@ -70,6 +73,38 @@ async def _latest_or_404(unit_id: str, tenant: str | None = None) -> tuple[objec
 def _repo_of(row: dict) -> str:
     """这一行账作用在哪个仓库上。空 = 与某个仓库无关。"""
     return str(row.get("repo") or "")
+
+
+async def _project_of(request: Request, permission: str, tenant: str, repo: str) -> str:
+    """这个仓库所属项目的 slug。空 = 说不出来,或这一行与仓库无关。
+
+    按项目授的授权,对项目下每一个仓库算数(含以后新增的),所以判定要带上它。
+    两处提前收手:这个身份压根没有带范围的授权(问也白问,省一次库),以及查
+    不到(项目这一档不生效,不会凭空多给——查不到只可能少给)。
+    """
+    from engine.api.auth import actor_of
+
+    if not repo:
+        return ""
+    actor = actor_of(request)
+    if actor is not None and not actor.has_scope(permission):
+        return ""
+    try:
+        async with async_session_factory() as session:
+            row = (
+                await session.execute(
+                    select(Project.parent_id)
+                    .join(Tenant, Project.tenant_id == Tenant.id)
+                    .where(Tenant.slug == tenant, Project.slug == repo)
+                )
+            ).first()
+            if row is None or row[0] is None:
+                return ""
+            parent = await session.get(Project, row[0])
+            return parent.slug if parent is not None else ""
+    except Exception:  # noqa: BLE001 - 库读不到只让这一档不生效,不该整条请求 500
+        logger.warning("查不到仓库所属项目,项目这一档这次不生效", exc_info=True)
+        return ""
 
 
 def _provider_for(unit: ChangeUnit):
@@ -145,7 +180,10 @@ async def approve_change(
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
     # 按这一行账落在哪个仓库上判:只被授了 acme/api 的人放不了 acme/web 的单元。
-    require(request, "changes.approve", _repo_of(latest))
+    repo = _repo_of(latest)
+    require(
+        request, "changes.approve", repo, await _project_of(request, "changes.approve", tenant or "", repo)
+    )
     if latest.get("verdict") != BLOCKED:
         raise HTTPException(
             status_code=409,
@@ -178,7 +216,10 @@ async def veto_change(
     tenant = tenant_scope(request, tenant)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
-    require(request, "changes.approve", _repo_of(latest))
+    repo = _repo_of(latest)
+    require(
+        request, "changes.approve", repo, await _project_of(request, "changes.approve", tenant or "", repo)
+    )
     if latest.get("verdict") not in (BLOCKED, "pending"):
         raise HTTPException(
             status_code=409,
@@ -207,7 +248,10 @@ async def rollback_change(
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
     tenant = tenant_scope(request, tenant)
     ledger, latest = await _latest_or_404(unit_id, tenant)
-    require(request, "changes.rollback", _repo_of(latest))
+    repo = _repo_of(latest)
+    require(
+        request, "changes.rollback", repo, await _project_of(request, "changes.rollback", tenant or "", repo)
+    )
 
     verdict = latest.get("verdict")
     if verdict == ROLLED_BACK:
