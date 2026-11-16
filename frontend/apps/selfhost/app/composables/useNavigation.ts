@@ -38,6 +38,7 @@ export const navGroups: NavGroup[] = [
       { to: '/repos', label: '仓库', icon: 'repos', hint: '引擎订阅的仓库' },
       { to: '/signals', label: '信号源', icon: 'signals', hint: '从哪儿接收外部信号' },
       { to: '/marketplace', label: '插件', icon: 'plugins', hint: '能力由插件提供' },
+      { to: '/mcp', label: 'MCP 接入', icon: 'key-round', hint: '给外界的 agent 发密钥' },
     ],
   },
   {

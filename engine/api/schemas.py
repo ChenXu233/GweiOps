@@ -322,3 +322,78 @@ class ContinuedDTO(BaseModel):
 
     workflow_id: str
     status: str = "queued"
+
+
+# ---------------------------------------------------------------------------
+# 密钥(MCP 接入用的凭据)
+# ---------------------------------------------------------------------------
+
+
+class KeyCreateDTO(BaseModel):
+    """签一把。permissions 不给 = 空权限,一把只能认路的钥匙。
+
+    tools 是可选的第二层收窄:权限够、但这里没点名的工具不给。
+    """
+
+    name: str = Field(..., min_length=1, max_length=64)
+    permissions: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    # 这把密钥能在哪些资源(下游目标)上动手。空 = 不限。
+    bindings: list[str] = Field(default_factory=list)
+    expires_at: str = Field("", max_length=40)
+
+
+class KeyDTO(BaseModel):
+    """一把密钥的事实。没有明文 —— 它只在签发那一次的响应里。"""
+
+    id: str
+    tenant: str = ""
+    name: str = ""
+    hint: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    bindings: list[str] = Field(default_factory=list)
+    created_at: str = ""
+    created_by: str = ""
+    last_used_at: str = ""
+    expires_at: str = ""
+    status: str = "active"
+
+
+class KeyIssuedDTO(KeyDTO):
+    """签发那一刻的响应:多了明文。之后再也拿不到。"""
+
+    key: str = ""
+
+
+class KeyListDTO(BaseModel):
+    items: list[KeyDTO]
+    total: int
+
+
+class ResourceDTO(BaseModel):
+    """一个可选的下游目标。签密钥时给人挑,不是权限目录的一部分。"""
+
+    key: str
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class KeyResourceListDTO(BaseModel):
+    """这个部署里出现过的资源,以及每个资源上有哪些能力。"""
+
+    resources: list[ResourceDTO]
+    default: str = ""
+
+
+class KeyToolDTO(BaseModel):
+    """一个可以被授予的工具:它要什么权限、能作用在哪些资源上。"""
+
+    name: str
+    label: str = ""
+    permission: str = ""
+    resources: list[str] = Field(default_factory=list)
+    mutating: bool = False
+
+
+class KeyToolListDTO(BaseModel):
+    tools: list[KeyToolDTO]

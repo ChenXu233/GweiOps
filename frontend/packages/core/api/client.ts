@@ -63,6 +63,22 @@ export const SettingsScopesApi = {
     }),
 }
 
+// MCP 接入用的密钥。明文只在签发那一次的响应里,列表永远只有 hint。
+// resources / tools 两份清单来自引擎:签密钥时挑的就是它们,前端不自己编。
+export const ApiKeysApi = {
+  list: () => api.get('/api/keys'),
+  issue: (body: {
+    name: string
+    permissions: string[]
+    tools?: string[]
+    bindings?: string[]
+    expires_at?: string
+  }) => api.post('/api/keys', { body }),
+  revoke: (id: string) => api.delete('/api/keys/{key_id}', { path: { key_id: id } }),
+  resources: () => api.get('/api/keys/resources'),
+  tools: () => api.get('/api/keys/tools'),
+}
+
 // 发布配置:租户默认(key=*)与仓库行(key=owner/repo),value 是一份 JSON 声明。
 // 生效值(effective)由引擎按四层合并算好,页面只展示、不自己拼。
 export const ReleaseSettingsApi = {

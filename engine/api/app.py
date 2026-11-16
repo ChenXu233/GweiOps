@@ -18,7 +18,7 @@ from engine.api.routes.changes import router as changes_router
 from engine.api.routes.incidents import router as incidents_router
 from engine.api.routes.issues import router as issues_router
 from engine.api.routes.mcp import router as mcp_router
-from engine.api.routes.mcp import router as mcp_router
+from engine.api.routes.api_keys import router as api_keys_router
 from engine.api.routes.console import router as console_router
 from engine.api.routes.rbac import router as rbac_router
 from engine.api.routes.release_settings import router as release_settings_router
@@ -82,6 +82,13 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - 表还没建好时按"没有用户"处理,setup 会再处理
         logger.warning("读不到用户表,鉴权先按令牌配置决定", exc_info=True)
         has_users = False
+    # 密钥是凭据,不是"鉴权开关":拿它来的人才成为某个身份。要不要认身份仍由
+    # 令牌与用户决定 —— 否则签到一半的部署会把自己锁在门外(没有用户可登录,
+    # 令牌也是空的,只能去库里删密钥)
+    if config.settings.change_ledger_backend != "file":
+        from engine.auth import keys as key_store
+
+        await key_store.ensure_schema()
     set_auth_required(bool(API_TOKENS) or has_users)
 
     # Startup: 账本表(仓库没有迁移工具,checkfirst 建一次)
@@ -154,6 +161,7 @@ app.include_router(release_settings_router)
 app.include_router(rbac_router)
 app.include_router(webhook_router)
 app.include_router(mcp_router)
+app.include_router(api_keys_router)
 
 # 控制台鉴权:没有配置令牌就不鉴权,但要说出来——静默降级的安全开关不叫开关。
 API_TOKENS = load_tokens(config.settings.api_tokens)

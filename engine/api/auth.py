@@ -1,13 +1,15 @@
 # engine/api/auth.py
-"""谁在调用 —— 会话 cookie 给人,令牌给机器。
+"""谁在调用 —— 会话 cookie 给人,令牌与密钥给机器。
 
 在这之前,by 与 tenant 全靠调用方声明。那不是鉴权,是留言:任何人都能说
 自己是别人、要看别人的账。
 
-现在有两套凭据,井水不犯河水:
+现在有三套凭据,井水不犯河水:
 
 - **人**:POST /api/auth/login 换成会话 cookie(HttpOnly),权限由角色算出来
 - **机器**:X-Gwei-Token, `token:tenant:actor:scope`,给 harness 与 alertmanager 用
+- **外界 agent**:X-Gwei-Token 里的 `gwei_` 前缀密钥,库里的对象,带自己的权限集
+  与工具白名单,单独可吊销。它的工具清单按权限收窄,见 `engine/auth/keys.py`
 
 没有配置任何凭据时不鉴权——这句话必须能被看见,所以每个响应都带
 X-Gwei-Auth: on|off。单机自用可以这样跑;放到公网必须配。
@@ -58,16 +60,30 @@ class Actor:
     scope: str = "read"
     permissions: frozenset[str] = field(default_factory=frozenset)
     user_id: str = ""
+    # 这把凭据只允许够哪些工具。空 = 不额外收窄(按权限算)。
+    tools: frozenset[str] = field(default_factory=frozenset)
+    # 这把凭据只允许在哪些资源(下游目标)上动手。空 = 不限。
+    bindings: frozenset[str] = field(default_factory=frozenset)
+    # 库里的密钥会带 id;静态令牌与会话为空
+    key_id: str = ""
+    # 这是一个只带 read/operate 的静态令牌。默认不是:没有细粒度权限时按 scope 放行
+    # 是个陷阱 —— 权限为空的会话会因此看到全部只读工具。
+    static: bool = False
 
     @property
     def can_write(self) -> bool:
-        """会话身份看权限;令牌身份看 scope(read/operate)。"""
+        """有权限集就看权限;静态令牌只有 scope(read/operate)。"""
         if self.permissions:
             return any(is_write_permission(p) for p in self.permissions)
         return self.scope == "operate"
 
     def has(self, permission: str) -> bool:
         return permission in self.permissions
+
+    @property
+    def scoped(self) -> bool:
+        """权限集说了算吗?静态令牌不是,它只有 read/operate。"""
+        return not self.static
 
     def __repr__(self) -> str:  # 别把令牌打进日志
         return f"Actor(name={self.name!r}, tenant={self.tenant!r}, scope={self.scope!r})"
@@ -101,8 +117,23 @@ def load_tokens(raw: str) -> dict[str, Actor]:
             name=name or "未具名",
             tenant="" if tenant == "*" else tenant,
             scope=scope,
+            static=True,
         )
     return out
+
+
+def _actor_from_key(key: Any) -> Actor:
+    """库里的密钥 → 身份。权限是它的全部,没有"默认全放"。"""
+    return Actor(
+        token_id="key",
+        name=key.name or key.hint or "密钥",
+        tenant=key.tenant,
+        scope="operate" if any(is_write_permission(p) for p in key.permissions) else "read",
+        permissions=key.permissions,
+        tools=key.tools,
+        bindings=key.bindings,
+        key_id=key.id,
+    )
 
 
 def _actor_from_identity(identity: Identity) -> Actor:
@@ -146,11 +177,31 @@ def make_middleware(tokens: dict[str, Actor]) -> Callable[..., Any]:
                 request.state.identity = identity
                 request.state.actor = _actor_from_identity(identity)
 
-        # 2) 再认机器:令牌
+        # 2) 再认机器:库里的密钥优先(可吊销、带权限),静态令牌兜底
         if request.state.actor is None:
-            actor = tokens.get((request.headers.get(TOKEN_HEADER) or "").strip())
+            presented = (request.headers.get(TOKEN_HEADER) or "").strip()
+            actor = tokens.get(presented)
             if actor is not None:
                 request.state.actor = actor
+            elif presented:
+                from engine.auth import keys as key_store
+
+                if key_store.looks_like_key(presented):
+                    try:
+                        key = await key_store.resolve_key(presented)
+                    except Exception:  # noqa: BLE001 - 库不可用按"认不出"处理
+                        logger.warning("密钥解析失败", exc_info=True)
+                        key = None
+                    if key is not None:
+                        request.state.actor = _actor_from_key(key)
+                    elif not exempt:
+                        # 拿一把看起来像密钥的东西来敲门,却查不到:这不是匿名请求,
+                        # 是没通过的身份认证。它不能落到"没配凭据就不鉴权"那一侧——
+                        # 否则吊销只对配了令牌的部署有效,别的部署里被吊销的密钥
+                        # 会降级成"自报租户的匿名调用"。
+                        return JSONResponse(
+                            {"detail": "密钥无效或已吊销"}, status_code=401
+                        )
 
         # 3) 该拦就拦。配了令牌就算开着鉴权——这是旧行为,不能因为加了会话就放松
         guarded = auth_required() or bool(tokens)
@@ -181,8 +232,10 @@ def require(request: Request, permission: str) -> None:
     actor = actor_of(request)
     if actor is None:
         raise HTTPException(status_code=401, detail="未登录或令牌无效")
-    # 令牌身份没有细粒度权限,只有 read/operate;只读令牌由中间件拦
-    if actor.permissions and not actor.has(permission):
+    # 静态令牌没有细粒度权限,只有 read/operate,由中间件拦;其余的按权限集判
+    from engine.auth.keys import is_scoped
+
+    if is_scoped(actor) and not actor.has(permission):
         raise HTTPException(status_code=403, detail=f"缺少权限 {permission}")
 
 

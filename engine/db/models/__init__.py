@@ -18,6 +18,7 @@ from .registration import (
     VerificationCode,
 )
 from .quota import QuotaUsage
+from .api_key import ApiKey
 
 __all__ = [
     "Project",
@@ -41,4 +42,5 @@ __all__ = [
     "PasswordResetToken",
     "ExternalIdentity",
     "QuotaUsage",
+    "ApiKey",
 ]

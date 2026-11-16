@@ -294,6 +294,11 @@ const themes = [
   { key: 'system' as const, icon: 'system', label: '跟随系统', hint: '跟着系统切换' },
 ]
 
+// MCP 接入有自己的页面:签密钥要挑资源、勾权限、看它拿到什么清单,塞在设置页里
+// 会把"当前租户的运行参数"和"给外界发凭据"混成一件事。
+const hasKeyAccess = computed(() => can('keys.read'))
+const mockMode = useRuntimeConfig().public.useMock === true
+
 const sections = computed(() => {
   const d = data.value
   if (!d) return []
@@ -739,6 +744,30 @@ const sections = computed(() => {
 
         <div v-if="!scopes.length" class="px-5 py-6 text-[12.5px] text-ink-faint">
           还没有接入层声明任何配置项。
+        </div>
+      </section>
+
+      <!-- MCP 接入在它自己的页面上:那里要挑资源、勾权限、看工具清单 -->
+      <section v-if="hasKeyAccess" class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="key-round" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">MCP 接入</h2>
+          <span class="eyebrow ml-auto">AGENT ACCESS</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 px-5 py-4">
+          <div class="min-w-0 flex-1">
+            <p class="text-[12.5px] leading-relaxed text-ink-soft">
+              外界的 agent 用一把密钥接上 <code class="font-mono text-[11.5px]">/mcp</code>。
+              密钥有什么权限、能碰哪些资源,它的工具清单里就只有哪些。
+            </p>
+            <p v-if="mockMode" class="mt-1 text-[11.5px] text-ink-faint">
+              演示模式没有引擎,也就没有可签的凭据。
+            </p>
+          </div>
+          <NuxtLink to="/mcp" class="btn-outline btn-sm shrink-0">
+            管理密钥
+            <AppIcon name="arrow-right" :size="13" />
+          </NuxtLink>
         </div>
       </section>
 

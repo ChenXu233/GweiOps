@@ -663,6 +663,299 @@
         "title": "IssueTimelineDTO",
         "type": "object"
       },
+      "KeyCreateDTO": {
+        "description": "签一把。permissions 不给 = 空权限,一把只能认路的钥匙。\n\ntools 是可选的第二层收窄:权限够、但这里没点名的工具不给。",
+        "properties": {
+          "bindings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "expires_at": {
+            "default": "",
+            "maxLength": 40,
+            "title": "Expires At",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "KeyCreateDTO",
+        "type": "object"
+      },
+      "KeyDTO": {
+        "description": "一把密钥的事实。没有明文 —— 它只在签发那一次的响应里。",
+        "properties": {
+          "bindings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "created_at": {
+            "default": "",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "default": "",
+            "title": "Created By",
+            "type": "string"
+          },
+          "expires_at": {
+            "default": "",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hint": {
+            "default": "",
+            "title": "Hint",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "default": "",
+            "title": "Last Used At",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "status": {
+            "default": "active",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "KeyDTO",
+        "type": "object"
+      },
+      "KeyIssuedDTO": {
+        "description": "签发那一刻的响应:多了明文。之后再也拿不到。",
+        "properties": {
+          "bindings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "created_at": {
+            "default": "",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "default": "",
+            "title": "Created By",
+            "type": "string"
+          },
+          "expires_at": {
+            "default": "",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "hint": {
+            "default": "",
+            "title": "Hint",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "last_used_at": {
+            "default": "",
+            "title": "Last Used At",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "status": {
+            "default": "active",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant": {
+            "default": "",
+            "title": "Tenant",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "KeyIssuedDTO",
+        "type": "object"
+      },
+      "KeyListDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KeyDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "KeyListDTO",
+        "type": "object"
+      },
+      "KeyResourceListDTO": {
+        "description": "这个部署里出现过的资源,以及每个资源上有哪些能力。",
+        "properties": {
+          "default": {
+            "default": "",
+            "title": "Default",
+            "type": "string"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceDTO"
+            },
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resources"
+        ],
+        "title": "KeyResourceListDTO",
+        "type": "object"
+      },
+      "KeyToolDTO": {
+        "description": "一个可以被授予的工具:它要什么权限、能作用在哪些资源上。",
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "mutating": {
+            "default": false,
+            "title": "Mutating",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permission": {
+            "default": "",
+            "title": "Permission",
+            "type": "string"
+          },
+          "resources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Resources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "KeyToolDTO",
+        "type": "object"
+      },
+      "KeyToolListDTO": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/KeyToolDTO"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tools"
+        ],
+        "title": "KeyToolListDTO",
+        "type": "object"
+      },
       "LoginDTO": {
         "properties": {
           "email": {
@@ -1091,6 +1384,27 @@
           "email"
         ],
         "title": "ResetRequestDTO",
+        "type": "object"
+      },
+      "ResourceDTO": {
+        "description": "一个可选的下游目标。签密钥时给人挑,不是权限目录的一部分。",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "ResourceDTO",
         "type": "object"
       },
       "RoleCreateDTO": {
@@ -1784,7 +2098,7 @@
   "paths": {
     "/api/agent/exits": {
       "get": {
-        "description": "出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。",
+        "description": "出口清单:名字、说明、声明的参数名。参数类型不声明,清单也没说。\n\n与 `/mcp` 的 `tools/list` 同一条判据:这个身份够不着的工具不出现。",
         "operationId": "list_exits_api_agent_exits_get",
         "responses": {
           "200": {
@@ -3025,6 +3339,140 @@
           }
         },
         "summary": "Issue Timeline"
+      }
+    },
+    "/api/keys": {
+      "get": {
+        "operationId": "list_keys_api_keys_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Keys"
+      },
+      "post": {
+        "operationId": "create_key_api_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyCreateDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyIssuedDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Key"
+      }
+    },
+    "/api/keys/resources": {
+      "get": {
+        "description": "这个部署里的资源(下游目标)。签密钥时给人挑,不是权限目录。\n\n资源名由插件实例自己声明(`binding`),平台不认识全集,所以这里是\"出现过\n哪些\",不是\"允许哪些\"。",
+        "operationId": "list_key_resources_api_keys_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyResourceListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Key Resources"
+      }
+    },
+    "/api/keys/tools": {
+      "get": {
+        "description": "能授予的工具:每个要什么权限、能作用在哪些资源上。\n\n页面靠它画\"资源 × 工具\"那张表 —— 前端不再自己猜哪个工具属于哪个目标。",
+        "operationId": "list_key_tools_api_keys_tools_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyToolListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Key Tools"
+      }
+    },
+    "/api/keys/{key_id}": {
+      "delete": {
+        "description": "吊销。之后这把密钥的每个请求都是 401,记录留着。",
+        "operationId": "revoke_key_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Key Api Keys  Key Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Key"
       }
     },
     "/api/metrics": {
