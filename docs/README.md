@@ -14,6 +14,7 @@
 | 查当前运行行为 | [运行时参考](reference/runtime.md) → [插件系统](reference/plugin-system.md) |
 | 想知道一次自动变更的边界 | [变更单元契约](explanation/change-unit-contract.md) |
 | 改界面、对齐交互 | [议题工作台](explanation/issue-workspace.md) → [工作区模型](explanation/workspace-model.md) |
+| 改鉴权、成员、一人多工作区 | [身份模型](explanation/identity-model.md) → [运行时参考 · 鉴权](reference/runtime.md#鉴权与租户) |
 | 用/改界面右下角的助手 | [运行时参考 · 控制台助手](reference/runtime.md#控制台助手) |
 | 提交 PR 前想知道 CI 会查什么 | [CI 校验](../CI-CHECKS.md) |
 | 看接下来做什么 | [工作分解](plan/wbs.md) → [Harness 执行层](explanation/harness-execution-layer.md) |

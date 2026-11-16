@@ -481,3 +481,84 @@ class ConsolePendingDTO(BaseModel):
     """待批准的改世界调用;没有时为 null。"""
 
     pending: dict | None = None
+
+
+# ---------------------------------------------------------------------------
+# 成员身份:人是全局的,角色是某个工作区给的
+# ---------------------------------------------------------------------------
+#
+# 一个人的身份不再等于"某一行 users"。users 那一行只说明"这个人能登录",
+# 他属于哪个工作区、在那里是什么角色,由成员关系说明。响应里因此没有第二个
+# "user_id" 的名字:工作区这件事在 URL 与工作区选择器里,身份只回答"我是谁"。
+
+
+class PersonDTO(BaseModel):
+    """一个人,不含任何工作区的角色。"""
+
+    email: str = ""
+    display_name: str = ""
+
+
+class PersonMembershipDTO(BaseModel):
+    """这个人在某个工作区里的样子:角色与范围授权都在这里。"""
+
+    workspace: str
+    workspace_name: str = ""
+    user_id: str = ""
+    is_sub_user: bool = False
+    status: str = "active"
+    roles: list["MembershipRoleDTO"] = Field(default_factory=list)
+    # 工作区级的权限
+    permissions: list[str] = Field(default_factory=list)
+    # 只对某几个仓库生效的权限:`changes.approve@github-acme-api`
+    scoped_permissions: list[str] = Field(default_factory=list)
+
+
+class MembershipRoleDTO(BaseModel):
+    id: str = ""
+    key: str = ""
+    name: str = ""
+
+
+class ActorDTO(BaseModel):
+    """`GET /api/me`:我是谁、我属于哪些工作区、每个里面是什么角色。
+
+    `workspace` 是这次请求实际落在哪个工作区(按 `X-Gwei-Workspace`),
+    `permissions` / `scoped_permissions` 只对那一个工作区算数——不然界面上
+    "能不能点这个按钮"就得自己把多个工作区的权限并起来,而那正好是越权的起点。
+    不属于任何工作区时 `workspace` 为空、权限为空:能登录不等于能看账。
+    """
+
+    email: str = ""
+    display_name: str = ""
+    workspace: str = ""
+    workspace_name: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    scoped_permissions: list[str] = Field(default_factory=list)
+    roles: list[MembershipRoleDTO] = Field(default_factory=list)
+    workspaces: list[PersonMembershipDTO] = Field(default_factory=list)
+    is_sub_user: bool = False
+
+
+class MembershipDTO(BaseModel):
+    """工作区成员页的一行:这个人在这里是谁。
+
+    `user_id` 是成员关系的 id,不是全局那个人的 —— 同一个人在两个工作区里是
+    两条成员关系、两个不同的 id,页面只认得当前工作区。
+    """
+
+    user_id: str = ""
+    person_id: str = ""
+    email: str = ""
+    display_name: str = ""
+    status: str = "active"
+    is_sub_user: bool = False
+    roles: list[MembershipRoleDTO] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    scoped_permissions: list[str] = Field(default_factory=list)
+    last_login_at: str = ""
+
+
+class MembershipListDTO(BaseModel):
+    items: list[MembershipDTO] = Field(default_factory=list)
+    total: int = 0

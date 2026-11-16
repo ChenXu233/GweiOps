@@ -1,6 +1,66 @@
 {
   "components": {
     "schemas": {
+      "ActorDTO": {
+        "description": "`GET /api/me`:我是谁、我属于哪些工作区、每个里面是什么角色。\n\n`workspace` 是这次请求实际落在哪个工作区(按 `X-Gwei-Workspace`),\n`permissions` / `scoped_permissions` 只对那一个工作区算数——不然界面上\n\"能不能点这个按钮\"就得自己把多个工作区的权限并起来,而那正好是越权的起点。\n不属于任何工作区时 `workspace` 为空、权限为空:能登录不等于能看账。",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
+          "is_sub_user": {
+            "default": false,
+            "title": "Is Sub User",
+            "type": "boolean"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipRoleDTO"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "scoped_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scoped Permissions",
+            "type": "array"
+          },
+          "workspace": {
+            "default": "",
+            "title": "Workspace",
+            "type": "string"
+          },
+          "workspace_name": {
+            "default": "",
+            "title": "Workspace Name",
+            "type": "string"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/PersonMembershipDTO"
+            },
+            "title": "Workspaces",
+            "type": "array"
+          }
+        },
+        "title": "ActorDTO",
+        "type": "object"
+      },
       "ChangeDetailDTO": {
         "properties": {
           "history": {
@@ -133,6 +193,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Handle"
           },
           "id": {
@@ -205,6 +266,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Window"
           }
         },
@@ -227,6 +289,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Pending"
           }
         },
@@ -1131,6 +1194,108 @@
         "title": "LoginDTO",
         "type": "object"
       },
+      "MembershipDTO": {
+        "description": "工作区成员页的一行:这个人在这里是谁。\n\n`user_id` 是成员关系的 id,不是全局那个人的 —— 同一个人在两个工作区里是\n两条成员关系、两个不同的 id,页面只认得当前工作区。",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
+          "is_sub_user": {
+            "default": false,
+            "title": "Is Sub User",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "default": "",
+            "title": "Last Login At",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "person_id": {
+            "default": "",
+            "title": "Person Id",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipRoleDTO"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "scoped_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scoped Permissions",
+            "type": "array"
+          },
+          "status": {
+            "default": "active",
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "default": "",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "title": "MembershipDTO",
+        "type": "object"
+      },
+      "MembershipListDTO": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "MembershipListDTO",
+        "type": "object"
+      },
+      "MembershipRoleDTO": {
+        "properties": {
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "MembershipRoleDTO",
+        "type": "object"
+      },
       "MetricDTO": {
         "properties": {
           "labels": {
@@ -1177,6 +1342,78 @@
           "new_password"
         ],
         "title": "PasswordDTO",
+        "type": "object"
+      },
+      "PersonDTO": {
+        "description": "一个人,不含任何工作区的角色。",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "title": "PersonDTO",
+        "type": "object"
+      },
+      "PersonMembershipDTO": {
+        "description": "这个人在某个工作区里的样子:角色与范围授权都在这里。",
+        "properties": {
+          "is_sub_user": {
+            "default": false,
+            "title": "Is Sub User",
+            "type": "boolean"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipRoleDTO"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "scoped_permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scoped Permissions",
+            "type": "array"
+          },
+          "status": {
+            "default": "active",
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "default": "",
+            "title": "User Id",
+            "type": "string"
+          },
+          "workspace": {
+            "title": "Workspace",
+            "type": "string"
+          },
+          "workspace_name": {
+            "default": "",
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace"
+        ],
+        "title": "PersonMembershipDTO",
         "type": "object"
       },
       "PluginDTO": {
@@ -1303,6 +1540,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Plugin"
           },
           "slot": {
@@ -1357,6 +1595,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Sub"
           },
           "value": {
@@ -1383,6 +1622,7 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Variant"
           }
         },
@@ -2137,6 +2377,7 @@
         "description": "证据:存下来的原文。前端不加工,截断了要标出来。",
         "properties": {
           "content": {
+            "default": null,
             "title": "Content"
           },
           "kind": {
