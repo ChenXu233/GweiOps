@@ -1615,7 +1615,7 @@
         "type": "object"
       },
       "TimelineBranchDTO": {
-        "description": "话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。",
+        "description": "话题上此刻打开着的 PR(话题已开 PR 时返回它的分支信息)。没有就是没有,不编造分支。",
         "properties": {
           "head": {
             "default": "",
@@ -3767,7 +3767,7 @@
     },
     "/api/settings/scopes/{scope_name}/{key}": {
       "delete": {
-        "description": "删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。",
+        "description": "删掉一个键。删掉的是租户覆盖值,读的时候落回公共值——不是落空。",
         "operationId": "delete_value_api_settings_scopes__scope_name___key__delete",
         "parameters": [
           {
