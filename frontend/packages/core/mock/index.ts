@@ -14,13 +14,39 @@ export const mockRepos: Repo[] = [
   { id: '3', name: 'acme/frontend', icon: '📦', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
 ]
 
+/** 演示数据:形状照 GET /api/plugins 来,enabled 与 reason 都是引擎会真的给出的字段。 */
+function demoPlugin(
+  id: string,
+  name: string,
+  description: string,
+  enabled: boolean,
+  reason = '',
+  author: 'official' | 'community' = 'official',
+  price: number | null = null,
+): Plugin {
+  return {
+    id,
+    name,
+    description,
+    author,
+    price,
+    enabled,
+    reason: reason || (enabled ? '清单默认启用' : '清单声明 default_enabled: false'),
+    error: '',
+    instances: enabled ? [id] : [],
+    version: '0.1.0',
+    type: 'agent',
+    capabilities: [],
+  }
+}
+
 export const mockPlugins: Plugin[] = [
-  { id: 'upstream-tracker', name: '上游追踪', description: '自动监控依赖仓库 Releases，检测 CVE 修复版本，生成切换 PR。', author: 'official', price: null, installed: true },
-  { id: 'canary', name: '金丝雀发布', description: '标准金丝雀流程 1%→10%→50%→100%，自动回滚触发。', author: 'official', price: null, installed: true },
-  { id: 'k8s-scaler', name: 'K8s 扩容', description: '检测流量过载，自动调用 K8s API 水平扩容 Pod 副本数。', author: 'official', price: null, installed: false },
-  { id: 'security-compliance', name: '安全合规', description: '审计日志、双人审批、禁止未经审计的补丁。金融行业专用。', author: 'official', price: 29, installed: false },
-  { id: 'feishu-notify', name: '飞书通知', description: '修复报告、审核提醒、异常告警推送至飞书群。', author: 'community', price: null, installed: true },
-  { id: 'ai-inference', name: 'AI 推理运维', description: 'GPU 扩缩容、模型版本回滚、推理延迟监控。', author: 'official', price: 49, installed: false },
+  demoPlugin('upstream-tracker', '上游追踪', '自动监控依赖仓库 Releases，检测 CVE 修复版本，生成切换 PR。', true),
+  demoPlugin('canary', '金丝雀发布', '标准金丝雀流程 1%→10%→50%→100%，自动回滚触发。', true),
+  demoPlugin('k8s-scaler', 'K8s 扩容', '检测流量过载，自动调用 K8s API 水平扩容 Pod 副本数。', false),
+  demoPlugin('security-compliance', '安全合规', '审计日志、双人审批、禁止未经审计的补丁。金融行业专用。', false, '运行期停用', 'official', 29),
+  demoPlugin('feishu-notify', '飞书通知', '修复报告、审核提醒、异常告警推送至飞书群。', true, '', 'community'),
+  demoPlugin('ai-inference', 'AI 推理运维', 'GPU 扩缩容、模型版本回滚、推理延迟监控。', false, '清单声明 default_enabled: false', 'official', 49),
 ]
 
 export const mockTeamSettings: TeamSettings = {
@@ -154,7 +180,7 @@ export const mockChanges: ChangeRow[] = [
  * 议题时间线的演示数据。
  *
  * 形状与后端 `GET /api/issues/{id}/timeline` 完全一致:三段状态、轮次、分段、证据。
- * 用它能在没有引擎的情况下看界面——包括"等你放行"这一段的动作。
+ * 用它能在没有引擎的情况下看界面——包括"等你放行"流程里的动作。
  */
 export const mockIssueTimeline: IssueTimeline = {
   id: '#42',
@@ -235,7 +261,7 @@ export const mockIssueTimeline: IssueTimeline = {
             not_executed: [
               {
                 capability: 'issue.label',
-                reason: '没有提供者声明这个能力: 这个租户上没装打标签的插件',
+                reason: '没有提供者声明 sensor.label: 该租户上没装打标签的插件',
               },
             ],
           },
@@ -319,7 +345,7 @@ export const mockIssueTimeline: IssueTimeline = {
           },
           evidence: [
             {
-              label: '账本这一行',
+              label: '当前账本行',
               kind: 'json',
               content: {
                 id: 'cu_demo_comment',
@@ -458,7 +484,7 @@ export const mockIssueTimeline: IssueTimeline = {
           },
           evidence: [
             {
-              label: '账本这一行',
+              label: '当前账本行',
               kind: 'json',
               content: {
                 id: 'cu_demo_blocked',

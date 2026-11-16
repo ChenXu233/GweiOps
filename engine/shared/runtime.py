@@ -1,32 +1,27 @@
 # engine/shared/runtime.py
 """插件运行时单例 —— 供 webhook 路由与工作流管道共用。
 
-优先从插件注册表按名字取实例;注册表未加载(如单测直接导入)时回退到
-旧直连单例,保持既有测试与调用点零改动。
+取插件只有一条路:注册表,没有直连兜底。两种"取不到"各自处理:
+
+- 注册表还没跑过发现(单测直接导入、引擎还没起来):抛 `LookupError`,说明"还没查";
+- 跑过发现但注册表里没有目标插件(没装、被停用、白名单没列):同样抛,日志点名插件名。
 """
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-_sensor_instance = None
 
+def _registry():
+    from engine.plugin_manager import registry
 
-def _from_registry(name: str):
-    try:
-        from engine.plugin_manager import registry
-
-        return registry.get(name)
-    except Exception:
-        return None
+    return registry
 
 
 def get_adapter(source: str):
     """按来源取适配器(github / gitlab / cnb ...)。
 
-    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError` ——
-    上一版这里写死返回 GitHub App 适配器,CNB 的投递进来会拿 GitHub 的身份去
-    拉快照、问分支、发评论;错目标比报错糟。
+    每个来源只有一个适配器,由它自己声明 `source`。取不到就抛 `LookupError`。
     """
     from engine.ingest.source import source_adapter
 
@@ -34,14 +29,32 @@ def get_adapter(source: str):
 
 
 def get_sensor():
-    """获取 SensorAgent 实例（延迟导入避免循环依赖）。"""
-    global _sensor_instance
+    """取 sense 能力的提供者;没有直连兜底,未启用就没有感知步骤。"""
+    registry = _registry()
+    instance = registry.get("sensor-agent")
+    if instance is not None:
+        return instance
+    if not registry.is_loaded():
+        raise LookupError(
+            "插件注册表还没发现过任何插件:先 registry.discover() 再取 sensor-agent"
+        )
+    raise LookupError(
+        "部署没有启用 sensor-agent:检查 PLUGINS_ENABLED / PLUGINS_DISABLED "
+        "与清单里的 default_enabled,或在控制台的插件页把它打开"
+    )
 
-    from_registry = _from_registry("sensor-agent")
-    if from_registry is not None:
-        return from_registry
 
-    if _sensor_instance is None:
-        from plugins.builtin.agents.sensor.plugin import SensorAgent
-        _sensor_instance = SensorAgent()
-    return _sensor_instance
+def get_fixer():
+    """取修复智能体。与 `get_sensor` 同一规矩:取不到就是 fixer 能力缺失。"""
+    registry = _registry()
+    instance = registry.get("fixer-agent")
+    if instance is not None:
+        return instance
+    if not registry.is_loaded():
+        raise LookupError(
+            "插件注册表还没发现过任何插件:先 registry.discover() 再取 fixer-agent"
+        )
+    raise LookupError(
+        "部署没有启用 fixer-agent:补丁生成没有提供者,"
+        "检查 PLUGINS_ENABLED / PLUGINS_DISABLED,或在控制台的插件页把它打开"
+    )

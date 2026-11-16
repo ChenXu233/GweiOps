@@ -111,6 +111,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/oidc/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Oidc Authorize
+         * @description 把人送去身份提供方。state 与 nonce 存在进程里,回来对一次就删。
+         */
+        get: operations["oidc_authorize_api_auth_oidc_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/oidc/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Oidc Callback
+         * @description 回来:换 token、认人、发会话 cookie,然后回前台。
+         */
+        get: operations["oidc_callback_api_auth_oidc_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/password": {
         parameters: {
             query?: never;
@@ -125,6 +165,112 @@ export interface paths {
          * @description 改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。
          */
         post: operations["change_password_api_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Reset
+         * @description 申请一封重置邮件。
+         *
+         *     正文里给两样东西:**一次性链接**(已经设过密码的人走它)与**验证码**
+         *     (还没设过密码的账号走它)。两条都发,是因为接口不能按"这个账号有没有密码"
+         *     改口吻 —— 那种区分是给攻击者的礼物。
+         */
+        post: operations["request_reset_api_auth_password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/password/reset/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Reset
+         * @description 两种走法:邮件里的令牌,或者还没设过密码的账号凭验证码。
+         */
+        post: operations["complete_reset_api_auth_password_reset_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/register/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Start
+         * @description 发验证码。这一步**要**说出"这个联系方式已经注册过":
+         *
+         *     注册不是登录,同一个邮箱第二次注册本来就走不下去。含糊其辞只会让人反复试。
+         */
+        post: operations["register_start_api_auth_register_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/register/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Verify
+         * @description 核验并建号。要核验时先落 pending 再建号;不要核验就直接建。
+         */
+        post: operations["register_verify_api_auth_register_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/registration/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Registration Policy
+         * @description 现在能不能注册、能用什么方式。不要求鉴权 —— 登录页要照它画按钮。
+         */
+        get: operations["registration_policy_api_auth_registration_policy_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -691,10 +837,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Plugins */
+        /**
+         * List Plugins
+         * @description 发现到的全部清单,含未启用的。
+         */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rescan Plugins
+         * @description 重扫插件目录:新出现的按决定启用,磁盘上没了的停用,已在跑且没变的不动。
+         */
+        post: operations["rescan_plugins_api_plugins_rescan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -718,6 +887,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins/{name}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Plugin */
+        post: operations["disable_plugin_api_plugins__name__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/{name}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Plugin
+         * @description 打开一个已发现但没启用的插件。没有清单就 404。
+         */
+        post: operations["enable_plugin_api_plugins__name__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plugins/{name}/ui/{file_path}": {
         parameters: {
             query?: never;
@@ -727,11 +933,49 @@ export interface paths {
         };
         /**
          * Plugin Ui Asset
-         * @description 服务插件自带 UI 资产(将来鉴权/能力令牌的挂钩点在 engine 侧)。
-         *
-         *     安全:resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
+         * @description 服务插件自带 UI 资产;resolve 后必须仍位于插件 ui 目录内,越界与缺失一律 404。
          */
         get: operations["plugin_ui_asset_api_plugins__name__ui__file_path__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Quota
+         * @description 这个租户每条限量的用量。没声明的资源不出现在里面。
+         */
+        get: operations["get_quota_api_quota_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quota/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Parse
+         * @description 把 `2000/30d` 拆开看看 —— 页面在保存前先问一次,别让人猜格式。
+         */
+        get: operations["parse_api_quota_parse_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -800,7 +1044,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Team Settings */
+        /**
+         * Team Settings
+         * @description 团队设置。配额与注册那两块的现状从真实配置算出来,不是写死的字符串。
+         */
         get: operations["team_settings_api_settings_get"];
         put?: never;
         post?: never;
@@ -1811,7 +2058,10 @@ export interface components {
             /** New Password */
             new_password: string;
         };
-        /** PluginDTO */
+        /**
+         * PluginDTO
+         * @description 一个被发现过的插件。`enabled` 表示它此刻在不在流程里。
+         */
         PluginDTO: {
             /**
              * Capabilities
@@ -1820,6 +2070,21 @@ export interface components {
             capabilities: string[];
             /** Description */
             description: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Instances
+             * @default []
+             */
+            instances: string[];
             /** Name */
             name: string;
             /**
@@ -1827,6 +2092,11 @@ export interface components {
              * @default []
              */
             pages: components["schemas"]["PluginPageDTO"][];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
             /** Type */
             type: string;
             /** Version */
@@ -1907,6 +2177,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** QuotaDTO */
+        QuotaDTO: {
+            /** Items */
+            items: components["schemas"]["QuotaItemDTO"][];
+            /** Tenant */
+            tenant: string;
+        };
+        /** QuotaItemDTO */
+        QuotaItemDTO: {
+            /** Limit */
+            limit: number;
+            /** Remaining */
+            remaining: number | null;
+            /** Resource */
+            resource: string;
+            /** Used */
+            used: number;
+            /** Window Hours */
+            window_hours: number;
+        };
         /**
          * ReleaseValuesDTO
          * @description 一行发布配置。字段由 release.py 的模式决定,这里不逐个点名。
@@ -1938,6 +2228,36 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+        };
+        /** ResetCompleteDTO */
+        ResetCompleteDTO: {
+            /**
+             * Code
+             * @default
+             */
+            code: string;
+            /**
+             * Contact
+             * @default
+             */
+            contact: string;
+            /**
+             * Method
+             * @default email
+             */
+            method: string;
+            /** New Password */
+            new_password: string;
+            /**
+             * Token
+             * @default
+             */
+            token: string;
+        };
+        /** ResetRequestDTO */
+        ResetRequestDTO: {
+            /** Email */
+            email: string;
         };
         /**
          * ResourceDTO
@@ -2140,6 +2460,24 @@ export interface components {
             password: string;
         };
         /**
+         * StartDTO
+         * @description 发码。contact 是邮箱或手机号,由 method 决定怎么归一。
+         */
+        StartDTO: {
+            /** Contact */
+            contact: string;
+            /**
+             * Method
+             * @default email
+             */
+            method: string;
+            /**
+             * Purpose
+             * @default register
+             */
+            purpose: string;
+        };
+        /**
          * TimelineBranchDTO
          * @description 话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。
          */
@@ -2316,6 +2654,28 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VerifyDTO */
+        VerifyDTO: {
+            /** Code */
+            code: string;
+            /** Contact */
+            contact: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Method
+             * @default email
+             */
+            method: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
         };
     };
     responses: never;
@@ -2497,6 +2857,59 @@ export interface operations {
             };
         };
     };
+    oidc_authorize_api_auth_oidc_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    oidc_callback_api_auth_oidc_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     change_password_api_auth_password_post: {
         parameters: {
             query?: never;
@@ -2528,6 +2941,168 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_reset_api_auth_password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetRequestDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_reset_api_auth_password_reset_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetCompleteDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_start_api_auth_register_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_verify_api_auth_register_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registration_policy_api_auth_registration_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -3471,6 +4046,28 @@ export interface operations {
             };
         };
     };
+    rescan_plugins_api_plugins_rescan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_widgets_api_plugins_widgets_get: {
         parameters: {
             query?: {
@@ -3489,6 +4086,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginWidgetDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_plugin_api_plugins__name__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_plugin_api_plugins__name__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginDTO"];
                 };
             };
             /** @description Validation Error */
@@ -3521,6 +4180,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_quota_api_quota_get: {
+        parameters: {
+            query?: {
+                tenant?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuotaDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_api_quota_parse_get: {
+        parameters: {
+            query: {
+                resource: string;
+                spec: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

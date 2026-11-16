@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginType
 from engine.plugin_manager.manifest import Manifest
 from engine.plugin_manager.registry import PluginRegistry
 
@@ -18,10 +18,6 @@ class FakePlugin(PluginBase):
         self.tenant = tenant
         self.binding = binding
 
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name=self.tag, version="1.0.0", type=PluginType.AGENT, description="fake"
-        )
 
     async def on_startup(self) -> None:
         pass

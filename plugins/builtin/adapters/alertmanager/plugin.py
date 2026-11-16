@@ -18,7 +18,7 @@ from typing import Any, Dict
 
 from engine.ingest.events import header_value
 from engine.ingest.signal import SignalError, normalize
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 from .config import AlertmanagerConfig
 
@@ -113,16 +113,6 @@ class AlertmanagerAdapter(PluginBase):
         # 变更单元里的目标与租户:告警不按目标隔离,给空值。
         self.binding = ""
         self.tenant = ""
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="alertmanager-adapter",
-            version="0.1.0",
-            type=PluginType.ADAPTER,
-            description="把 Alertmanager 的告警翻译成信号;一条 firing 告警就是一个信号",
-            capabilities=["webhook.receive", "webhook.verify"],
-            config={"optional": ["ALERTMANAGER_WEBHOOK_TOKEN"]},
-        )
 
     async def on_startup(self) -> None:
         # 人在页面上刚填完令牌:重建一次配置,不用重启。

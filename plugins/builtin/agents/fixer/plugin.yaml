@@ -8,3 +8,4 @@ capabilities:
 class_name: FixerAgent
 tasks:
   patch.generate: generate_patches
+  code.review: review_code

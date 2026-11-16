@@ -9,8 +9,10 @@ from fastapi import FastAPI
 
 from engine.api.auth import load_tokens, make_middleware, set_auth_required
 from engine.api.routes.auth import router as auth_router
+from engine.api.routes.registration import router as registration_router
 from engine.api.routes.health import router as health_router
 from engine.api.routes.plugins import router as plugins_router
+from engine.api.routes.quota import router as quota_router
 from engine.api.routes.agent import router as agent_router
 from engine.api.routes.changes import router as changes_router
 from engine.api.routes.incidents import router as incidents_router
@@ -42,9 +44,7 @@ dbos = DBOS(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理 - startup 初始化插件注册表与 DBOS,shutdown 逆序关闭。"""
-    # 顺序有讲究:库里的配置必须先装好,插件 on_startup 才读得到自己的凭据。
-    # 反过来(先 launch 再装配置)是一个真 bug:插件看到的是空配置,启动失败被隔离,
-    # 之后页面上填的值永远不生效,而失败只留一行日志。
+    # 顺序有讲究:库里的配置必须先装好,插件 on_startup 才读得到自己的凭据
     from engine.harness import build_env  # noqa: F401 — 导入即注册 harness-env scope
     from engine.shared.settings_store import create_settings_store, ensure_schema as ensure_settings_schema
 
@@ -61,12 +61,28 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
         logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
 
-    # Startup: 发现并启动全部插件(失败隔离,单插件故障不阻止引擎启动)
+    # Startup: 先装回运行期启停决定,再发现与启动(顺序反了决定会在重启后被绕过)
+    from engine.plugin_manager import enablement
+
+    registry.set_decisions(await enablement.load_decisions())
+
     registry.discover()
+
+    # 进程外插件(PLUGINS_GRPC)也走同一条注册路径,只是实例换成一个远程代理
+    from engine.plugin_manager.grpc_loader import register_grpc_plugins
+
+    try:
+        registered = register_grpc_plugins()
+    except Exception:  # noqa: BLE001 - 接不上只告警
+        logger.warning("gRPC 插件没装上", exc_info=True)
+    else:
+        if registered:
+            logger.info("gRPC plugins registered: %d", registered)
+
+    # 全部实例就位之后统一 on_startup:进程内与进程外一视同仁
     await registry.launch()
 
-    # 插件自己声明的配置有缺项就说出来:声明了却没人填,比没声明更糟——
-    # 那种沉默会在第一次真要调下游的时候才爆。
+    # 插件自己声明的配置有缺项就点名
     for scope in config.list_scopes():
         missing = config.validate_scope(scope.name, config.settings.default_tenant_slug)
         if missing:
@@ -81,9 +97,7 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - 表还没建好时按"没有用户"处理,setup 会再处理
         logger.warning("读不到用户表,鉴权先按令牌配置决定", exc_info=True)
         has_users = False
-    # 密钥是凭据,不是"鉴权开关":拿它来的人才成为某个身份。要不要认身份仍由
-    # 令牌与用户决定 —— 否则签到一半的部署会把自己锁在门外(没有用户可登录,
-    # 令牌也是空的,只能去库里删密钥)
+    # 密钥是凭据,不是鉴权开关;要不要认身份仍由令牌与用户决定
     if config.settings.change_ledger_backend != "file":
         from engine.auth import keys as key_store
 
@@ -110,14 +124,14 @@ async def lifespan(app: FastAPI):
 
     # Startup: 周期巡检。清单里声明的 schedule 在这里装进 DBOS 的调度器,
     # 同一周期只跑一次由系统库里的工作流 id 保证,重启后不会重跑。
-    # 装不上只点名,不因此起不来:一个写坏的周期不该让整个引擎停摆。
+    # 装不上只点名,不因此起不来
     from engine.scheduler import apply_registry_schedules
 
     try:
         outcome = apply_registry_schedules(
             registry, tenant=config.settings.default_tenant_slug
         )
-    except Exception:  # noqa: BLE001 - 调度器起不来不等于平台起不来
+    except Exception:  # noqa: BLE001 - 起不来只告警
         logger.warning("周期巡检没有装上", exc_info=True)
     else:
         if outcome["applied"]:
@@ -149,7 +163,9 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(registration_router)
 app.include_router(plugins_router)
+app.include_router(quota_router)
 app.include_router(console_router)
 app.include_router(changes_router)
 app.include_router(agent_router)

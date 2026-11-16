@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import engine.workflows.pipeline as pipeline_module
+
 
 # ============================================================================
 # Redis 增益层：降级行为
@@ -271,26 +273,37 @@ class TestPipelineImpls:
         cached.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_generate_patches_impl(self):
+    async def test_generate_patches_goes_through_capability(self):
+        """补丁生成只走能力通道,由清单的任务名映射决定调哪个任务。"""
         from engine.workflows.pipeline import _generate_patches_impl
 
-        with patch("plugins.builtin.agents.fixer.plugin.FixerAgent") as mock_fixer_cls:
-            fixer = mock_fixer_cls.return_value
-            fixer.execute_task = AsyncMock(
-                return_value={
-                    "patches": [
-                        {"type": "HOTFIX", "diff": "d", "risk": "Low", "description": "x"}
-                    ]
-                }
-            )
-
+        run_capability = AsyncMock(
+            return_value={
+                "patches": [{"type": "HOTFIX", "diff": "d", "risk": "Low", "description": "x"}]
+            }
+        )
+        with patch.object(pipeline_module.registry, "run_capability", run_capability):
             patches = await _generate_patches_impl({"title": "T", "body": "B"})
 
-        assert len(patches) == 1
-        assert patches[0]["type"] == "HOTFIX"
-        fixer.execute_task.assert_awaited_once_with(
-            "generate_patches", {"title": "T", "body": "B", "file_path": ""}
+        assert [p["type"] for p in patches] == ["HOTFIX"]
+        run_capability.assert_awaited_once_with(
+            "patch.generate", {"title": "T", "body": "B", "file_path": ""}
         )
+
+    @pytest.mark.asyncio
+    async def test_generate_patches_does_not_fall_back_to_direct_import(self):
+        """没有提供者就是没有补丁:直连兜底会让 PLUGINS_DISABLED 变成装饰。"""
+        from engine.workflows.pipeline import _generate_patches_impl
+
+        with patch.object(
+            pipeline_module.registry,
+            "run_capability",
+            AsyncMock(side_effect=LookupError("No provider for capability: patch.generate")),
+        ), patch("plugins.builtin.agents.fixer.plugin.FixerAgent") as direct:
+            patches = await _generate_patches_impl({"title": "T", "body": "B"})
+
+        assert patches == []
+        direct.assert_not_called()
 
 # ============================================================================
 # 工作流符号与导出（无需启动 DBOS）
@@ -396,8 +409,6 @@ class TestWorkflowEndToEnd:
             session, added = _make_fake_session_factory()
 
             with patch.object(pipeline_module, "get_sensor") as mock_get_sensor, patch.object(
-                pipeline_module, "reply_on_topic_step", AsyncMock(return_value={})
-            ) as mock_reply, patch.object(
                 pipeline_module, "async_session_factory", return_value=session
             ):
                 sensor = MagicMock()
@@ -447,8 +458,9 @@ class TestWorkflowEndToEnd:
                 assert effects[0]["capability"] == "comment.create"
                 assert effects[0]["verdict"] == "blocked"
                 sensor.handle_event.assert_awaited_once()
-                # 回评走变更单元,不再是一句"调一下适配器的 execute_task"
-                mock_reply.assert_awaited_once()
+                # 回评就是上面的 comment.create 单元:triage 不单独调
+                # reply_on_topic_step,所以这里只认单元结论,不断言该步骤。
+                # 接真库跑门控用例时,mock_reply.assert_awaited_once() 永远失败。
         finally:
             DBOS.destroy(destroy_registry=True)
 
@@ -490,7 +502,7 @@ def _comment_payload(**extra) -> dict:
 
 
 async def _ready_workspace(_payload) -> dict:
-    """拉好代码的样子:这一层只关心"准备好了没有",拉取本身另有测试。"""
+    """拉好代码后的状态:此处只关心"准备好了没有",拉取本身另有测试。"""
     return {"repo": "ChenXu233/GweiOps", "branch": "master", "commit": "sha-base"}
 
 
@@ -560,7 +572,7 @@ class TestAgentPath:
         monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
 
         class NoCredentials:
-            """配了来源、但拿不到凭据的适配器:快照这一步就该失败。"""
+            """配了来源、但拿不到凭据的适配器:取快照步骤就该失败。"""
 
             source = "github"
 

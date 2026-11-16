@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Optional
 
 from engine.change_unit.intent import Intent, parse_intent
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 Resolver = Callable[[str, dict], Awaitable[dict]]
 
@@ -31,15 +31,6 @@ class IntentBuilder(PluginBase):
         self._resolve = resolver or _default_resolver()
         self.binding = ""
         self.tenant = ""
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="intent-builder",
-            version="0.1.0",
-            type=PluginType.AGENT,
-            description="把信号与已有分析组装成 intent(harness 接缝的参考实现)",
-            capabilities=["intent.propose"],
-        )
 
     async def on_startup(self) -> None:
         pass

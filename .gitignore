@@ -76,3 +76,6 @@ out/
 
 # Nuxt build output
 .output/
+
+# 外挂插件目录(部署时放外部插件,不进仓库)
+plugins-extra/

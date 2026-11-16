@@ -31,7 +31,7 @@
 - 信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 回评往哪回、工作区里的代码从哪来,都按投递自身的 `source_adapter` 解析:CNB 的议题进来就回 CNB、拉 CNB 的仓库。载荷缺来源直接报错,不拿 GitHub 顶上。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
-- PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到该 PR 的分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
+- PR 上的评论与 issue 上的评论是同一种事件(`issue_comment`)。平台按话题 `owner/repo#number` 把它们串起来:同一个话题上已有打开的 PR 时,新改动追加到已开 PR 的分支——`pr.open` 复用该 PR,不新开一个;分支上的 PR 已关闭则当场拒绝。
 
 ## 发布(合并即发布)
 
@@ -45,34 +45,34 @@
 
 - `mode` 是发布管道的选择,词表是 `off` / `compose`,只允许用平台定义过的模式,不允许仓库拼装自己的管道结构。`off` = 合并即终点,只记事故报告不发布(开源基础库形态);`compose` = 现有的 compose 发布管道。
 - 环境层兼容旧部署:`RELEASE_MODE` 未显式配置、但环境里出现任一 compose 参数时按 `compose` 算;仓库行显式写 `mode: "off"` 可以关掉单个仓库的发布。
-- `compose` 模式下三项配置缺一就不发布,不猜部署参数:`RELEASE_PROJECT_DIR`(compose 项目目录)、`RELEASE_SERVICE`(服务名)、`RELEASE_IMAGE_TEMPLATE`(支持 `{repo}` / `{sha}` / `{number}`)。缺项时这次发布只写事故报告说明缺什么,不产生变更单元。
+- `compose` 模式下三项配置缺一就不发布,不猜部署参数:`RELEASE_PROJECT_DIR`(compose 项目目录)、`RELEASE_SERVICE`(服务名)、`RELEASE_IMAGE_TEMPLATE`(支持 `{repo}` / `{sha}` / `{number}`)。缺项时本次投递只写事故报告说明缺什么,不产生变更单元。
 - `RELEASE_BASE_BRANCH` / `base_branch` 非空时只发布合入该基线的 PR;空 = 任意基线。
-- 效果是 `compose.release`:把服务切到合并提交对应的镜像。compose 文件用 `${GWEI_RELEASE_IMAGE}` 取这次的目标镜像;插件先 `pull`,再 `up -d --no-deps`。**读当前镜像的 `compose ps` 也要带上 `${GWEI_RELEASE_IMAGE}`**:不带 compose 连项目都解析不出来,报的是"没有 image"而不是"没在跑"。
-- 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进自动收敛的路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
+- 效果是 `compose.release`:把服务切到合并提交对应的镜像。compose 文件用 `${GWEI_RELEASE_IMAGE}` 取发布目标镜像;插件先 `pull`,再 `up -d --no-deps`。读当前镜像的 `compose ps` 也要带上 `${GWEI_RELEASE_IMAGE}`,否则 compose 解析不出项目。
+- 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进第一类路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
 - 验证读服务当前镜像:容器在跑、镜像与目标一致才算成;不一致走回滚。
-- 发布效果打到的下游是 `binding` 参数(出厂默认 `local`,按层覆盖),不是部署默认的 `DEFAULT_BINDING`;两者要分别配。配置写法与层次语义见上。
+- 发布效果打到的下游是 `binding` 参数(出厂默认 `local`,按层覆盖),与部署默认的 `DEFAULT_BINDING` 分别配置。配置写法与层次语义见上。
 - 租户默认与仓库行在控制台的「设置 → 发布配置」页面读写(`GET/PUT/DELETE /api/settings/release` 及其子路径);页面展示四层合并后的生效值兜底,留空不产生覆盖。也可以 API/SQL 直写 plugin_settings。
-- 这不是金丝雀:一次发布就是一个单元、一步切换。分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
+- 一次发布就是一个单元、一步切换;分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
 - 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
 - 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB 的适配器是预留位(`default_enabled: false`),打开后走同一条链路。
 
 ## MCP
 
-别人的 agent(Claude Code、Cursor、dsh)用 MCP 说话;沙箱里的 agent 用出口改世界。两者要的是同一件事,所以 `/mcp` 不是第二套接口,是出口的另一种传输:
+别人的 agent(Claude Code、Cursor、dsh)用 MCP 说话;这台机器用出口改世界。两者要的是同一件事,`/mcp` 是出口的另一种传输:
 
 - `tools/list` 直接来自 `tool_specs(registry)` —— 插件声明过的效果就是工具,名字以 `.read` 结尾的能力是只读工具。没有第二份清单要维护。
 - `tools/call` 走 `run_tool`,和沙箱里的 agent 完全一条路:读窗口、判定、执行、验证、记账。所以从 MCP 点一下,和从出口点一下,账本里长得一模一样。
-- 一次调用可以带 `_summary` / `_incident_id` / `_topic` / `_binding` 这几个保留参数,它们只影响账本怎么记这次调用,不传给下游。
+- 一次调用可以带 `_summary` / `_incident_id` / `_topic` / `_binding` 这几个保留参数,它们只影响该行账怎么写,不传给下游。
 
 接入方式:URL 填 `https://<平台>/mcp`,请求头带 `X-Gwei-Token`,值是[密钥](#密钥)的明文。平台自己的只读口(账本、事故、话题)由内置插件 `platform-mcp` 声明,装上就出现在工具清单里。
 
 ### 工具按凭据暴露
 
-同一个 `/mcp`,不同凭据看到的工具不一样。`tools/list` 列的是**这条凭据够得着**的工具,`tools/call` 也只放行它们:知道了名字不等于够得着。
+同一个 `/mcp`,不同凭据看到的工具不一样。`tools/list` 列的是当前凭据够得着的工具,`tools/call` 也只放行该清单内的工具。
 
 一道凭据要过三关才看得见一个工具:**权限**够、**资源**够、自己的**工具白名单**没把它排除。
 
-资源就是下游目标(`binding`):`local` 是一台机器,`github` 是一个组织。权限说"能不能改世界",资源说"能改哪一个"——一把只签了 `local` 的钥匙,`remote` 上的工具不在它的清单里。资源名由插件实例自己声明,平台不认识全集,所以密钥上的资源是"允许哪些出现过的",不是一份固定目录。密钥没写资源(空)就是不限,老密钥的行为不因资源字段改变;只读口说不出自己在哪个目标上,资源对它不适用。
+资源就是下游目标(`binding`):`local` 指引擎所在机器、`github` 指 GitHub 组织。权限决定"能不能改世界",资源决定"能改哪一个"。资源名由插件实例自己声明,密钥上的资源是"允许哪些出现过的";空 = 不限,老密钥的行为不因该字段改变;只读口不适用资源检查。
 
 工具到权限的翻译只有一处(`engine/auth/keys.py` 的 `permission_for_tool`),判据按顺序取第一条:
 
@@ -122,16 +122,16 @@ flowchart LR
 - 后端:`CHANGE_LEDGER_BACKEND`。`db`(默认)写业务库 `change_events` 表,启动时 checkfirst 建表;`file` 写 `CHANGE_LEDGER_PATH`(默认 `var/change-ledger.jsonl`)的单文件 JSONL,仅用于演示与离线调试——并发追加与租户隔离都靠不住。
 - 一行一个事件,只追加、不改写。顺序看自增主键,不看时间戳(机器时钟会回拨)。
 - 一个单元判定、执行、放行、撤销各写一行,`unit_id` 相同;当前状态取 id 最大的那行。
-- 查询按 `tenant` 收窄(`GET /api/changes?tenant=`)。配置了令牌时它由令牌决定,不是调用方说了算;未配置时它只是查询范围,见下节。
+- 查询按 `tenant` 收窄(`GET /api/changes?tenant=`)。配置了令牌时它由令牌决定;未配置时它只是查询范围,见下节。
 - 阻断的单元有两个出口,各写一行账:放行(`approve`)与否决(`veto`)。放行只表示"此刻有人在场",执行后照样读窗口、照样验证,真正不可逆的如实记成 `irreversible`。
 - 撤销前置条件:最新行为已执行、有句柄,且窗口未过期。已撤销返回 409,未执行返回 400,提供者不可用返回 503;窗口过期或读不到窗口的撤销会被拒绝。窗口以写入时记下的值为准(对称撤销不会过期)。
-- 响应里每行带 `undoable` / `undo_reason` / `undo_expires_at`:撤销承诺会到期,这个判断在读取时算,不落库。历史行按写入时记下的值算,返回的是该行当时的当前状态。
+- 响应里每行带 `undoable` / `undo_reason` / `undo_expires_at`:撤销承诺会到期,`undoable` 在读取时计算,不落库。历史行按它自己的时刻计算——每行在写入时就是当时的当前状态。
 - 放行前置条件:最新行为 `blocked`,否则 409。否决前置条件:最新行未执行,已执行的只能撤销。
 - 幂等:同一 `idempotency_key` 重放只复用账本结论,不二次外呼。
 
 ## 权限目录
 
-`engine/auth/__init__.py` 的 `PERMISSIONS` 是全部权限的唯一定义,角色、用户、密钥都从这里取。`is_write_permission` 判"这条权限会不会改世界",判据是一份只读白名单(`READ_PERMISSIONS`):新增只读权限要显式加进去,漏加的后果是被当成可写(保守判定),而不是悄悄放行。
+`engine/auth/__init__.py` 的 `PERMISSIONS` 是全部权限的唯一定义,角色、用户、密钥都从这里取。`is_write_permission` 判"这条会不会改世界",判据是一份只读白名单(`READ_PERMISSIONS`):新增只读权限要显式加进去,漏加会被当成可写(保守一侧)。
 
 | 权限 | 说明 |
 | --- | --- |
@@ -148,11 +148,11 @@ flowchart LR
 
 预设角色 `owner` 拿全量;`operator` 能看账本、放行与撤销变更、读配置,并且能签发与吊销 MCP 密钥(`keys.read` + `keys.manage`),但拿不到管人、管角色的权限;`viewer` 只有读,连密钥清单都看不到。三者权限都可以改,`is_system` 只保证删不掉。
 
-`operator` 带 `keys.manage` 是有意的:运维要接一个 agent 时不该先去找所有者。越权的出口仍然关着 —— 签出去的权限不能超过自己手上的权限,所以运维签出的不会多于他自己的权限。
+`operator` 带 `keys.manage`:运维接一个 agent 不必先找所有者。签出去的权限不能超过运维自己持有的权限。
 
 ## 控制台鉴权
 
-`API_TOKENS` 留空 = 不鉴权:`by` 与 `tenant` 由调用方自报,只适合单机自用。每个响应都带 `X-Gwei-Auth: on|off`,把鉴权状态说出来——静默降级的安全开关不叫开关。
+`API_TOKENS` 留空 = 不鉴权:`by` 与 `tenant` 由调用方自报,只适合单机自用。每个响应都带 `X-Gwei-Auth: on|off` 标明当前状态。
 
 配置后按 `token:tenant:actor:scope` 签发,逗号分隔多条:
 
@@ -160,26 +160,68 @@ flowchart LR
 - 请求带 `X-Gwei-Token` 头。`/api/health` 与 `/webhook/*` 不走这套:前者是存活探测,后者各自带共享密钥。同一个头也接受[密钥](#密钥):先查库里的密钥,查不到再回落到静态令牌。
 - 租户只能看到自己的账;请求里写别的租户是 403,不属于自己的单元是 404。
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
-- 令牌写错(段数不对、scope 非法、重复)拒绝启动:写错的令牌不能静默降级成"不鉴权"。
+- 令牌写错(段数不对、scope 非法、重复)拒绝启动,不静默降级成"不鉴权"。
 
+## 注册与账号核验
+
+企业账号与自部署用**同一个开关**:注册默认关闭(`REGISTRATION_ENABLED=false`),已经跑起来的实例不会因为升级开始接受陌生人。租户可以在设置页逐键覆盖,生效值是"全局配置 + 公共覆盖 + 租户覆盖"。
+
+开关与方式:
+
+| 配置 | 默认 | 说明 |
+| --- | --- | --- |
+| `REGISTRATION_ENABLED` | `false` | 自助注册总开关 |
+| `REGISTRATION_METHODS` | `email` | 可用方式:`email` / `phone` / `oidc`,逗号分隔;没配好的 `oidc` 不出现在可选项里 |
+| `REGISTRATION_REQUIRES_VERIFICATION` | `true` | 是否必须过验证码 |
+| `REGISTRATION_DEFAULT_ROLE` | `viewer` | 新用户自动接上的角色 key;角色不存在时留一行警告日志,不阻断注册 |
+| `REGISTRATION_PUBLIC_BASE_URL` | 空 | 邮件链接与 OIDC 回跳的前台地址;空则按请求 Host 推 |
+| `REGISTRATION_TEST_CODE` | 空 | 配了就用固定码并在发码响应里回显,只给自部署联调 |
+| `REGISTRATION_MAX_ATTEMPTS` / `REGISTRATION_RATE_LIMIT` | `5` / `5` | 一个码最多试几次 / 同一收件人一小时最多发几条 |
+
+核验通道(`EMAIL_PROVIDER` 取 `console` / `smtp` / `resend` / `webhook`,`SMS_PROVIDER` 取 `console` / `webhook`):
+
+- 没配通道时**拒绝**并说明缺哪一项,不静默跳过核验。
+- `console` 把验证码打进日志——自部署最后一公里,不接外部服务也能跑通。
+- 手机号默认走 webhook:引擎 POST `{channel, to, code, purpose, expires_in}` 到 `SMS_WEBHOOK_URL`。短信商的接口各家不一样,平台不替它猜。
+- 邮箱的 webhook 与短信共用 `SMS_WEBHOOK_URL`,请求体里用 `channel` 区分。
+
+链路:
+
+1. `POST /api/auth/register/start` 发码。已注册的联系方式回 409——注册不是登录,含糊其辞只会让人反复试。
+2. `POST /api/auth/register/verify` 验码建号。要核验时先落 `user_activations`(带密码哈希),验过才进 `users`;不要核验时直接建。
+3. 建号后自动发会话 cookie,与登录同一个会话表。
+
+几条不写会出事的口径:
+
+- 验证码与重置令牌在库里**只有哈希**,哈希绑了收件人与用途,一个码挪不了去干别的事。
+- 试错上限与频率上限都在 `engine/auth/registration.py`;同时有效的码只留一个。
+- 找回密码两边(有账号 / 没账号)回同一句话。邮件正文里给一次性链接与验证码两样,不按账号有没有密码改口吻。
+- **已经设过密码的账号不能靠验证码直接进**:拿到手机号不等于拿到账号,侧门在 `change_with_code` 里关掉。
+- 手机号注册的用户占一行 `<手机号>@phone.local` 的邮箱,唯一身份只有一个字段要查。
+
+OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES` / `OIDC_BUTTON_LABEL` / `OIDC_AUTO_CREATE` / `OIDC_DEFAULT_ROLE`):
+
+- 走授权码 + PKCE,`GET /api/auth/oidc/authorize` → 提供方 → `GET /api/auth/oidc/callback`。
+- 认人先认 `issuer + sub`:同一个人在提供方改了邮箱也不会变成两个人;没绑过就按邮箱对上,再没有就看 `OIDC_AUTO_CREATE`。
+- `id_token` 的 claims 直接解析、不验签:它是后台从提供方直连换回来的,链路可信。**不要**扩展成"前端把 id_token 递进来"的用法,那种场景没有验签就是漏洞。
 ## 密钥
 
-给外界的 agent 的凭据。与控制台令牌的区别是"是不是库里的对象":静态令牌写在 `API_TOKENS` 里,改一次要重启,一个部署就几条;密钥一把一个客户端,单独签发、单独吊销、各自带权限。
+给外界的 agent 的凭据。与控制台令牌的区别:静态令牌写在 `API_TOKENS` 里,改一次要重启,一个部署就几条;密钥一把一个客户端,单独签发、单独吊销、各自带权限。
 
-- 明文形如 `gwei_...`,只在签发请求的响应里出现;库里只有 sha256 与 `hint`(前 9 位…后 4 位),列表永远不回显明文。
-- 吊销立即生效:被吊销密钥的下一个请求就是 401,记录留着(谁签的、什么时候用过还看得见)。
-- 权限是[权限目录](#权限目录)里的原子字符串,空白名单是"什么都没有",不是"全都有"。
-- `tools` 是可选的白名单,在权限之上再收窄一层:权限够但 `tools` 没点名的工具不出现。
-- `bindings` 是资源白名单:密钥能在哪些下游目标上动手。空 = 不限(与"权限为空"不同——权限为空是"什么都不行")。
-- `expires_at` 非空就按时失效;读不懂的到期时间在签发时就是 422,不存进去等运行期猜。
-- 请求带一个看起来像密钥(`gwei_` 前缀)却查不到的串,当场 401——不能落到"没配凭据就不鉴权"的行为上,否则吊销只是装饰。
+- 明文形如 `gwei_...`,只在**签发响应**里出现一次;库里只有 sha256 与 `hint`(前 9 位…后 4 位),列表永远不回显明文。
+- 吊销立即生效:这把密钥的下一个请求就是 401,记录留着(谁签的、什么时候用过还看得见)。
+- 权限是[权限目录](#权限目录)里的原子字符串,空白名单 = 什么都没有。
+- `tools` 是可选的白名单,在权限之上再收窄一层:权限够但这里没点名的工具不出现。
+- `bindings` 是资源白名单:这把密钥能在哪些下游目标上动手;空 = 不限(权限为空才是"什么都不行")。
+- `expires_at` 非空就按时失效;读不懂的到期时间在签发时返回 422。
+- 请求带 `gwei_` 前缀却查不到的串,当场 401,不进入"不鉴权"分支,吊销因此立即生效。
 
 密钥的资源从哪儿来:插件实例自己声明的 `binding`(`plugins/builtin/actions/docker-compose` 是 `local`,GitHub 适配器是 `github`)。平台不认识全集,所以页面上的资源是"部署里出现过哪些",不是一张允许清单。
 
-密钥在控制台上:侧边导航「接入 → MCP 接入」(`/mcp`)。页面按操作顺序排:客户端填什么(地址与请求头,附一份可复制的客户端配置)、签一把(勾资源 × 勾权限 × 收窄工具,签发前就能看见对方会拿到哪些工具)、清单(谁签过、够得着什么、停不停,已吊销的折在下面)。权限、资源、工具三份清单全部来自引擎 —— 页面上显示的就是 `tools/list` 会给对方的。
+密钥在控制台上:侧边导航「接入 → MCP 接入」(`/mcp`)。该页按操作顺序排:客户端填什么(地址与请求头,附一份可复制的客户端配置)、签一把(勾资源 × 勾权限 × 收窄工具,签发前就能看见对方会拿到哪些工具)、清单(谁签过、够得着什么、停不停,已吊销的折在下面)。权限、资源、工具三份清单全部来自引擎 —— 页面上显示的就是 `tools/list` 会给对方的。
 
 密钥不进环境变量:签发自 `/api/keys`,存在业务库 `api_keys` 表(`CHANGE_LEDGER_BACKEND=file` 时落在 `var/api-keys.json`,只配演示与离线调试)。
-密钥本身不是"鉴权开关":一个既没有 `API_TOKENS` 也没有用户的部署仍然是不鉴权的(单机自用),密钥只是让拿它的人成为某个身份。
+密钥不是鉴权开关:没有 `API_TOKENS` 也没有用户的部署仍然不鉴权(单机自用),密钥只是让拿它的人成为某个身份。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -197,18 +239,18 @@ flowchart LR
 
 - 清单来自各插件声明过的效果;名字以 `.read` 结尾的能力是只读口,其余不能调。
 - **每次改世界的调用都是一个变更单元**:读窗口、判定、执行、验证、记账,和人工操作走同一条闸门。只读调用不落账。
-- 参数 `call_id` 带上时,同一次调用重发只复用账本里的结论,不二次外呼;不带就当两次调用,老实做两次。
-- 参数 `binding` 缺省取 `default_binding`。绑错目标不是结论,是配置错误:拒绝执行,不留账本行。
-- 参数 `incident_id` 把这次事故的所有变更串在一起,早上可以用 `GET /api/changes?incident=` 一次捞出来。`call_id` 只在同一次事故里有意义:换一次事故,同样的编号就是另一件事。
+- 参数 `call_id` 带上时,同一次调用重发只复用账本里的结论,不二次外呼;不带就按两次调用处理。
+- 参数 `binding` 缺省取 `default_binding`;绑到没有提供者的目标按配置错误拒绝执行,不留账本行。
+- 参数 `incident_id` 把该事故的所有变更串在一起,早上可以用 `GET /api/changes?incident=` 一次捞出来。`call_id` 只在同一次事故里有意义:换一次事故,同样的编号就是另一件事。
 - `actor` 取自[控制台令牌](#控制台鉴权),写进单元的 `intent.by` 与 `intent.via=exit`。
-- 声明里带 `files` 的效果(`pr.open`),`files` 可以不由 agent 给:平台按 `incident_id` 找到该事故的工作区,把 agent 改过的文件读成 `[{path, content}]`,删掉的给 `{path, delete: true}`。`paths` 只用来收窄到其中几个路径。读不出来(没有仓库副本、非 UTF-8、单文件超过 512 KB、改动超过 100 个文件)时这次调用直接失败并说明原因,不拿空改动去开 PR。
-- 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。循环搬进沙箱后平台看不到"它在想第几步",只数得清"它已经点了几次"——超了返回 429,由人接手。
+- 声明里带 `files` 的效果(`pr.open`),`files` 可以不由 agent 给:平台按 `incident_id` 找到对应事故的工作区,把 agent 改过的文件读成 `[{path, content}]`,删掉的给 `{path, delete: true}`。`paths` 只用来收窄到其中几个路径。读不出来(没有仓库副本、非 UTF-8、单文件超过 512 KB、改动超过 100 个文件)时当前调用直接失败并说明原因,不拿空改动去开 PR。
+- 次数上限 `AGENT_MAX_EXITS_PER_HOUR`(默认 20,0 = 不限)按租户统计最近一小时的出口变更。平台按已完成的出口调用计数,超限返回 429,由人接手。
 
 ## Harness
 
 外部 agent 在**自己的沙箱**里处理一次事故,平台只负责交进去、收回来。
 
-- `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成沙箱里本次运行的目录。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
+- `HARNESS_COMMAND` 是启动命令,`{workspace}` 会替换成沙箱里本次事故的工作区目录。留空 = 不用外部 harness,回落到进程内的 `operator`,再回落到声明式路径。
 - `SANDBOX` 决定它**在哪跑**,三选一,换地方不改 `HARNESS_COMMAND`:
 
   | 值 | 边界 | 代码怎么进去 |
@@ -217,20 +259,20 @@ flowchart LR
   | `cnb` | CNB 托管执行面,一次 `api_trigger` 构建 | 整包交上去,改动只带回来 |
   | `ssh` | 一个常开的会话(例如云原生开发环境) | `scp` 上去 |
 
-- **工作区里有代码**:载荷带仓库时,平台用 App 安装令牌取一份快照——走 API 的 tarball 端点(`api.github.com`),不走 `git clone`:`github.com` 在有些网络里连不上,API 通常还行,而且不在命令行里带凭据。快照解开后在 `.repos/<incident_id>` 里变成一个本地提交,再把文件铺进工作区并放开到其他用户可写(引擎与 harness 镜像的 uid 不同)。容器看到的没有 `.git`:提交、分支、PR 由平台做,容器里没有可用的 git 凭据。拉不到代码时就不开工,报告直接写原因。
+- **工作区里有代码**:载荷带仓库时,平台用 App 安装令牌取一份快照——走 API 的 tarball 端点(`api.github.com`),不走 `git clone`:`github.com` 在有些网络里连不上,API 通常还行,而且这条路不在命令行里带凭据。快照解开后在 `.repos/<incident_id>` 里变成一个本地提交,再把文件铺进工作区并放开到其他用户可写(引擎与 harness 镜像的 uid 不同)。容器看到的没有 `.git`:提交、分支、PR 由平台做,容器里没有可用的 git 凭据。拉不到代码时本次事故不开工,报告直接写原因。
 - 交进去:工作区里的 `task.md`(信号、仓库与基线分支、出口地址**与认证方式**、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
 - **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式进入引擎进程的环境变量,并额外写成沙箱里的 `.harness-env`(0600,不进工作区改动)。`docker run` 只转发被点名的变量,所以命令里要么逐个 `-e NAME`,要么 `--env-file {workspace}/.harness-env` 一次带进去 —— 用后者,新加的键才不用改命令。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 接入与密钥」写的就是 `harness-env` scope,密钥永不回显。
 - 收回来:沙箱里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
 - **改了什么由平台数**:工作区对着基线比一遍,结果写进报告里的 `diff`;沙箱自报的改动不进 PR。
-- 报告里带 `sandbox`:`{provider, id, url}` 记录这次运行跑在哪。`cnb` 给的是构建号与构建页地址;`local` 给的是进程号。
+- 报告里带 `sandbox`:`{provider, id, url}` 指明本次事故的沙箱。`cnb` 给的是构建号与构建页地址;`local` 给的是进程号。
 - 它改世界仍然只能走[出口](#出口),所以变更、账本、可撤销性和进程内 agent 完全一样。
-- `dsh` 这类 harness 自带一次任务一次退出的入口(`dsh --profile headless "<task>"`);平台不认识它,只认 `HARNESS_COMMAND` 里的命令。可直接用的命令与对应镜像见 [deploy/harness](../../deploy/harness/README.md)。
+- `dsh` 这类 harness 自带一次任务一次退出的入口(`dsh --profile headless "<task>"`);平台不认识它,只认配置里的命令。可直接用的命令与对应镜像见 [deploy/harness](../../deploy/harness/README.md)。
 
 ## 事故
 
 一次事故 = 一个 `incident_id`(取工作流 id)+ 一行报告。告警工作流开始写一行 `open`,收尾改写同一行。
 
-- `status` 停在 `open` 说明那次事故开了没收口——它卡住了,不是"什么都没发生"。
+- `status` 停在 `open` 说明该事故开了没收口。
 - 报告形状:`summary` / `steps` / `counts` / `exhausted` / `source`(`agent` 或 `declarative`)。外部 harness 回来照同一形状交。
 - 变更与事故分开存:账本说哪几处被改了,事故说整场怎么了。两者用 `GET /api/changes?incident=` 串起来。
 - 后端与账本同一个开关:`file` 时报告落在账本文件同目录的 `incidents.jsonl`。
@@ -241,12 +283,23 @@ flowchart LR
 - `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
 
+## 配额
+
+限量按「主体 × 资源 × 窗口」记账,现在落地的只有租户这一层。
+
+- 写法:`数量/窗口`,`2000/30d`、`500/5h`、`10/2w`。空值 = 不限;写错(缺斜杠、数量不是整数、单位不认识)当场报错,不悄悄当成不限。
+- 三层覆盖:平台默认(`engine/quota/__init__.py` 的 `DEFAULT_LIMITS`)→ 公共配置 scope `quota` → 租户配置 scope `quota`。
+- 用量是**落账**不是计数器:`quota_usage` 每笔一行,判定按窗口求和。计数器迟早会和事实对不上,配额是最不该"差一点"的地方。
+- 判定口径见 `engine/quota/store.py` 的 `check`:超了抛 `QuotaExceeded`,消息里带资源、已用、上限与窗口。
+- 页面:`GET /api/quota` 读用量,设置页读写限量,`/api/settings` 的 `issueQuota` 也取真实值。
+- 还没做的:把判定接到入队入口(工作分解 §6.1)。现在有账本与判定,没有拦人的那道门。
+
 ## Redis
 
 - 只承载可丢失状态;Redis 故障时降级放行,不阻塞主链路。
 - webhook 去重:`gwei:{tenant_slug}:webhook-dedup:{delivery_id}`,TTL 6 小时。信号按 `ref + occurrence` 去重(Alertmanager 就是 `fingerprint + startsAt`),键 `gwei:{tenant_slug}:signal-dedup:{...}`。
 - LLM 分析缓存:内容哈希键(前缀 `gwei:`),TTL 24 小时;失败文案不写缓存。
-- 幂等兜底始终是 DBOS workflow ID,不是 Redis。
+- 幂等兜底始终是 DBOS workflow ID。
 
 ## LLM 与计量
 
@@ -270,10 +323,20 @@ flowchart LR
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/repos` | 仓库列表 |
 | GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |
+| POST | `/api/auth/register/start` | 发注册验证码 |
+| POST | `/api/auth/register/verify` | 验码建号并登录 |
+| POST | `/api/auth/password/reset` | 申请重置邮件(有没有账号回同一句话) |
+| POST | `/api/auth/password/reset/complete` | 用链接令牌或验证码设新密码 |
+| GET | `/api/auth/oidc/authorize`、`/api/auth/oidc/callback` | OIDC 授权码流程 |
+| GET | `/api/quota` | 租户各资源在窗口内的用量与上限 |
+| GET | `/api/quota/parse` | 把 `2000/30d` 拆开看看 |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
-| PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库并立即生效 |
-| DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键;删的是调用方租户的值,读的时候落回公共值 |
-| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单 / 插槽声明 |
+| PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库、推给声明该 scope 的插件并立即生效;`push_error` 说推失败的原因(值仍然存下了) |
+| DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键并重推;删的是调用方租户的覆盖值,读的时候落回公共值 |
+| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `reason`)/ 已启用插件的插槽声明 |
+| POST | `/api/plugins/{name}/enable`、`/disable` | 运行期启停一个插件:导入注册、或摘索引,不用重启 |
+| POST | `/api/plugins/rescan` | 重扫插件目录:新出现的按决定启用,删掉的停用 |
 | GET | `/api/metrics` | 指标快照 |
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |
 | GET | `/api/changes/{id}` | 单个单元的全部事件(执行与撤销) |
@@ -308,47 +371,50 @@ flowchart LR
 变更、验证、结论;一轮就是一次执行。聚合在 `engine/change_unit/timeline.py` 里做
 (纯函数,喂字典就能测),接口只取数。设计与界面约定见[议题工作台](../explanation/issue-workspace.md)。
 
-- **三个状态**(`state`):`waiting` / `running` / `landed`。七种结论的原词只留在
-  账本页,时间线里不再出现。优先级就是"谁在拦着":`blocked` 或 `unknown` 是等人;
-  事故开着没收口也算等人——它可能卡住了,而卡住不是"在跑";没有任何变更时才看
-  issue 自己的状态,因为平台从不改 `issues.status`,它一直是 OPEN。
+- **三个状态**(`state`):`waiting` / `running` / `landed`,由七种账本结论归并
+  (`normalize_state`)。优先级:`blocked` / `unknown` 是等人,事故开着没收口也算
+  等人;没有任何变更时看 issue 自己的状态(平台不改 `issues.status`)。
 - **一段两层**:`summary` 一句人话,`detail` 是工程决策要点(理由、候选、参数、
   能不能撤),常驻不折叠;`evidence` 是存下来的原文,默认收起。原文不加工,
   截断了 `truncated` 为真。
-- **轮次带 diff**:`rounds[].diff` 是该轮改了哪些文件、各增删多少行。行数由
-  平台在 harness 收工后从工作区数(`workspace.diff_stat`),不是 agent 自报——
-  自报的东西没法核。跨轮合并由读的人按路径累加。
+- **轮次带 diff**:`rounds[].diff` 是该轮改了哪些文件、各增删多少行,行数由
+  平台在 harness 收工后从工作区数(`workspace.diff_stat`)。跨轮合并由读的人按路径累加。
 - **为什么没做、查了什么**:`intent.detail.not_executed` 带理由(工作流在建单元
-  之前写进 `intent.skipped`——有没有提供者、有没有被扩展点拦下,只有建单元之前才知道);
+  之前写进 `intent.skipped`,直到执行时才知道有没有提供者、有没有被扩展点拦下);
   `verify.detail.rules` 是插件声明里的 `{query, expect}`,随单元落账。
-- **一轮里一个候选都没落成单元**:没有单元可读,意图记在事故的 `intent` 上,时间线
-  据此给一段"本打算做什么、为什么都没做",而不是只剩信号与诊断。
+- **一个候选都没落下的一轮**:没有单元可读,意图记在事故的 `intent` 上,时间线
+  据此给一段"本打算做什么、为什么都没做"。
 - **一个变更属于哪个议题**:`intent.topic`(agent 从出口进来的变更自己记),
   或者 `incident_id` 落在该议题某次执行上。两条路都认。
-- **没有变更也返回**:`rounds` 为空数组,不是 404——"还没发生"与"查不到"要分得开。
-- 账本与事故各只扫最近的 `LEDGER_SCAN` / `INCIDENT_SCAN` 条,超了把 `truncated`
-  置真,不假装全看过了。
-- 同一条判定也服务 `GET /api/board`(首页列表):列表说"在跑"、点进去说
-  "落了"是最难查的一类 bug,所以两处共用 `normalize_state`,不各写一份。
+- **没有变更也返回**:`rounds` 为空数组(与"查不到"的 404 区分)。
+- 账本与事故各只扫最近的 `LEDGER_SCAN` / `INCIDENT_SCAN` 条,超了把 `truncated` 置真。
+- 同一判定也服务 `GET /api/board`(首页议题板),两处共用 `normalize_state`。
 - **继续改**是 `POST /api/issues/{id}/continue`(`{"instruction": "..."}`,≤500 字):
-  它把人的一句话排成一轮 `fix_suggestion_workflow`——和人在 GitHub 上 `@gwei`
-  走同一条路,所以"接着哪个分支改"由同一个 `_thread_for` 决定,continue 不另判。
-  人说的话进 signal,事故把它记下来,于是它就是时间线上的一个新轮次。
-  权限借用 `changes.approve`,两者同类——此刻有人在场,允许平台再动一次手。
+  把人的一句话排成一轮 `fix_suggestion_workflow`,与人在 GitHub 上 `@gwei` 走同一条
+  路径,"接着哪个分支改"由同一个 `_thread_for` 决定。人说的话进 signal,时间线上
+  多一个新轮次。权限借用 `changes.approve`。
 
 ### 接口契约
 
-响应模型写在 `engine/api/schemas.py`,FastAPI 据此生成 OpenAPI;前端类型不手抄,从它生成。
+响应模型写在 `engine/api/schemas.py`,FastAPI 据此生成 OpenAPI;前端类型从 `contracts/openapi.json` 生成。
 
 | 步骤 | 命令 | 产物 |
 | --- | --- | --- |
 | 导出契约 | `python scripts/dump_openapi.py` | `contracts/openapi.json` |
 | 生成前端类型 | `pnpm --filter @gwei/core gen:api` | `frontend/packages/core/api/schema.d.ts` |
 
-- 前端调用点统一走 `frontend/packages/core/api/typed.ts`:路径、路径参数、响应体都由 `paths` 推出,新增端点不用再写一遍泛型。
+- 前端调用点统一走 `frontend/packages/core/api/typed.ts`:路径、路径参数、响应体都由 `paths` 推出。
 - `frontend/packages/core/types/*` 是 schema 里 DTO 的别名,字段与后端同源;类型名对不上时 `vue-tsc` 直接报错。
 - 改响应模型后两个命令都要重跑;`tests/test_integration/test_openapi_contract.py` 会在 `contracts/openapi.json` 过期时报错(不需要 Postgres)。
 
 ## 插件
 
-清单、注册表、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
+发现、运行期启停、进程外 gRPC 接入、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
+
+进程外插件的部署面(端口、超时、地址从哪来)在这三处:
+
+| 变量 | 作用 |
+| --- | --- |
+| 清单里的 `endpoint` | 进程外插件监听 `host:port`;发现流程据此建代理,不导入代码 |
+| `PLUGINS_GRPC_TIMEOUT_S` | 调一个远端插件的超时,默认 10 秒 |
+| `PLUGINS_GRPC` | `name=host:port,...`,临时接入清单外的插件;该方式没有能力声明 |

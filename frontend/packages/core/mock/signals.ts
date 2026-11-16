@@ -7,9 +7,9 @@ import type { Repo } from '../types/repos'
  * 插件清单照抄 plugins/builtin 下真实存在的 manifest,能力名与真实清单一致,
  * 便于对着引擎核对。
  *
- * 这里同时放了 github-adapter 与 github-app-adapter:前者默认 default_enabled: false,
- * 引擎不会加载;但把 PLUGINS_ENABLED 指向它(清单里就是这么写的)之后,
- * 两个适配器会在场,能力有重叠 —— 这正是"同一个能力出现在多个插件下"的样子。
+ * GitHub 来源只有一个适配器(github-app-adapter)。旧的 github-adapter 已删除:
+ * 它声明 webhook.receive 却拿不出 source,`source_adapter("github")` 找不到它,
+ * 装上了但接不上比没有更费解。
  *
  * lastSyncAt 用 ISO,与 GET /api/repos 返回的形状一致。
  */
@@ -71,24 +71,10 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     ],
     widgets: [],
     pages: [],
-  },
-  {
-    name: 'github-adapter',
-    version: '1.0.0',
-    type: 'adapter',
-    description: 'GitHub 托管适配器(默认不加载,PLUGINS_ENABLED 指向它时才在)',
-    capabilities: [
-      'issue.read',
-      'issue.write',
-      'pr.read',
-      'pr.write',
-      'pr.merge',
-      'comment.read',
-      'comment.write',
-      'webhook.receive',
-    ],
-    widgets: [],
-    pages: [],
+    enabled: true,
+    instances: ['github-app-adapter'],
+    reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'sensor-agent',
@@ -103,6 +89,10 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     ],
     widgets: [],
     pages: [],
+    enabled: true,
+    instances: ['sensor-agent'],
+    reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'fixer-agent',
@@ -112,6 +102,10 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     capabilities: ['patch.generate', 'code.review'],
     widgets: [],
     pages: [],
+    enabled: true,
+    instances: ['fixer-agent'],
+    reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'intent-builder',
@@ -121,6 +115,10 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     capabilities: ['intent.propose'],
     widgets: [],
     pages: [],
+    enabled: true,
+    instances: ['intent-builder'],
+    reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'docker-compose',
@@ -130,6 +128,10 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     capabilities: ['compose.scale'],
     widgets: [],
     pages: [],
+    enabled: true,
+    instances: ['docker-compose'],
+    reason: '清单默认启用',
+    error: '',
   },
   {
     name: 'observer-agent',
@@ -139,5 +141,9 @@ export const mockSignalPlugins: PluginManifestDTO[] = [
     capabilities: [],
     widgets: [],
     pages: [{ title: '观测采样', entry: 'index.html' }],
+    enabled: true,
+    instances: ['observer-agent'],
+    reason: '清单默认启用',
+    error: '',
   },
 ]

@@ -15,7 +15,7 @@ import json
 from typing import Any, Dict
 
 from engine.ingest.events import EventError, event as normalized_event, header_value
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 from .config import GitLabConfig
 
@@ -32,19 +32,6 @@ class GitLabAdapter(PluginBase):
         self.mentions: tuple[str, ...] = ()
         # 没配密钥时,入口按这个名字告诉人该去填什么(核心不维护来源清单)。
         self.config_hint = "GITLAB_WEBHOOK_SECRET"
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="gitlab-adapter",
-            version="0.1.0",
-            type=PluginType.ADAPTER,
-            description="GitLab 适配器:接收合并请求 Webhook,把合并翻译成平台事件",
-            capabilities=["webhook.receive", "webhook.verify"],
-            config={
-                "required": ["GITLAB_WEBHOOK_SECRET"],
-                "optional": ["GITLAB_BASE_URL", "GITLAB_TOKEN"],
-            },
-        )
 
     async def on_startup(self) -> None:
         self.config = GitLabConfig()

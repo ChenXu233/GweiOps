@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { useRepoList } from '@gwei/core/composables/useRepoList'
 
-const { plugins, loading, error } = useRepoList()
+const { plugins, enabledCount, loading, error, actionError, toggling, setEnabled, rescan } =
+  useRepoList()
 
-const installedCount = computed(() => plugins.value.filter(p => p.installed).length)
+const { can } = useAuth()
+const canManage = computed(() => can('plugins.write'))
+
+function forgot(reason: string): string {
+  return reason || '未启用'
+}
 </script>
 
 <template>
@@ -14,11 +20,21 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
       description="引擎只负责编排，监控、金丝雀、通知都由插件提供。"
     >
       <template #actions>
-        <span class="eyebrow">{{ installedCount }} / {{ plugins.length }} 已启用</span>
+        <div class="flex items-center gap-3">
+          <span class="eyebrow">{{ enabledCount }} / {{ plugins.length }} 已启用</span>
+          <button
+            class="btn-ghost inline-flex items-center gap-1.5 text-[12px]"
+            :disabled="!canManage || toggling === '*'"
+            :title="canManage ? '重新扫描插件目录' : '需要 plugins.write 权限'"
+            @click="rescan"
+          >
+            <AppIcon name="refresh" :size="13" :class="toggling === '*' ? 'animate-spin' : ''" />
+            {{ toggling === '*' ? '扫描中…' : '重扫描' }}
+          </button>
+        </div>
       </template>
     </PageHeader>
 
-    <!-- 发现 ≠ 启用 -->
     <div class="flex items-start gap-3 rounded-panel border border-line bg-well/50 px-5 py-4">
       <AppIcon name="shield-check" :size="15" class="mt-0.5 text-ink-faint" />
       <p class="text-[12px] leading-relaxed text-ink-soft">
@@ -29,6 +45,13 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
 
     <div v-if="error" class="panel border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral">
       拉不到插件清单。确认引擎在跑，或开启 mock 模式。
+    </div>
+
+    <div
+      v-if="actionError"
+      class="panel border-coral/30 bg-coral/5 p-4 text-[12.5px] text-coral"
+    >
+      {{ actionError }}
     </div>
 
     <div v-if="loading && !plugins.length" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -50,12 +73,16 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
       >
         <div class="flex items-start justify-between gap-3">
           <span
-            class="grid h-9 w-9 place-items-center rounded-tile bg-well text-ink-soft transition-colors duration-200 ease-[var(--ease)] group-hover:bg-ink group-hover:text-paper"
+            class="grid h-9 w-9 place-items-center rounded-tile bg-well text-ink-soft transition-colors duration-200 ease-[var(--ease)]"
           >
-            <AppIcon :name="plugin.installed ? 'plugins' : 'box'" :size="16" />
+            <AppIcon :name="plugin.enabled ? 'plugins' : 'box'" :size="16" />
           </span>
-          <span class="chip" :class="plugin.installed ? 'chip-ok' : ''">
-            {{ plugin.installed ? '已启用' : '未启用' }}
+          <span
+            class="chip"
+            :class="plugin.error ? 'chip-warn' : plugin.enabled ? 'chip-ok' : ''"
+            :title="plugin.error || plugin.reason"
+          >
+            {{ plugin.error ? '起不来' : plugin.enabled ? '已启用' : '未启用' }}
           </span>
         </div>
 
@@ -64,12 +91,33 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
           {{ plugin.description }}
         </p>
 
-        <div class="mt-auto flex items-center justify-between border-t border-line/70 pt-3.5">
-          <span class="font-mono text-[11.5px] text-ink-faint">
-            {{ plugin.author === 'official' ? '官方' : '社区' }}
-            <template v-if="plugin.price !== null"> · ¥{{ plugin.price }}</template>
-          </span>
+        <p v-if="plugin.error" class="mt-2 font-mono text-[11px] text-coral">
+          {{ plugin.error }}
+        </p>
+        <p v-else-if="!plugin.enabled" class="mt-2 font-mono text-[11px] text-ink-faint">
+          {{ forgot(plugin.reason) }}
+        </p>
+        <p v-else-if="plugin.instances.length" class="mt-2 font-mono text-[11px] text-ink-faint">
+          实例 {{ plugin.instances.join(', ') }}
+        </p>
 
+        <div class="mt-3 flex flex-wrap gap-1">
+          <span
+            v-for="cap in plugin.capabilities.slice(0, 3)"
+            :key="cap"
+            class="rounded bg-well px-1.5 py-0.5 font-mono text-[10.5px] text-ink-faint"
+          >
+            {{ cap }}
+          </span>
+          <span
+            v-if="plugin.capabilities.length > 3"
+            class="px-1 font-mono text-[10.5px] text-ink-faint"
+          >
+            +{{ plugin.capabilities.length - 3 }}
+          </span>
+        </div>
+
+        <div class="mt-auto flex items-center justify-between border-t border-line/70 pt-3.5">
           <NuxtLink
             v-if="plugin.pageTitle"
             :to="'/plugins/' + encodeURIComponent(plugin.id)"
@@ -78,7 +126,16 @@ const installedCount = computed(() => plugins.value.filter(p => p.installed).len
             打开页面
             <AppIcon name="external-link" :size="12" />
           </NuxtLink>
-          <span v-else class="text-[12px] text-ink-faint">无页面</span>
+          <span v-else class="font-mono text-[11px] text-ink-faint">v{{ plugin.version }}</span>
+
+          <button
+            class="inline-flex items-center gap-1.5 rounded border border-line px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:border-ink/40 disabled:opacity-40"
+            :disabled="!canManage || toggling === plugin.id"
+            :title="canManage ? '' : '需要 plugins.write 权限'"
+            @click="setEnabled(plugin.id, !plugin.enabled)"
+          >
+            {{ toggling === plugin.id ? '…' : plugin.enabled ? '停用' : '启用' }}
+          </button>
         </div>
       </article>
     </div>

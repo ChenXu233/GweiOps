@@ -11,13 +11,22 @@
 能力解析:
 - 不带 tenant/binding 时按全局优先级选(单租户与控制面形态);
 - 带 tenant/binding 时按 (租户, 目标) 精确匹配,选不到直接抛,不跨目标回退。
+
+启停语义:
+- 发现与启用是两步:发现只把清单记进 `available()`,启用的才 import、注册、进索引;
+- 启停可以在运行期做(`enable` / `disable` / `rescan`),不用重启进程:启用是
+  "导入 + 注册 + on_startup",停用是"on_shutdown + 摘掉索引"。停用后该插件
+  既不在 `names()` 里,也解析不到它的能力;
+- 决定从哪来:运行期显式决定(`set_decisions`,由控制台写入并持久化)> 
+  `PLUGINS_ENABLED` 白名单 > `PLUGINS_DISABLED` > 清单 `default_enabled`;
+  白名单里写了没人认领的名字时点名告警。
 """
 
 import importlib
 import logging
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +46,24 @@ def _env_names(var: str) -> set[str] | None:
     if raw is None:
         return None
     return {item.strip() for item in raw.replace(":", ",").split(",") if item.strip()}
+
+
+def _errors_of(name: str, startup: dict[str, str], config_errors: dict[str, str]) -> str:
+    """GET /api/plugins 的 error 字段:"为什么它不能用"。起不来与配置推送失败是两件事,分行说清楚。"""
+    parts = [text for text in (startup.get(name, ""), config_errors.get(name, "")) if text]
+    return ";".join(parts)
+
+
+def _register_scopes(manifest: Manifest) -> None:
+    """把清单声明的配置块登记进配置表。写坏的声明在加载期就该拒。
+
+    清单在 `_record` 里已经解析并校验过 scopes 的形状,这里只做登记。
+    """
+    from .scopes import register_manifest_scopes
+
+    added = register_manifest_scopes(manifest)
+    if added:
+        logger.info("Plugin %s 声明了配置 scope: %s", manifest.name, ", ".join(added))
 
 
 def plugin_enabled(name: str, default_enabled: bool = True) -> bool:
@@ -60,6 +87,29 @@ class _CapabilityProvider:
     priority: int
 
 
+@dataclass
+class Discovered:
+    """发现阶段记下的一件事:清单 + 它在哪 + 怎么导入。导入推迟到真要启用时。"""
+
+    manifest: Manifest
+    plugin_dir: Path
+    module_name: str
+
+
+@dataclass
+class PluginState:
+    """单个清单此刻的状态:声明、启用与否、在哪些实例键上活着、原因。
+
+    `error` 存注册成功但 on_startup 抛错的原因(比如密钥没配):实例还在,能力调不通。
+    """
+
+    manifest: Manifest
+    enabled: bool
+    instances: list[str] = field(default_factory=list)
+    reason: str = ""
+    error: str = ""
+
+
 class PluginRegistry:
     def __init__(self) -> None:
         self._manifests: dict[str, Manifest] = {}
@@ -69,7 +119,15 @@ class PluginRegistry:
         self._event_index: dict[str, list[str]] = {}
         self._capability_index: dict[str, list[_CapabilityProvider]] = {}
         self._effect_index: dict[str, list[_CapabilityProvider]] = {}
-        self._hook_index: dict[str, list[tuple[int, str]]] = {}
+        self._hook_index: dict[str, list[tuple[int, str, Any]]] = {}
+        self._available: dict[str, Discovered] = {}
+        # 运行期显式决定(清单名 -> 启停);由控制台写入,启动时从库里装回来
+        self._decisions: dict[str, bool] = {}
+        # 清单名 -> on_startup 的失败原因
+        self._startup_errors: dict[str, str] = {}
+        # 清单名 -> 配置推送失败原因。它不属于"起不来":插件在跑,
+        # 差别是它手里是旧配置——两种失败混在一起会让人去查错的地方。
+        self._config_errors: dict[str, str] = {}
         self._launched = False
 
     # ------------------------------------------------------------------
@@ -82,67 +140,200 @@ class PluginRegistry:
         extra_dirs: list[str] | None = None,
     ) -> int:
         """扫描并加载全部插件,返回成功加载数量。幂等:重复调用前先清空。"""
-        if self._manifests:
+        if self._available or self._manifests:
             self._reset()
 
+        for manifest_path, module_name in self._scan(builtin_dir, extra_dirs):
+            try:
+                self._record(manifest_path, module_name)
+            except Exception as e:
+                metrics.increment(
+                    "plugin_discovery_errors_total",
+                    {"path": str(manifest_path.parent.name)},
+                )
+                logger.error("Failed to load plugin at %s: %s", manifest_path, e)
+
+        for name in sorted(self._available):
+            if self._enabled(self._available[name].manifest):
+                self._activate_quietly(name)
+
+        self._warn_unmatched_whitelist()
+        count = len(self._instances)
+        log = logger.info if count else logger.warning
+        log(
+            "Plugin registry loaded %d of %d discovered plugin(s): %s",
+            count,
+            len(self._available),
+            ", ".join(sorted(self._instances)) or "<none>",
+        )
+        return count
+
+    def rescan(self, extra_dirs: list[str] | None = None) -> dict[str, list[str]]:
+        """重新扫一遍目录,不重启进程。
+
+        新出现的清单按决定启用,已经不在磁盘上的停掉,已加载且清单没变的原样留着。
+        返回 {"added": [...], "removed": [...], "changed": [...]}。
+        """
+        added: list[str] = []
+        removed: list[str] = []
+        changed: list[str] = []
+        seen: dict[str, Discovered] = {}
+
+        for manifest_path, module_name in self._scan(None, extra_dirs):
+            try:
+                manifest = Manifest.from_yaml(manifest_path)
+            except Exception as e:
+                metrics.increment(
+                    "plugin_discovery_errors_total",
+                    {"path": str(manifest_path.parent.name)},
+                )
+                logger.error("Failed to load plugin at %s: %s", manifest_path, e)
+                continue
+            _register_scopes(manifest)
+            if manifest.name in seen:
+                logger.error(
+                    "Plugin %s 出现两次(%s 与 %s),只认第一个",
+                    manifest.name,
+                    seen[manifest.name].plugin_dir,
+                    manifest_path.parent,
+                )
+                continue
+            seen[manifest.name] = Discovered(manifest, manifest_path.parent, module_name)
+
+        for name, found in sorted(seen.items()):
+            known = self._available.get(name)
+            if known is None:
+                self._available[name] = found
+                added.append(name)
+                if self._enabled(found.manifest):
+                    self._activate_quietly(name)
+            elif known.manifest != found.manifest or known.plugin_dir != found.plugin_dir:
+                # 清单在磁盘上变了:已在跑的实例保持不动,重启或显式 disable/enable 才换实现
+                self._available[name] = found
+                changed.append(name)
+
+        for name in sorted(set(self._available) - set(seen)):
+            self._available.pop(name, None)
+            self._disable_now(name)
+            removed.append(name)
+
+        if added or removed or changed:
+            logger.info(
+                "Plugin rescan: added=%s removed=%s changed=%s", added, removed, changed
+            )
+        return {"added": added, "removed": removed, "changed": changed}
+
+    @staticmethod
+    def _scan(
+        builtin_dir: Path | None, extra_dirs: list[str] | None
+    ) -> list[tuple[Path, str]]:
+        """把搜索根展开成 (清单路径, 模块名)。只读磁盘,不 import。"""
         roots: list[tuple[Path, str]] = []  # (搜索根, 模块前缀)
         base = Path(builtin_dir) if builtin_dir else DEFAULT_BUILTIN_DIR
         if base.is_dir():
-            if base.resolve() == DEFAULT_BUILTIN_DIR.resolve():
+            if builtin_dir is None or base.resolve() == DEFAULT_BUILTIN_DIR.resolve():
                 roots.append((base, "plugins.builtin"))
             else:
                 # 自定义/测试根:根自身入 sys.path,包名取目录名
                 if str(base) not in sys.path:
                     sys.path.insert(0, str(base))
                 roots.append((base, ""))
-        for extra in extra_dirs or self._extra_dirs_from_env():
+        for extra in extra_dirs if extra_dirs is not None else PluginRegistry._extra_dirs_from_env():
             root = Path(extra)
             if root.is_dir():
                 if str(root) not in sys.path:
                     sys.path.insert(0, str(root))
                 roots.append((root, ""))  # 模块名 = <pkg>.plugin
 
+        out: list[tuple[Path, str]] = []
         for root, prefix in roots:
             # builtin 为两级(<类别>/<插件>),外部根允许单级(<插件>)
             manifests = sorted(
                 set(root.glob("*/plugin.yaml")) | set(root.glob("*/*/plugin.yaml"))
             )
             for manifest_path in manifests:
-                try:
-                    self._load_one(root, prefix, manifest_path)
-                except Exception as e:
-                    metrics.increment(
-                        "plugin_discovery_errors_total",
-                        {"path": str(manifest_path.parent.name)},
-                    )
-                    logger.error("Failed to load plugin at %s: %s", manifest_path, e)
-        logger.info(
-            "Plugin registry loaded %d plugin instance(s): %s",
-            len(self._instances),
-            ", ".join(sorted(self._instances)) or "<none>",
-        )
-        return len(self._instances)
+                rel = manifest_path.parent.relative_to(root)
+                module_name = ".".join(
+                    (([prefix] if prefix else []) + list(rel.parts) + ["plugin"])
+                )
+                out.append((manifest_path, module_name))
+        return out
 
     @staticmethod
     def _extra_dirs_from_env() -> list[str]:
         raw = os.environ.get("PLUGINS_EXTRA_DIRS", "")
         return [d for d in raw.split(":") if d]
 
-    def _load_one(self, root: Path, prefix: str, manifest_path: Path) -> None:
+    def _record(self, manifest_path: Path, module_name: str) -> None:
+        """读清单并登记为"发现到"。同名清单只认第一个,重复是配置错误。"""
         manifest = Manifest.from_yaml(manifest_path)
-        if not plugin_enabled(manifest.name, manifest.default_enabled):
-            logger.info("Plugin %s is not enabled in this deployment; skipped", manifest.name)
+        existing = self._available.get(manifest.name)
+        if existing is not None:
+            raise ValueError(
+                f"插件名 {manifest.name} 出现两次:{existing.plugin_dir} 与 "
+                f"{manifest_path.parent}。插件名是唯一标识,换一个目录名或改名"
+            )
+        _register_scopes(manifest)
+        self._available[manifest.name] = Discovered(manifest, manifest_path.parent, module_name)
+
+    def _enabled(self, manifest: Manifest) -> bool:
+        """运行期决定 > 白名单/黑名单 > 清单默认。"""
+        if manifest.name in self._decisions:
+            return self._decisions[manifest.name]
+        return plugin_enabled(manifest.name, manifest.default_enabled)
+
+    def _decision_reason(self, manifest: Manifest) -> str:
+        if manifest.name in self._decisions:
+            return "运行期启停" if self._decisions[manifest.name] else "运行期停用"
+        if _env_names("PLUGINS_ENABLED") is not None:
+            return "在 PLUGINS_ENABLED 白名单里"
+        if manifest.name in (_env_names("PLUGINS_DISABLED") or set()):
+            return "在 PLUGINS_DISABLED 里"
+        return "清单默认启用" if manifest.default_enabled else "清单声明 default_enabled: false"
+
+    def _warn_unmatched_whitelist(self) -> None:
+        """白名单写了没人认领的名字时点名告警。"""
+        wanted = _env_names("PLUGINS_ENABLED")
+        if not wanted:
             return
-        rel = manifest_path.parent.relative_to(root)
-        module_name = ".".join((([prefix] if prefix else []) + list(rel.parts) + ["plugin"]))
-        module = importlib.import_module(module_name)
-        instance = getattr(module, manifest.class_name)()
-        self.register(manifest, instance, plugin_dir=manifest_path.parent)
+        unknown = sorted(wanted - set(self._available))
+        if unknown:
+            logger.warning(
+                "PLUGINS_ENABLED 里有 %d 个名字没人认领:%s;已发现的插件是:%s",
+                len(unknown),
+                ", ".join(unknown),
+                ", ".join(sorted(self._available)) or "<none>",
+            )
+
+    def _activate_quietly(self, name: str) -> None:
+        """发现期的启用:失败只跳过自身(日志 + metrics),不影响其他插件。"""
+        try:
+            self._activate(self._available[name])
+        except Exception as e:
+            metrics.increment("plugin_discovery_errors_total", {"path": name})
+            logger.error("Failed to activate plugin %s: %s", name, e)
+
+    def _activate(self, found: Discovered) -> None:
+        """实例化 + 注册。原子性由 register 保证:注册不成功就什么都不留。
+
+        进程外插件(清单写了 `endpoint`)不导入任何代码,实例换成一个远程代理。
+        """
+        if found.manifest.endpoint:
+            from .grpc_loader import make_proxy
+
+            instance = make_proxy(found.manifest, found.manifest.endpoint)
+            self.register(found.manifest, instance, plugin_dir=found.plugin_dir)
+            return
+        module = importlib.import_module(found.module_name)
+        instance = getattr(module, found.manifest.class_name)()
+        self.register(found.manifest, instance, plugin_dir=found.plugin_dir)
 
     def plugin_dir(self, name: str) -> Path | None:
-        """插件目录(含 plugin.yaml 的目录);未注册返回 None。"""
+        """插件目录(含 plugin.yaml 的目录)。名字可以是实例键,也可以是清单名。"""
         if name in self._dirs:
             return self._dirs[name]
+        if name in self._available:
+            return self._available[name].plugin_dir
         keys = [k for k, n in self._instance_names.items() if n == name]
         return self._dirs.get(keys[0]) if len(keys) == 1 else None
 
@@ -156,7 +347,7 @@ class PluginRegistry:
         """注册一个实例。
 
         key 默认取清单名;同一清单要挂多个实例时(每租户/每目标一个)显式给 key。
-        同名清单内容必须一致,否则视为配置错误。
+        同名清单内容必须一致,否则视为配置错误。全部校验在任何写入之前完成。
         """
         instance_key = key or manifest.name
         existing = self._manifests.get(manifest.name)
@@ -164,7 +355,15 @@ class PluginRegistry:
             raise ValueError(f"Duplicate plugin name with different manifest: {manifest.name}")
         if instance_key in self._instances:
             raise ValueError(f"Duplicate plugin instance key: {instance_key}")
+        for capability in manifest.effects:
+            if capability not in manifest.capabilities:
+                raise ValueError(
+                    f"{manifest.name}: effect {capability} 未列入 capabilities,解析不到提供者"
+                )
 
+        # 清单声明的配置先进配置表:直接 register() 进来的实例(进程外代理、
+        # 手工挂的替身)不经过发现流程,跳过登记后推下去的值永远是空的。
+        _register_scopes(manifest)
         self._manifests.setdefault(manifest.name, manifest)
         self._instances[instance_key] = instance
         self._instance_names[instance_key] = manifest.name
@@ -183,10 +382,6 @@ class PluginRegistry:
                 key=lambda p: p.priority, reverse=True
             )
         for capability in manifest.effects:
-            if capability not in manifest.capabilities:
-                raise ValueError(
-                    f"{manifest.name}: effect {capability} 未列入 capabilities,解析不到提供者"
-                )
             provider = _CapabilityProvider(
                 key=instance_key,
                 priority=manifest.capabilities_priority.get(capability, 0),
@@ -195,10 +390,35 @@ class PluginRegistry:
             self._effect_index[capability].sort(key=lambda p: (p.priority, p.key), reverse=True)
 
         for sub in manifest.hooks_subscribed:
-            self._hook_index.setdefault(sub.point, []).append((sub.priority, instance_key))
+            # 订阅声明跟着索引一起存,同一插件对同一扩展点的多条订阅各保留各的 mode
+            self._hook_index.setdefault(sub.point, []).append(
+                (sub.priority, instance_key, sub)
+            )
             self._hook_index[sub.point].sort(key=lambda item: item[0], reverse=True)
 
+    def _drop_instance(self, key: str) -> None:
+        """把一个实例从所有索引里摘掉。"""
+        self._instances.pop(key, None)
+        self._instance_names.pop(key, None)
+        self._dirs.pop(key, None)
+        for index in (self._event_index,):
+            for event, keys in list(index.items()):
+                index[event] = [k for k in keys if k != key]
+                if not index[event]:
+                    index.pop(event, None)
+        for index in (self._capability_index, self._effect_index):
+            for capability, providers in list(index.items()):
+                index[capability] = [p for p in providers if p.key != key]
+                if not index[capability]:
+                    index.pop(capability, None)
+        for point, subs in list(self._hook_index.items()):
+            self._hook_index[point] = [s for s in subs if s[1] != key]
+            if not self._hook_index[point]:
+                self._hook_index.pop(point, None)
+
     def _reset(self) -> None:
+        self._startup_errors.clear()
+        self._config_errors.clear()
         self._manifests.clear()
         self._instances.clear()
         self._instance_names.clear()
@@ -207,7 +427,114 @@ class PluginRegistry:
         self._capability_index.clear()
         self._effect_index.clear()
         self._hook_index.clear()
+        self._available.clear()
         self._launched = False
+
+    # ------------------------------------------------------------------
+    # 运行期启停
+    # ------------------------------------------------------------------
+
+    def set_decisions(self, decisions: dict[str, bool]) -> None:
+        """装回持久化的启停决定(启动时由 lifespan 调用)。只记,不加载。"""
+        self._decisions = {str(k): bool(v) for k, v in decisions.items()}
+
+    def decisions(self) -> dict[str, bool]:
+        return dict(self._decisions)
+
+    def states(self) -> list[PluginState]:
+        """每个被发现清单的当前状态——控制台据此画"已启用/未启用"。"""
+        out: list[PluginState] = []
+        for name in sorted(self._available):
+            manifest = self._available[name].manifest
+            instances = sorted(
+                key for key, owner in self._instance_names.items() if owner == name
+            )
+            out.append(
+                PluginState(
+                    manifest=manifest,
+                    enabled=bool(instances),
+                    instances=instances,
+                    reason=self._decision_reason(manifest),
+                    error=_errors_of(name, self._startup_errors, self._config_errors),
+                )
+            )
+        # 直接 register() 进来的(进程外代理、单测手工挂的)也列出来
+        for name in sorted(set(self._manifests) - set(self._available)):
+            instances = sorted(
+                key for key, owner in self._instance_names.items() if owner == name
+            )
+            out.append(
+                PluginState(
+                    manifest=self._manifests[name],
+                    enabled=bool(instances),
+                    instances=instances,
+                    reason="直接注册(不在插件目录里)",
+                    error=_errors_of(name, self._startup_errors, self._config_errors),
+                )
+            )
+        return out
+
+    def available(self) -> list[Manifest]:
+        """发现到的清单,不管启没启用。"""
+        return [self._available[name].manifest for name in sorted(self._available)]
+
+    def is_loaded(self) -> bool:
+        """注册表跑过发现没有。"""
+        return bool(self._available) or bool(self._manifests)
+
+    async def enable(self, name: str) -> None:
+        """启用一个已发现的插件:导入、注册、启动。已经在跑就什么都不做。"""
+        found = self._available.get(name)
+        if found is None:
+            raise LookupError(f"没有发现插件:{name}")
+        self._decisions[name] = True
+        if name in self._manifests:
+            return
+        self._activate(found)
+        if self._launched:
+            for key, instance in self._instances.items():
+                if self._instance_names.get(key) != name:
+                    continue
+                try:
+                    await instance.on_startup()
+                    self._startup_errors.pop(name, None)
+                    logger.info("Plugin %s started (runtime enable)", key)
+                except Exception as e:
+                    metrics.increment("plugin_startup_errors_total", {"plugin": key})
+                    logger.error("Plugin %s failed to start: %s", key, e)
+                    self._startup_errors[name] = f"启动失败:{e}"
+                    continue
+                await self._push_config(key, instance)
+
+    async def disable(self, name: str) -> None:
+        """停用一个插件:关掉它的实例,再从索引里摘掉。"""
+        if name not in self._available:
+            raise LookupError(f"没有发现插件:{name}")
+        self._decisions[name] = False
+        await self._disable_now_async(name)
+
+    def _disable_now(self, name: str) -> None:
+        """同步摘除,供磁盘上插件已被删除后的再发现流程使用。"""
+        self._startup_errors.pop(name, None)
+        self._config_errors.pop(name, None)
+        keys = [k for k, owner in self._instance_names.items() if owner == name]
+        for key in keys:
+            self._drop_instance(key)
+        self._manifests.pop(name, None)
+
+    async def _disable_now_async(self, name: str) -> None:
+        self._startup_errors.pop(name, None)
+        self._config_errors.pop(name, None)
+        keys = [k for k, owner in self._instance_names.items() if owner == name]
+        for key in keys:
+            instance = self._instances.get(key)
+            if instance is not None:
+                try:
+                    await instance.on_shutdown()
+                except Exception as e:
+                    logger.error("Plugin %s failed to shut down: %s", key, e)
+            self._drop_instance(key)
+        self._manifests.pop(name, None)
 
     # ------------------------------------------------------------------
     # 查询
@@ -221,9 +548,14 @@ class PluginRegistry:
         return self._instances[keys[0]] if len(keys) == 1 else None
 
     def manifest(self, name: str) -> Manifest | None:
-        return self._manifests.get(name)
+        """按清单名取清单;**也接受实例键**,这两种名字在调用方眼里常被混用。"""
+        if name in self._manifests:
+            return self._manifests[name]
+        owner = self._instance_names.get(name)
+        return self._manifests.get(owner) if owner else None
 
     def names(self) -> list[str]:
+        """活着的**实例键**。同一清单挂多个实例时,这里会出现多个键。"""
         return sorted(self._instances)
 
     def manifests(self) -> list[Manifest]:
@@ -256,17 +588,14 @@ class PluginRegistry:
 
     def hook_subscribers(self, point: str) -> list[tuple[Manifest, PluginBase, Any]]:
         """按优先级降序返回 (manifest, 实例, 订阅声明)。"""
-        subs: list[tuple[int, str]] = self._hook_index.get(point, [])
+        subs: list[tuple[int, str, Any]] = self._hook_index.get(point, [])
         out: list[tuple[Manifest, PluginBase, Any]] = []
-        for _, key in subs:
+        for _, key, declaration in subs:
             manifest_name = self._instance_names.get(key, "")
             manifest = self._manifests.get(manifest_name)
             instance = self._instances.get(key)
             if manifest is None or instance is None:
                 continue
-            declaration = next(
-                s for s in manifest.hooks_subscribed if s.point == point
-            )
             out.append((manifest, instance, declaration))
         return out
 
@@ -364,8 +693,8 @@ class PluginRegistry:
     def tool_bindings(self, capability: str) -> tuple[str, ...]:
         """这个能力能在哪些资源(下游目标)上执行。
 
-        资源这一栏的判据来源:提供者实例自己声明的 binding。都空(控制面能力)
-        就返回空 —— "说不出在哪"不等于"哪儿都不能",调用方据此不拿资源拦人。
+        判据来源是提供者实例自己声明的 binding;都空(控制面能力)就返回空,
+        调用方不拿资源拦人。
         """
         out: list[str] = []
         for provider in self._capability_index.get(capability, []):
@@ -426,15 +755,72 @@ class PluginRegistry:
     # ------------------------------------------------------------------
 
     async def launch(self) -> None:
-        """逐插件 on_startup,单插件失败被隔离(日志 + metrics),不中断其他插件。"""
+        """逐插件 on_startup,单插件失败被隔离(日志 + metrics),不中断其他插件。
+
+        失败原因记在清单上,`states()` 会带出去:注册成功但起不来的插件,页面上
+        得说得出"它为什么不能用",不能只留一行日志。
+        """
         for key, instance in self._instances.items():
+            name = self._instance_names.get(key, key)
             try:
                 await instance.on_startup()
+                self._startup_errors.pop(name, None)
                 logger.info("Plugin %s started", key)
             except Exception as e:
                 metrics.increment("plugin_startup_errors_total", {"plugin": key})
                 logger.error("Plugin %s failed to start: %s", key, e)
+                self._startup_errors[name] = f"启动失败:{e}"
+                continue
+            await self._push_config(key, instance)
         self._launched = True
+
+    async def _push_config(self, key: str, instance: PluginBase) -> None:
+        """把清单声明的配置交给该实例。进程外插件只能从这里拿到值。
+
+        推失败不让启动失败:插件在跑,差别只是它手里没有配置——推送失败要进
+        日志与 `states()` 的 error,而不是把整个插件判成起不来。
+        """
+        from . import scopes as plugin_scopes
+
+        manifest = self._manifests.get(self._instance_names.get(key, ""))
+        if manifest is None or not manifest.scopes:
+            return
+        problems = await plugin_scopes.push(
+            instance, manifest, str(getattr(instance, "tenant", "") or "")
+        )
+        name = manifest.name
+        if problems:
+            self._config_errors[name] = "配置没推下去:" + ";".join(problems)
+            logger.warning("Plugin %s 的配置没推完:%s", name, ";".join(problems))
+        else:
+            self._config_errors.pop(name, None)
+
+    async def push_config(self, scope: str | None = None) -> dict[str, str]:
+        """把配置重推给相关实例,返回 清单名 -> 失败说明。
+
+        `scope` 给了就只推声明了该 scope 的插件——人改完一项配置,不该让所有
+        插件的连接都抖一下。这是运行期的事:改配置不用重启。
+        """
+        from . import scopes as plugin_scopes
+
+        failures: dict[str, str] = {}
+        for key, instance in self._instances.items():
+            manifest = self._manifests.get(self._instance_names.get(key, ""))
+            if manifest is None or not manifest.scopes:
+                continue
+            if scope is not None and scope not in manifest.scopes:
+                continue
+            problems = await plugin_scopes.push(
+                instance, manifest, str(getattr(instance, "tenant", "") or "")
+            )
+            if problems:
+                failures[manifest.name] = ";".join(problems)
+                self._config_errors[manifest.name] = "配置没推下去:" + ";".join(problems)
+            else:
+                # 推成功就把上一次的失败说明清掉,不然页面会一直挂着一句已经不成立的话
+                self._config_errors.pop(manifest.name, None)
+        return failures
+
 
     async def shutdown(self) -> None:
         for key, instance in self._instances.items():

@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 
 class ObserverAgent(PluginBase):
@@ -7,14 +7,6 @@ class ObserverAgent(PluginBase):
 
     def __init__(self):
         self._metrics: Dict[str, Any] = {}
-
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="observer-agent",
-            version="1.0.0",
-            type=PluginType.AGENT,
-            description="UI 扩展示例：声明式 widget + iframe 页面",
-        )
 
     async def on_startup(self):
         pass

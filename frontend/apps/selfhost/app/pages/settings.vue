@@ -119,10 +119,117 @@ function addRepoRow() {
   })
 }
 
+// ---- 注册与账号核验 ------------------------------------------------------
+// 注册默认关着(引擎侧默认 false)。这里改的是"这台实例允不允许自助注册",
+// 逐键覆盖进配置 scope registration,引擎按它算出生效策略。
+interface RegPolicy {
+  enabled: boolean
+  methods: string[]
+  requires_verification: boolean
+  code_ttl_minutes: number
+  oidc: { available: boolean, label: string }
+}
+const regPolicy = ref<RegPolicy | null>(null)
+const regDraft = reactive<Record<string, string>>({})
+const regBusy = ref(false)
+const regMsg = ref('')
+const regErr = ref('')
+
+const REG_FIELDS = [
+  { key: 'registration_enabled', label: '允许自助注册', hint: '关掉之后只有管理员能在成员页加人' },
+  { key: 'registration_methods', label: '注册方式', hint: 'email / phone / oidc,逗号分隔' },
+  { key: 'registration_requires_verification', label: '注册必须核验', hint: '关掉就是填了就能进,只建议在完全内网时用' },
+  { key: 'registration_default_role', label: '默认角色', hint: '新注册用户自动接上的角色 key' },
+  { key: 'registration_public_base_url', label: '前台地址', hint: '邮件链接与 OIDC 回跳用;留空按请求 Host 推' },
+] as const
+
+async function loadRegistration() {
+  const [pol, scope] = await Promise.all([
+    $fetch<RegPolicy>('/api/auth/registration/policy').catch(() => null),
+    SettingsScopesApi.list().catch(() => [] as unknown[]),
+  ])
+  regPolicy.value = pol
+  // 已保存的值只在配置 scope 里;接口回显的是"生效值",所以这里读 scope 的当前值
+  const found = (scope as unknown as Scope[]).find((x) => x.name === 'registration')
+  if (found) {
+    for (const f of found.fields) {
+      if (f.value !== null) regDraft[f.name] = f.value
+    }
+  }
+}
+
+async function saveRegistration() {
+  const values = Object.fromEntries(Object.entries(regDraft).filter(([, v]) => v !== ''))
+  if (!Object.keys(values).length) return
+  regBusy.value = true
+  regErr.value = ''
+  regMsg.value = ''
+  try {
+    await SettingsScopesApi.put('registration', values)
+    regMsg.value = '已保存,下一次请求就按新策略走'
+    for (const k of Object.keys(regDraft)) delete regDraft[k]
+    await loadRegistration()
+  } catch (e) {
+    regErr.value = friendly(e instanceof Error ? e.message : String(e))
+  } finally {
+    regBusy.value = false
+  }
+}
+
+// ---- 配额 ----------------------------------------------------------------
+// 限量按 数量/窗口 声明(2000/30d);用的是已落账的用量,不另存计数器。
+interface QuotaItem { resource: string, used: number, limit: number, window_hours: number, remaining: number | null }
+const quota = ref<{ tenant: string, items: QuotaItem[] } | null>(null)
+const quotaDraft = reactive<Record<string, string>>({})
+const quotaErr = ref('')
+// 只管这三个:别的资源要限量时在配置里加键,页面不重新发明一遍
+const QUOTA_FIELDS = ['issues', 'llm_tokens', 'agent_runs'] as const
+const quotaMsg = ref('')
+
+async function loadQuota() {
+  try {
+    const [usage, scopes] = await Promise.all([
+      $fetch<{ tenant: string, items: QuotaItem[] }>('/api/quota', { query: { tenant: 'default' } }).catch(() => null),
+      SettingsScopesApi.list().catch(() => [] as unknown[]),
+    ])
+    quota.value = usage
+    const found = (scopes as unknown as Scope[]).find((x) => x.name === 'quota')
+    if (found) {
+      for (const f of found.fields) {
+        if (f.value !== null) quotaDraft[f.name] = f.value
+      }
+    }
+  } catch (e) {
+    quotaErr.value = friendly(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function saveQuota() {
+  const values = Object.fromEntries(Object.entries(quotaDraft).filter(([, v]) => v !== ''))
+  if (!Object.keys(values).length) return
+  quotaErr.value = ''
+  quotaMsg.value = ''
+  try {
+    await SettingsScopesApi.put('quota', values)
+    quotaMsg.value = '已保存'
+    for (const k of Object.keys(quotaDraft)) delete quotaDraft[k]
+    await loadQuota()
+  } catch (e) {
+    quotaErr.value = friendly(e instanceof Error ? e.message : String(e))
+  }
+}
+
+function quotaPercent(item: QuotaItem): number {
+  if (!item.window_hours || item.limit <= 0) return 0
+  return Math.min(100, Math.round((item.used / item.limit) * 100))
+}
+
 // 接入层配置:字段、必填、回显规则都由引擎声明,这里不预设任何密钥名。
 const scopes = ref<Scope[]>([])
 const saving = ref<string | null>(null)
 const scopeErrorText = ref('')
+// 值存下来了,但配置推送失败(进程外插件靠核心推配置)
+const pushWarning = ref('')
 const drafts = reactive<Record<string, Record<string, string>>>({})
 const savedScope = ref<string | null>(null)
 
@@ -136,7 +243,7 @@ function draftValue(scope: string, field: string): string {
   return drafts[scope]?.[field] ?? ''
 }
 
-// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 这种前缀。
+// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 前缀。
 function friendly(raw: string): string {
   return raw.replace(/^API error:\s*\d{3}\s*/, '').trim()
 }
@@ -153,6 +260,8 @@ async function loadScopes() {
 onMounted(() => {
   loadScopes()
   loadRelease()
+  loadRegistration()
+  loadQuota()
 })
 
 // 没有写权限就只读:按钮禁掉,后端也会拦(403)
@@ -166,15 +275,21 @@ async function onSave(name: string) {
   if (!Object.keys(values).length) return
   saving.value = name
   scopeErrorText.value = ''
+  pushWarning.value = ''
   try {
-    await SettingsScopesApi.put(name, values)
+    const saved = (await SettingsScopesApi.put(name, values)) as unknown as {
+      push_error?: string
+    }
     drafts[name] = {}
     savedScope.value = name
+    // 值存下了,但插件手里还是旧配置:这不是保存失败,也不能只说"已保存"
+    pushWarning.value = saved?.push_error || ''
     await loadScopes()
     setTimeout(() => {
       if (savedScope.value === name) savedScope.value = null
     }, 2000)
   } catch (e) {
+    pushWarning.value = ''
     scopeErrorText.value = friendly(e instanceof Error ? e.message : String(e))
   } finally {
     saving.value = null
@@ -454,6 +569,101 @@ const sections = computed(() => {
         </div>
       </section>
 
+      <!-- 注册与账号核验:开关、方式、核验通道都在这 -->
+      <section class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="users" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">注册与账号核验</h2>
+          <span class="chip ml-auto">
+            {{ regPolicy?.enabled ? '已开启' : '未开启' }}
+          </span>
+        </div>
+
+        <div class="border-b border-line/60 px-5 py-4">
+          <p class="text-[12px] text-ink-soft">
+            注册默认关闭,自部署与 SaaS 都按这个开关走。现在生效的方式:
+            <span class="font-mono">{{ regPolicy?.methods.join(', ') || '—' }}</span>
+            <span v-if="regPolicy?.oidc.available">,统一身份已配好</span>。
+            核验通道(邮件 / 短信)在下方「接入与密钥」的 email / sms 里填;没配通道时注册会如实拒绝,
+            不会静默跳过核验。
+          </p>
+        </div>
+
+        <div class="grid gap-2 px-5 py-4 sm:grid-cols-2">
+          <label v-for="f in REG_FIELDS" :key="f.key" class="block">
+            <span class="mb-1 block text-[11.5px] text-ink-soft">{{ f.label }}</span>
+            <input
+              :value="regDraft[f.key] ?? ''"
+              :placeholder="f.hint"
+              :disabled="!canWriteSettings"
+              class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong"
+              autocomplete="off"
+              @input="regDraft[f.key] = ($event.target as HTMLInputElement).value"
+            >
+          </label>
+        </div>
+
+        <div class="flex items-center gap-2 px-5 pb-4">
+          <button class="btn-solid h-8 px-3 text-[12px]" :disabled="regBusy || !canWriteSettings" @click="saveRegistration">
+            {{ regBusy ? '保存中…' : '保存注册设置' }}
+          </button>
+          <span v-if="regMsg" class="text-[11.5px] text-ink-faint">{{ regMsg }}</span>
+        </div>
+
+        <div v-if="regErr" class="mx-5 mb-4 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral">
+          {{ regErr }}
+        </div>
+      </section>
+
+      <!-- 配额:限量按 数量/窗口 声明,用量读已落账的每一笔 -->
+      <section class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="layers" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">配额</h2>
+          <span class="eyebrow ml-auto">QUOTA</span>
+        </div>
+
+        <div v-for="item in quota?.items ?? []" :key="item.resource" class="border-b border-line/60 px-5 py-3">
+          <div class="flex items-baseline justify-between gap-3">
+            <span class="font-mono text-[12px]">{{ item.resource }}</span>
+            <span class="text-[11.5px] text-ink-soft">
+              {{ item.window_hours ? `${item.used} / ${item.limit} (每 ${item.window_hours}h)` : '不限' }}
+            </span>
+          </div>
+          <div v-if="item.window_hours" class="mt-1.5 h-1 overflow-hidden rounded-full bg-well">
+            <div
+              class="h-full rounded-full transition-all"
+              :class="quotaPercent(item) >= 100 ? 'bg-coral' : 'bg-ink/70'"
+              :style="{ width: quotaPercent(item) + '%' }"
+            />
+          </div>
+        </div>
+
+        <div class="grid gap-2 px-5 py-4 sm:grid-cols-3">
+          <label v-for="item in QUOTA_FIELDS" :key="item" class="block">
+            <span class="mb-1 block text-[11.5px] text-ink-soft">{{ item }}</span>
+            <input
+              :value="quotaDraft[item] ?? ''"
+              placeholder="2000/30d"
+              :disabled="!canWriteSettings"
+              class="w-full rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] outline-none focus:border-line-strong"
+              autocomplete="off"
+              @input="quotaDraft[item] = ($event.target as HTMLInputElement).value"
+            >
+          </label>
+        </div>
+
+        <div class="flex items-center gap-2 px-5 pb-4">
+          <button class="btn-solid h-8 px-3 text-[12px]" :disabled="!canWriteSettings" @click="saveQuota">保存配额</button>
+          <span v-if="quotaMsg" class="text-[11.5px] text-ink-faint">{{ quotaMsg }}</span>
+          <span class="text-[11.5px] text-ink-faint">留空 = 用平台默认</span>
+        </div>
+
+        <div v-if="quotaErr" class="mx-5 mb-4 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral">
+          {{ quotaErr }}
+        </div>
+      </section>
+
       <!-- 接入与密钥:哪些字段、能不能回显,由引擎的声明决定 -->
       <section class="panel overflow-hidden">
         <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
@@ -531,6 +741,13 @@ const sections = computed(() => {
             </button>
             <span v-if="savedScope === s.name" class="text-[11.5px] text-ink-faint">已保存</span>
           </div>
+        </div>
+
+        <div
+          v-if="pushWarning"
+          class="mx-5 my-3 rounded-card border border-amber/30 bg-amber/5 px-3 py-2 text-[12px] text-ink-soft"
+        >
+          已存下,但没推给插件:{{ pushWarning }}
         </div>
 
         <div

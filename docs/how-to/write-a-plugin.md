@@ -1,6 +1,6 @@
 # 写一个插件
 
-> 状态:现行 | 日期:2026-11-14
+> 状态:现行 | 日期:2026-11-16
 > 读者:插件作者
 > 上游:[插件系统参考](../reference/plugin-system.md)、[变更单元契约](../explanation/change-unit-contract.md)
 
@@ -44,7 +44,7 @@ class_name: MyPlugin       # plugin.py 里要实例化的类名
 
 capabilities: [issue.read]
 tasks:
-  issue.read: read_issue   # 不写就默认把能力的点换成下划线
+  issue.read: read_issue   # 缺省为能力名的下划线形式
 ```
 
 - 同名能力由多个插件提供时,`capabilities_priority` 高者优先;并列直接报错,不按注册顺序猜。
@@ -53,19 +53,15 @@ tasks:
 
 ## 4 写实现
 
-类名必须与 `class_name` 一致,直接 `from engine.plugin_manager.base import ...` 导入——**不要**再改 `sys.path`,加载器已经注入包路径。
+类名必须与 `class_name` 一致,直接 `from engine.plugin_manager.base import ...` 导入,加载器已注入包路径。
+
+实现里没有 `info()`:名称、能力、订阅全部在 `plugin.yaml` 里声明。
 
 ```python
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase
 
 
 class MyPlugin(PluginBase):
-    def info(self) -> PluginInfo:
-        return PluginInfo(
-            name="my-plugin", version="1.0.0", type=PluginType.ADAPTER,
-            description="一句话说清它做什么", capabilities=["issue.read"],
-        )
-
     async def on_startup(self):
         """读配置、建客户端。抛异常只停掉自己,不阻止引擎启动。"""
 
@@ -85,6 +81,88 @@ class MyPlugin(PluginBase):
             return {"title": params.get("title", "")}
         return {"status": "error", "message": f"Unknown task: {task}"}
 ```
+
+### 4.1 想让插件跑在自己的进程里
+
+把 `class_name` 换成 `endpoint`,其余声明一字不改:
+
+```yaml
+name: my-remote-plugin
+version: 1.0.0
+type: agent
+description: 一句话说清它做什么
+endpoint: 10.0.0.5:50051     # 核心按 endpoint 连进程外插件
+binding: prod                # 服务哪个下游目标:进程外插件没有实例属性可读
+capabilities: [scan.dependencies]
+tasks:
+  scan.dependencies: scan
+```
+
+服务端不用自己写协议:
+
+```python
+from engine.plugin_manager.grpc_server import serve
+
+
+class MyPlugin:
+    async def execute_task(self, task: str, params: dict) -> dict:
+        if task == "scan":
+            return {"status": "ok", "count": 0}
+        raise ValueError(f"Unknown task: {task}")
+
+    async def handle_event(self, event: str, data: dict) -> dict:
+        return {"status": "ignored"}
+
+
+serve(MyPlugin(), host="0.0.0.0", port=50051)
+```
+
+`serve` 兜住 JSON 编解码、生命周期、Hook 回调、配置下发;你只实现业务方法。任务名映射、
+能力名、Hook 订阅、要哪些配置仍旧写在清单里——核心解释声明,wire 只承载调用。
+
+失败语义:远端连不上、超时、抛错,都只让**当前调用**失败(`GrpcPluginError`),
+不拖垮核心,也不影响其他插件。完整字段与超时配置见[插件系统参考](../reference/plugin-system.md#进程外grpc插件),可跑的示例在
+[deploy/grpc-plugin-demo](../../deploy/grpc-plugin-demo/README.md)。
+
+两件在进程外会碰到、进程内不会碰到的事:
+
+**配置要靠核心推下来。** 你的进程读不到核心的环境变量与业务库,所以 `config.get_scope_config()`
+在插件进程里什么都读不到。在清单里声明,核心登记进配置表并在启动后与改配置后把值送过来:
+
+```yaml
+scopes:
+  adapter-acme:
+    prefix: ACME_
+    required: [token]
+```
+
+```python
+class MyPlugin:
+    async def configure(self, scope: str, values: dict, missing: list[str]) -> None:
+        if scope == "adapter-acme":
+            self.token = values.get("token", "")
+            # missing 里是"必填但还没填"的键名,想拒收就抛错,核心会把原因报到页面上
+```
+
+**要当效果提供者就把四个方法写上。** 名字与进程内一致,入参也一样(`window` / `verify`
+收到的是 `Effect`),从进程内迁过来一行都不用改:
+
+```python
+class MyPlugin:
+    async def execute(self, task: str, args: dict) -> dict:
+        return {"handle": "这次变更的凭证"}
+
+    async def undo(self, task: str, args: dict, handle: str) -> dict: ...
+
+    async def window(self, effect: Effect, handle: str | None) -> Window:
+        return Window(unbounded=True, source="marker_present")
+
+    async def verify(self, effect: Effect, handle: str) -> tuple[bool, dict]:
+        return True, {"checked": True}
+```
+
+句柄是不透明字符串:核心存下来再原样带回来,你拿它当文件名、自增 id 都行。
+确定没碰到下游时抛 `EffectNotApplied`,账本会把这次记成"可重试"而不是"不知道动没动"。
 
 ## 5 接一个来源:Webhook 适配器
 
@@ -110,7 +188,7 @@ def verify_webhook(self, headers, body) -> bool: # 验签;不过就是 401
 
 ### 5.1 产事件:一次投递 = 一个归一化事件
 
-事件只有一种说法(`kind` / `repo` / `number` / `title` / `merge_sha` ……),定义在 [events.py](../../engine/ingest/events.py);用 `event(...)` 组装,**形状不对它会当场抛**,不要自己拼字典。
+事件只有一种说法(`kind` / `repo` / `number` / `title` / `merge_sha` ……),定义在 [events.py](../../engine/ingest/events.py);用 `event(...)` 组装,形状不对会当场抛。
 
 ```python
 from engine.ingest.events import event as normalized_event, header_value
@@ -118,7 +196,7 @@ from engine.ingest.events import event as normalized_event, header_value
 def parse_webhook(self, headers, body):
     payload = json.loads(body)
     if payload.get("action") != "closed" or not payload.get("merged"):
-        return None                       # 不关心的投递:返回 None,不是造一个空事件
+        return None                       # 不关心的投递
     return normalized_event(
         kind="merge", source=self.source,
         repo=payload["repo"], number=payload["pr"], merge_sha=payload["sha"],
@@ -128,7 +206,7 @@ def parse_webhook(self, headers, body):
 
 ### 5.2 产信号:一次投递 = 零到多条信号
 
-信号回答"哪里出了什么事",不带动作。用 `normalize(...)` 组装,`occurrence` 是单次发作的身份(例如告警的 `startsAt`):同一个 `ref` 再次出现算另一件事,不填则入口按 `ref` 去重。
+信号回答"哪里出了什么事",不带动作。用 `normalize(...)` 组装,`occurrence` 是一次发作的身份(例如告警的 `startsAt`):同一个 `ref` 带不同 `occurrence` 算两次发作,不填则入口按 `ref` 去重。
 
 ```python
 from engine.ingest.signal import normalize
@@ -136,7 +214,7 @@ from engine.ingest.signal import normalize
 def parse_signals(self, headers, body):
     payload = json.loads(body)
     if payload.get("state") != "expiring":
-        return []                          # 这次没查出什么:空列表,不是一条空事故
+        return []                          # 这次没查出什么
     return [normalize(
         source=self.source,
         subject=payload["host"],
@@ -148,7 +226,7 @@ def parse_signals(self, headers, body):
     )]
 ```
 
-内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.py)是产信号适配器的完整样板,接 Caddy、云雀、Grafana 照它写即可。
+signal 型适配器的完整样板是内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.py),接 Caddy、云雀、Grafana 照它写即可。
 
 ### 5.3 自测
 
@@ -164,7 +242,7 @@ curl -sS -X POST http://127.0.0.1:8000/webhook/caddy \
 
 ## 6 声明一个可撤销的效果
 
-效果声明"这个插件能改什么、怎么撤、怎么验",由核心在加载期校验:缺 `undo`、缺窗口读取来源、验证不可判,注册时就被拒。
+效果声明插件能改什么、怎么撤、怎么验,由核心在加载期校验:缺 `undo`、缺窗口读取来源、验证不可判,注册时就被拒。
 
 ```yaml
 capabilities: [compose.scale]
@@ -190,7 +268,7 @@ async def execute(self, task: str, args: dict) -> dict:
 async def undo(self, task: str, args: dict, handle: str) -> dict: ...
 
 async def window(self, effect, handle) -> Window:
-    """读,不是声明。读不出来抛异常,平台按不可逆处理。
+    """读取当前窗口;读不出来抛异常,平台按不可逆处理。
 
     三种答案,按下游真实情况给:
       Window(seconds=3600, source="snapshot")                   # 有到期时间
@@ -205,7 +283,7 @@ async def verify(self, effect, handle) -> tuple[bool, dict]: ...
 
 **抛什么决定这次失败怎么记账。**认得出没碰到下游(构造请求就失败、下游明确 4xx)时抛 `EffectNotApplied`,单元记 `failed`,重试是安全的;抛别的异常一律记 `unknown`——请求可能已经到了对面,重试前得先去下游看一眼。分不清就别猜着抛 `failed`。
 
-窗口的完整口径见[变更单元契约](../explanation/change-unit-contract.md)第 5 节。
+窗口的完整口径见[变更单元契约](../explanation/change-unit-contract.md)第 5 节。进程外插件的这四个方法同名同签名,协议层负责分派,见[4.1](#41-想让插件跑在自己的进程里)。
 
 ## 7 声明一个周期
 
@@ -221,9 +299,9 @@ triggers:
 
 能力必须同时列在 `capabilities` 里。周期换算、幂等与对账规则见[插件系统参考](../reference/plugin-system.md#周期巡检)。
 
-周期适合"只会被问、不会主动说"的来源;能主动投递的系统(绝大多数告警与代码托管)用上一节的 Webhook 适配器,不要绕成轮询。
+周期适合"只会被问、不会主动说"的来源;能主动投递的系统(绝大多数告警与代码托管)用上一节的 Webhook 适配器。
 
-## 8 配置:不要自己读环境变量
+## 8 配置:用 Scope 声明,不直接读环境变量
 
 配置走 Scope:字段、必填、能否回显在一处说清,值可以存进业务库,页面上改完立即生效。
 
@@ -245,7 +323,7 @@ config.register_model_scope("adapter-my", MySettings, prefix="MY_")
 settings = MySettings(**config.get_scope_config("adapter-my", config.settings.default_tenant_slug))
 ```
 
-顺序是 `Settings` 同名字段 → 环境变量 → `.env` → 库里存的值(库里的排在前面,人在页面上填过的不该被环境变量盖掉)。秘密字段不要 `expose` 成 `always`;要换行(私钥、证书)就加 `"multiline": true`。
+顺序是 `Settings` 同名字段 → 环境变量 → `.env` → 库里存的值(库里的排在前面,人在页面上填过的不该被环境变量盖掉)。秘密字段 `expose` 不要用 `always`;要换行(私钥、证书)就加 `"multiline": true`。
 
 ## 9 在页面上加一块
 
@@ -272,7 +350,7 @@ ui:
         - { label: 夜间自动变更, value: 12, sub: 近 7 天, variant: green }
 ```
 
-`list` 用 `items`(每项 `{text: "..."}`)。卡片是数据,不是代码:配色只有 default / green / yellow / red 四档——要复杂界面走下一节。
+`list` 用 `items`(每项 `{text: "..."}`)。卡片是声明式数据,配色只有 default / green / yellow / red 四档;要复杂界面走下一节。
 
 ### 9.2 整页进 iframe
 
@@ -312,4 +390,6 @@ python -m pytest tests/ -q
 | Webhook 回 400 | `parse_signals` 抛了:投递不是 JSON、或信号缺 `subject` / `title` |
 | 投递回 200 但没有工作流 | 产事件时返回了 `None`、`kind` 不在这四类里,或信号被去重(同一 `ref + occurrence`) |
 | 效果被记成 `blocked` | 能力没人提供、缺 `binding`、或 intent 点了清单里没声明的参数 |
-| 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉库里的配置项 |
+| 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉该键 |
+| 插件在列表里但能力调不通 | 看 `enabled` 是不是 false;`tasks` 缺省为能力名的下划线形式,对不上会一路 `Unknown task` |
+| 进程外插件 `endpoint` 连不上 | 看核心日志里的 `gRPC plugin <name> 没有握手成功`;超时由 `PLUGINS_GRPC_TIMEOUT_S` 控制 |

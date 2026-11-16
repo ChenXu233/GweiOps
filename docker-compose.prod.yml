@@ -2,9 +2,9 @@
 # Gwei — 生产环境覆盖
 # 使用方式：docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
-# 这一份按"单机自用 / dogfood"写的:镜像在本机构建,不依赖外部 registry;
+# 本文件按"单机自用 / dogfood"写:镜像在本机构建,不依赖外部 registry;
 # 引擎要替事故起 harness 容器,所以挂了宿主 docker.sock。多机部署时把 harness
-# 挪到目标机上,用 HARNESS_COMMAND 指过去,这一行就可以删。
+# 挪到目标机上,用 HARNESS_COMMAND 指过去,该行即可删除。
 # =============================================================================
 
 services:
@@ -73,11 +73,18 @@ services:
       CNB_WEBHOOK_TOKEN: ${CNB_WEBHOOK_TOKEN:-}
       CNB_WEBHOOK_HEADER: ${CNB_WEBHOOK_HEADER:-X-Cnb-Token}
       CNB_TOKEN: ${CNB_TOKEN:-}
+      # 外部插件根(与下方 /plugins-extra 挂载对应)。冒号分隔可以给多个
+      PLUGINS_EXTRA_DIRS: /plugins-extra
+      # 调一个进程外插件的超时(秒);清单里写 endpoint 的插件走这条
+      PLUGINS_GRPC_TIMEOUT_S: ${PLUGINS_GRPC_TIMEOUT_S:-10}
     volumes:
       # 引擎在容器里,但它要替事故起 harness 容器:这两行是 dogfood 的代价。
       # 只读挂 docker.sock 做不到(要创建容器),所以这里给的是完整 docker 权限。
       - /var/run/docker.sock:/var/run/docker.sock
       - harness-workspace:/workspaces
+      # 外部插件根:装插件=往 /plugins-extra 放一个 <pkg>/plugin.yaml,然后 POST /api/plugins/rescan。
+      # 不用重建镜像——镜像内的 plugins/ 是内置插件,外挂的是部署自己加的。
+      - ${PLUGINS_EXTRA_DIR:-./plugins-extra}:/plugins-extra:ro
     group_add:
       # 宿主 docker 组 GID;在 .env 里写 DOCKER_GID=$(stat -c %g /var/run/docker.sock)
       - "${DOCKER_GID:-999}"
@@ -106,7 +113,7 @@ services:
     image: gwei-web:local
     container_name: gwei-web
     ports:
-      # 先只绑回环;域名指向这台机器之后由 caddy 反代到这个地址
+      # 先只绑回环;域名指向本机之后由 caddy 反代到该地址
       - "127.0.0.1:3000:3000"
     environment:
       NUXT_PUBLIC_API_BASE: "/api"

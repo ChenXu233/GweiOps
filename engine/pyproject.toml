@@ -27,6 +27,8 @@ dependencies = [
     "alembic>=1.14.0",
     # App JWT 认证需要 auth-app extra(client.py 用 AppInstallationAuthStrategy)
     "githubkit[auth-app]>=0.12.0",
+    "grpcio>=1.85.1",
+    "grpcio-tools>=1.85.1",
 ]
 
 [project.optional-dependencies]

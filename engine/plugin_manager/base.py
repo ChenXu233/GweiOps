@@ -1,7 +1,6 @@
 # engine/plugin_manager/base.py
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+from typing import Dict, Any
 from enum import Enum
 
 
@@ -13,25 +12,8 @@ class PluginType(str, Enum):
     DASHBOARD_COMPONENT = "dashboard_component"
 
 
-@dataclass
-class PluginInfo:
-    """插件信息"""
-    name: str
-    version: str
-    type: PluginType
-    description: str
-    triggers: List[Dict[str, Any]] = field(default_factory=list)
-    capabilities: List[str] = field(default_factory=list)
-    config: Dict[str, Any] = field(default_factory=dict)
-
-
 class PluginBase(ABC):
-    """插件基类，所有插件必须实现此接口"""
-
-    @abstractmethod
-    def info(self) -> PluginInfo:
-        """返回插件信息"""
-        pass
+    """插件基类。插件是什么由清单(`plugin.yaml`)唯一声明,这里只留做事的方法。"""
 
     @abstractmethod
     async def on_startup(self):

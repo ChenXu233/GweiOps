@@ -3,8 +3,8 @@ syntax = "proto3";
 package gweiops.plugin;
 
 // ============================================================
-# 插件服务定义
-# ============================================================
+// 插件服务定义
+// ============================================================
 
 service PluginService {
     // 生命周期
@@ -12,9 +12,9 @@ service PluginService {
     rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
 
-    // Scope 注册
-    rpc RegisterScope(RegisterScopeRequest) returns (RegisterScopeResponse);
-    rpc GetScopeConfig(GetScopeConfigRequest) returns (GetScopeConfigResponse);
+    // 配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件，
+    // 所以配置是"推"下来的，插件不反向索取。
+    rpc Configure(ConfigureRequest) returns (ConfigureResponse);
 
     // 事件处理
     rpc HandleEvent(EventRequest) returns (EventResponse);
@@ -27,8 +27,8 @@ service PluginService {
 }
 
 // ============================================================
-# 插件信息
-# ============================================================
+// 插件信息
+// ============================================================
 
 message PluginInfo {
     string name = 1;
@@ -68,34 +68,18 @@ message TriggerInfo {
 }
 
 // ============================================================
-# Scope 定义
-# ============================================================
-
-message ScopeDefinition {
-    string name = 1;           // Scope 名称，如 "adapter-github-app"
-    string prefix = 2;         // 配置前缀，如 "GITHUB_APP_"
-    repeated string required = 3;   // 必需配置项
-    repeated string optional = 4;   // 可选配置项
-}
-
-message ScopeConfig {
-    string scope_name = 1;
-    map<string, string> config = 2;  // 配置键值对
-}
-
+// 生命周期消息
 // ============================================================
-# 生命周期消息
-# ============================================================
 
+// 插件要哪些配置由清单声明（scopes 块），不走 wire：进程没连上时控制台也要能
+// 把"它缺哪几项"讲清楚。
 message StartupRequest {
     PluginInfo plugin_info = 1;
-    repeated ScopeDefinition scope_definitions = 2;  // 插件声明的 Scope
 }
 
 message StartupResponse {
     bool success = 1;
     string message = 2;
-    repeated ScopeConfig scope_configs = 3;  // 核心返回的配置
 }
 
 message ShutdownRequest {}
@@ -112,32 +96,25 @@ message HealthResponse {
 }
 
 // ============================================================
-# Scope 注册消息
-# ============================================================
+// 配置下发消息
+// ============================================================
 
-message RegisterScopeRequest {
-    ScopeDefinition scope_definition = 1;
+// 一次下发一个 scope 的全部值：插件按 scope 拿，不做增量合并——增量会让
+// "删掉一个键"和"键未改"在插件侧长得一样。
+message ConfigureRequest {
+    string scope = 1;                 // scope 名，如 "adapter-acme"
+    map<string, string> config = 2;   // 此刻的值
+    repeated string missing = 3;      // 必填但还没填的键名
 }
 
-message RegisterScopeResponse {
+message ConfigureResponse {
     bool success = 1;
     string message = 2;
-    ScopeConfig scope_config = 3;  // 返回的配置
-}
-
-message GetScopeConfigRequest {
-    string scope_name = 1;
-}
-
-message GetScopeConfigResponse {
-    bool success = 1;
-    ScopeConfig scope_config = 2;
-    repeated string missing_required = 3;  // 缺失的必需配置
 }
 
 // ============================================================
-# 事件处理消息
-# ============================================================
+// 事件处理消息
+// ============================================================
 
 message EventRequest {
     string event = 1;
@@ -152,7 +129,7 @@ message EventResponse {
 }
 
 // ============================================================
-# Hook 回调消息
+// Hook 回调消息
 // ============================================================
 
 message HookRequest {
@@ -168,13 +145,19 @@ message HookResponse {
 }
 
 // ============================================================
-# 任务执行消息
-# ============================================================
+// 任务执行消息
+// ============================================================
 
-// 效果(execute / undo / window / verify)复用 ExecuteTask，不单独开 rpc：
-//   task   = 清单 effects 块里声明的任务名
-//   params = 效果参数；undo / verify 额外带 handle(JSON 编码在 bytes params 里)
-//   result = JSON；window 返回 {"seconds": n} 或 {"unbounded": true}
+// 效果(execute / undo / window / verify)复用 ExecuteTask，不单独开 rpc。
+// 阶段放在 metadata["phase"] 里；没有 phase 就是一次普通的能力调用。
+//
+//   phase=execute  task = effects.<cap>.execute.task   params = 效果参数
+//   phase=undo     task = effects.<cap>.undo.task      params = {"args": {...}, "handle": "..."}
+//   phase=window   task = 能力名                        params = {"effect": {...}, "handle": null}
+//   phase=verify   task = 能力名                        params = {"effect": {...}, "handle": "..."}
+//
+// window 的 result：{"seconds": n} / {"unbounded": true} / {"source": "..."}
+// verify 的 result：{"ok": bool, "facts": {...}}
 message TaskRequest {
     string task = 1;
     bytes params = 2;
@@ -185,4 +168,8 @@ message TaskResponse {
     bool success = 1;
     bytes result = 2;
     string error = 3;
+    // 失败的性质。"not_applied" = 远端确定没碰到下游，核心据此把单元记成
+    // failed（可以照原样重试）；其它值或不填 = 说不清，一律按 unknown 处理。
+    // 是否碰到下游只有远端知道，核心不替它猜。
+    string error_kind = 4;
 }

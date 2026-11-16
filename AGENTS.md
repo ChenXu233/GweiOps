@@ -84,6 +84,7 @@ docker compose up
 | --- | --- |
 | 插件清单/注册表/事件/Hook/UI 插槽 | `docs/reference/plugin-system.md` |
 | 工作流/队列/租户/Redis/LLM 计量/部署模式 | `docs/reference/runtime.md` |
+| 控制台鉴权/注册/核验通道/OIDC/配额 | `docs/reference/runtime.md` |
 | API 端点 | `docs/reference/runtime.md` |
 | 架构边界或决策 | `docs/explanation/` 对应文档 |
 | 文档结构或导航 | `docs/README.md` |

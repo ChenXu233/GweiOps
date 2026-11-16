@@ -13,18 +13,13 @@ import pytest
 # ---------------------------------------------------------------------------
 
 PLUGIN_TEMPLATE = """
-from engine.plugin_manager.base import PluginBase, PluginInfo, PluginType
+from engine.plugin_manager.base import PluginBase, PluginType
 
 
 class {class_name}(PluginBase):
     mode = "{hook_mode}"          # handle_hook 行为
     broken_on_event = {broken_on_event}
 
-    def info(self):
-        return PluginInfo(
-            name="{name}", version="1.0.0", type=PluginType.AGENT,
-            description="test", triggers=[], capabilities={capabilities!r},
-        )
 
     async def on_startup(self):
         self.started = True
