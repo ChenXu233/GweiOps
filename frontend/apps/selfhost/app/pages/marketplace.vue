@@ -38,8 +38,9 @@ function forgot(reason: string): string {
     <div class="flex items-start gap-3 rounded-panel border border-line bg-well/50 px-5 py-4">
       <AppIcon name="shield-check" :size="15" class="mt-0.5 text-ink-faint" />
       <p class="text-[12px] leading-relaxed text-ink-soft">
-        <span class="font-medium text-ink">发现不等于启用。</span>
-        装进插件目录、能解析出能力，都不代表它会在流程里被执行——只有被显式打开、且声明了对应效果单元的插件才会真正动手。
+        <span class="font-medium text-ink">发现不等于启用，启用分两层。</span>
+        上面那层是部署:这个平台提不提供它（改环境变量或清单）。下面那层是这个租户选没选它——租户只能在自己的集合里选，
+        开不了平台关掉的插件。只有两层都成立的插件才会真的动手。
       </p>
     </div>
 
@@ -94,6 +95,13 @@ function forgot(reason: string): string {
         <p v-if="plugin.error" class="mt-2 font-mono text-[11px] text-coral">
           {{ plugin.error }}
         </p>
+        <p
+          v-else-if="!plugin.platform_available"
+          class="mt-2 font-mono text-[11px] text-ink-faint"
+          title="租户改不了这一层:平台没提供就是没提供"
+        >
+          平台未提供 · 改部署配置才谈得上启用
+        </p>
         <p v-else-if="!plugin.enabled" class="mt-2 font-mono text-[11px] text-ink-faint">
           {{ forgot(plugin.reason) }}
         </p>
@@ -130,8 +138,10 @@ function forgot(reason: string): string {
 
           <button
             class="inline-flex items-center gap-1.5 rounded border border-line px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:border-ink/40 disabled:opacity-40"
-            :disabled="!canManage || toggling === plugin.id"
-            :title="canManage ? '' : '需要 plugins.write 权限'"
+            :disabled="!canManage || toggling === plugin.id || !plugin.platform_available"
+            :title="!plugin.platform_available
+              ? '平台没提供这个插件,先在部署里打开它'
+              : canManage ? '' : '需要 plugins.write 权限'"
             @click="setEnabled(plugin.id, !plugin.enabled)"
           >
             {{ toggling === plugin.id ? '…' : plugin.enabled ? '停用' : '启用' }}

@@ -17,10 +17,34 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from engine.agent import console as store
-from engine.agent import loop as loop_mod
 from engine.change_unit import JsonlLedger, Window
 from engine.plugin_manager.manifest import EffectDecl
 from engine.shared.config import config
+
+def _load_console_plugin_loop():
+    """插件的循环模块。
+
+    插件目录名带连字符(`console-agent`),不是合法的 Python 包路径,所以按文件路径
+    载入。测试要验的是"循环在插件里",不是"探一下核心里的旧副本"。
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "plugins"
+        / "builtin"
+        / "agents"
+        / "console-agent"
+        / "loop.py"
+    )
+    spec = importlib.util.spec_from_file_location("console_agent_loop", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+loop_mod = _load_console_plugin_loop()
 
 OPERATOR = "t-operate:acme:值班人:operate"
 VIEWER = "t-read:acme:只读:read"
@@ -90,6 +114,14 @@ class Registry:
     def resources(self):
         return [BINDING]
 
+    def best_capability_provider(self, capability):
+        """循环由 `console.chat` 提供者给(见 `_ScriptedProvider`)。"""
+        from engine.agent.provider import CAPABILITY
+
+        if capability == CAPABILITY:
+            return _ScriptedProvider()
+        return None
+
 
 class Role:
     """测试里的身份,与 `engine.api.auth.Actor` 同形状。"""
@@ -128,16 +160,15 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(db_engine, "engine", test_engine)
 
     async def schema():
-        from engine.agent.console_store import ensure_schema
+        from engine.agent.console import ensure_schema
 
         await ensure_schema()
 
     asyncio.run(schema())
     LOOP_SCRIPT.clear()
     SEEN.clear()
-    monkeypatch.setattr(loop_mod, "HAS_BUB", True, raising=False)
-    monkeypatch.setattr(loop_mod, "SessionAgent", None, raising=False)
-    monkeypatch.setattr(loop_mod, "session_agent", lambda **kw: ScriptedAgent(**kw))
+    # 循环是插件提供的:替身注册表的 `console.chat` 返回按剧本走的 agent
+    # (见 `Registry.best_capability_provider`)
     monkeypatch.setattr(config.settings, "llm_api_key", "sk-test")
     monkeypatch.setattr("engine.plugin_manager.registry", stub, raising=False)
     store.reset()
@@ -167,6 +198,16 @@ def _rows(env, session_id: str) -> list[dict]:
 # bub 的循环由 `ScriptedAgent` 代替,测的是平台侧的接线,不是 bub 本身。
 LOOP_SCRIPT: list[dict] = []
 SEEN: list[dict] = []
+
+
+class _ScriptedProvider:
+    """声明 `console.chat` 的替身:循环由剧本驱动,测的是平台侧接线。"""
+
+    binding = ""
+    tenant = ""
+
+    def build(self, *, session, registry, actor=None):
+        return ScriptedAgent(session=session, registry=registry, actor=actor)
 
 
 class ScriptedAgent:
@@ -422,7 +463,9 @@ def test_the_bub_loop_drives_a_tool_then_answers(env):
     )
 
     async def run():
-        agent = loop_mod.session_agent(session=session, registry=env.stub)
+        from engine.agent.provider import build_agent
+
+        agent = build_agent(session=session, registry=env.stub)
         texts: list[str] = []
         tools: list[str] = []
         async with agent.run("把 web 加到 3 个副本", tape="t1") as stream:
@@ -448,7 +491,9 @@ def test_the_loop_only_sees_what_the_session_allows(env):
     session = _session(permissions=["changes.read"])
 
     async def run():
-        agent = loop_mod.session_agent(session=session, registry=env.stub)
+        from engine.agent.provider import build_agent
+
+        agent = build_agent(session=session, registry=env.stub)
         async with agent.run("看账本", tape="t2") as stream:
             async for _event in stream:
                 pass
@@ -667,12 +712,12 @@ def test_the_agent_uses_bubs_model_not_a_translation(monkeypatch):
         from bub.builtin.model import BubModel  # noqa: F401
     except ImportError:
         pytest.skip("没装 bub")
-    import engine.agent.loop as real
+    real = _load_console_plugin_loop()
 
     monkeypatch.setattr(real, "HAS_BUB", True)
 
     session = _session()
-    agent = real.session_agent(session=session, registry=Registry())
+    agent = real.build_agent(session=session, registry=Registry())
 
     assert type(agent.model).__name__ == "BubModel"
     assert ":" in agent.model.spec
@@ -684,7 +729,25 @@ def test_the_agent_uses_bubs_model_not_a_translation(monkeypatch):
 
 
 def test_a_missing_key_is_an_error_not_a_persona(env, monkeypatch):
+    """没有密钥时如实报错,而且这句话要能检索到。
+
+    这条要真的走一遍插件的 `build_agent`:替身 agent 不检查密钥,拿它测的是
+    "替身能不能跑",不是"没配密钥会怎样"。
+    """
     monkeypatch.setattr(config.settings, "llm_api_key", "")
+    real = _load_console_plugin_loop()
+
+    class RealProvider:
+        def build(self, **kwargs):
+            if real.missing_key():
+                raise LookupError(real.NOT_CONFIGURED)
+            return real.build_agent(**kwargs)
+
+    monkeypatch.setattr(
+        env.stub,
+        "best_capability_provider",
+        lambda capability: RealProvider() if capability == "console.chat" else None,
+    )
     opened = _open(env)
 
     resp = env.client.post(

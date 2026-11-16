@@ -97,10 +97,20 @@
 
 界面右下角悬浮窗里的助手。与 MCP 同源:同一个出口、同一本账,面向浏览器里的一句话,并且把"改世界"这一步交给人批准。
 
+它整体是**一个插件**(内置 `console-agent`),不是核心的一部分:
+
+| 块 | 归属 | 判据 |
+| --- | --- | --- |
+| 循环、模型调用、提示词、多步预算 | 插件,能力 `console.chat` | 换实现不影响别人 |
+| 浮窗本身 | 插件,认领 `global.dock` 槽 | 关掉插件,窗口不存在 |
+| 会话、权限、待批、`MAX_ACTIONS`、审计 | 核心 | 撤销承诺与审计只能有一份 |
+| 出口闸门(`run_tool` → 变更单元 → 账本) | 核心 | 改世界的路径只有一条 |
+
 ```mermaid
 flowchart LR
-  UI["悬浮窗 AgentDock"] -->|"POST /api/console/session"| S["会话(console_sessions)"]
-  UI -->|"POST …/turn (SSE)"| L["bub.core.Agent"]
+  UI["悬浮窗(global.dock 槽)"] -->|"POST /api/console/session"| S["会话(console_sessions)"]
+  UI -->|"POST …/turn (SSE)"| A["console.chat 提供者(console-agent)"]
+  A -->|"bub.core.Agent"| L["循环"]
   L -->|"工具调用"| C["engine/agent/console.py"]
   C -->|"只读口"| R["registry.run_capability"]
   C -->|"改世界:先问人"| P["待批调用"]
@@ -108,12 +118,29 @@ flowchart LR
   C -->|"每一句"| M["对话(console_messages)"]
 ```
 
-- **循环与模型都是 bub 的**:`bub.core.Agent` 负责推一版、执行工具、再看结果;模型是 `bub.builtin.model.BubModel` + `republic` 的 provider,凭据仍取 `LLM_API_KEY` / `LLM_BASE_URL`。助手不经过 `engine/llm/client.py` 的 litellm 封装,也不自己做消息与补全的翻译。
-- **工具清单只有一份**:来自 `tool_specs(registry)`,与 `/mcp` 的 `tools/list` 同源;过 `tool_visible` 三关后再由会话白名单收窄。
-- **会话是上限,不是签名**:每一轮都按**调用者此刻**的权限重算,取它与会话权限的交集。权限被收回、换了令牌用同一个会话,都立刻看不到对应工具;待批的调用在点"允许"时再判一次,否则就是静默提权。
-- **允许**只对改世界的能力生效。一次对话的改动次数由 `MAX_ACTIONS` 收口,与租户级的出口小时上限(`AGENT_MAX_EXITS_PER_HOUR`)是两件事。
-- **会话与每一句都落库**:`console_sessions` 记会话此刻的权限、资源、白名单与动作计数;`console_messages` 只追加,记人说的、助手说的、每一次工具调用与结果,以及批准、拒绝、超时。进程内只留一层缓存,重启后从库里读回。写不进去时开会话返回 503,不降级为内存会话——没有落库就没有审计。
-- **模型不可用是错误**:`LLM_API_KEY` 为空时返回 `event: error`,消息里带 `LLM_API_KEY`,不返回拟人化的占位文本。
+- **循环从注册表来**:`engine/agent/provider.py` 的 `build_agent()` 按能力 `console.chat`
+  向注册表要提供者。没有提供者(插件被关掉)时返回 `event: error`,消息里点名该开
+  哪个插件——**不塞一个内置循环**。这与 `get_sensor()` 不兜底是同一条规矩。
+- **浮窗也由插件决定**:布局里只有 `<PluginDock />`(拉 `global.dock` 槽,有卡片才
+  渲染),关掉 `console-agent` 之后右下角就没有那块东西。
+- **循环与模型都是 bub 的**:`bub.core.Agent` 负责推一版、执行工具、再看结果;模型是
+  `bub.builtin.model.BubModel` + provider,凭据仍取 `LLM_API_KEY` / `LLM_BASE_URL`。
+  助手不经过 `engine/llm/client.py` 的 litellm 封装,也不自己做消息与补全的翻译。
+- **工具清单只有一份**:来自 `tool_specs(registry)`,与 `/mcp` 的 `tools/list` 同源;过
+  `tool_visible` 三关后再由会话白名单收窄。清单在每一轮运行前现算,不固定在构造时。
+- **会话是上限,不是签名**:每一轮都按**调用者此刻**的权限重算,取它与会话权限的
+  交集。权限被收回、换了令牌用同一个会话,都立刻看不到对应工具;待批的调用在点
+  "允许"时再判一次,否则就是静默提权。
+- **允许**只对改世界的能力生效。一次对话的改动次数由 `MAX_ACTIONS` 收口,与租户级的
+  出口小时上限(`AGENT_MAX_EXITS_PER_HOUR`)是两件事。
+- **一轮未完不开新一轮**:已有待批调用时再发消息会被拒绝并说明——两个待批混在一起,
+  批准哪个都不清楚。
+- **会话与每一句都落库**:`console_sessions` 记会话此刻的权限、资源、白名单与动作计数;
+  `console_messages` 只追加,记人说的、助手说的、每一次工具调用与结果,以及批准、拒绝、
+  超时。进程内只留一层缓存,重启后从库里读回。写不进去时开会话返回 503,不降级为内存
+  会话——没有落库就没有审计。
+- **模型不可用是错误**:`LLM_API_KEY` 为空时返回 `event: error`,消息里带 `LLM_API_KEY`,
+  不返回拟人化的占位文本。
 
 `/api/console/tools` 给的是调用者身份**能授予**的工具全集,开会话时从里面挑。`GET /api/console/session/{id}/messages` 给的是该会话的对话落库记录。
 
@@ -282,6 +309,14 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
 - `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
+- **隔离在库上,不在 SQL 里**:租户可见的表开了行级安全,策略读
+  `current_setting('gwei.tenant', true)`;变量没设时比较为假,所以默认是看不见。
+  可见范围收口在库侧,"忘了写 `where`"因此退化成读到空集。
+- 核心自己的连接不设 `gwei.tenant`,不受策略影响。绕开策略的唯一身份是超级用户与
+  `BYPASSRLS` 角色——插件那条路因此必须走受限角色(`gwei_plugin_reader`),详见
+  [插件读库](plugin-system.md#插件读库)。
+- `issues` 有 `tenant_id`(由 `projects` 派生后补齐);`pull_requests` / `patches` /
+  `approval_votes` 不加列,租户口径由父表派生——多一份租户列就多一份会漂移的事实。
 
 ## 配额
 
@@ -334,8 +369,8 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库、推给声明该 scope 的插件并立即生效;`push_error` 说推失败的原因(值仍然存下了) |
 | DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键并重推;删的是调用方租户的覆盖值,读的时候落回公共值 |
-| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `reason`)/ 已启用插件的插槽声明 |
-| POST | `/api/plugins/{name}/enable`、`/disable` | 运行期启停一个插件:导入注册、或摘索引,不用重启 |
+| GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `platform_available` / `tenant_enabled` / `reason`)/ 两层都成立的插件的插槽声明 |
+| POST | `/api/plugins/{name}/enable`、`/disable` | 启停一个插件:导入注册、或摘索引,并写下**本租户**的决定(`?tenant=` 或令牌声明的租户);平台没提供的返回 409 |
 | POST | `/api/plugins/rescan` | 重扫插件目录:新出现的按决定启用,删掉的停用 |
 | GET | `/api/metrics` | 指标快照 |
 | GET | `/api/changes` | 变更账本当前状态(按单元折叠,可按 verdict / binding / incident 过滤) |

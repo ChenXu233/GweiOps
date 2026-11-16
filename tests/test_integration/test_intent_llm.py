@@ -217,7 +217,7 @@ class StubRegistry:
     def best_capability_provider(self, capability: str):
         return self.provider
 
-    async def run_capability(self, capability: str, params: dict) -> dict:
+    async def run_capability(self, capability: str, params: dict, **_ctx) -> dict:
         self.seen = params
         return {"version": 1, "summary": "测试", "evidence": [], "effects": [], "rationale": ""}
 

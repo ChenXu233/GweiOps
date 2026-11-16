@@ -7,7 +7,8 @@
 - 每次改世界的调用都落到 `run_tool`,走同一条闸门、同一本账;
 - 多一道人工批准:会话开着 `confirm` 时,改世界的调用先经批准才执行;只读工具不受此约束。
 
-多步循环在 bub(`engine/agent/loop.py`),这里只把事件流转成 SSE、接住待批调用。
+多步循环在插件里(`console-agent` 的 `console.chat` 能力),这里只把事件流转成 SSE、
+接住待批调用。没有提供者时如实报错,不塞一个内置循环。
 """
 
 from __future__ import annotations
@@ -206,28 +207,36 @@ def _event(kind: str, data: dict[str, Any]) -> str:
 async def _stream(
     session: store.ConsoleSession, message: str, actor: Any = None
 ) -> AsyncIterator[str]:
-    """把 bub 的事件流转成 SSE。
+    """把 agent 提供者的事件流转成 SSE。
 
-    前端需要文本增量、工具调用、工具结果、错误与收尾;bub 事件正好一一对应,
-    这里只做字段映射。
+    前端需要文本增量、工具调用、工具结果、错误与收尾;提供者的事件正好一一对应,
+    这里只做字段映射。提供者从注册表来(`console.chat`),不是本地 new 出来的。
     """
-    from engine.agent.loop import HAS_BUB, NOT_CONFIGURED, NOT_INSTALLED, missing_key, session_agent
+    from engine.agent.provider import AgentUnavailable, build_agent
 
-    if not HAS_BUB:  # pragma: no cover - 只在没装 bub 的部署里走到
-        await store.record(session, "error", NOT_INSTALLED)
-        yield _event("error", {"message": NOT_INSTALLED})
-        yield _event("done", {})
-        return
-
-        # 模型不可用:先记录用户消息,再报可检索的错误。
+    # 模型不可用:先记录用户消息,再报可检索的错误。
     await store.record(session, "user", message)
-    if missing_key():
-        await store.record(session, "error", NOT_CONFIGURED)
-        yield _event("error", {"message": NOT_CONFIGURED})
+
+    if store.pending_of(session) is not None:
+        # 上一轮还在等人点"允许"。再来一轮会把两个待批混在一起,批准谁都不清楚。
+        yield _event("error", {"message": "上一轮还有待批准的调用没处理,先允许或拒绝它"})
         yield _event("done", {"steps": [], "actions": session.actions})
         return
 
-    agent = session_agent(session=session, registry=registry, actor=actor)
+    try:
+        agent = build_agent(session=session, registry=registry, actor=actor)
+    except AgentUnavailable as exc:
+        await store.record(session, "error", str(exc))
+        yield _event("error", {"message": str(exc)})
+        yield _event("done", {"steps": [], "actions": session.actions})
+        return
+    except Exception as exc:  # noqa: BLE001 - 提供者自己的失败要回到界面上
+        logger.warning("控制台助手构造 agent 失败", exc_info=True)
+        reason = f"{type(exc).__name__}: {exc}"
+        await store.record(session, "error", reason)
+        yield _event("error", {"message": reason})
+        yield _event("done", {"steps": [], "actions": session.actions})
+        return
     steps: list[dict[str, Any]] = []
     said: list[str] = []
     try:

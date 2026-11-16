@@ -214,6 +214,16 @@ def _check_owner(session: ConsoleSession, actor: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
+async def ensure_schema() -> None:
+    """建会话与对话两张表(checkfirst)。和账本、事故一样:启动时兜一次。"""
+    from engine.db.engine import engine
+    from engine.db.models.console_session import ConsoleMessageRow, ConsoleSessionRow
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: ConsoleSessionRow.__table__.create(c, checkfirst=True))
+        await conn.run_sync(lambda c: ConsoleMessageRow.__table__.create(c, checkfirst=True))
+
+
 class StorageUnavailable(RuntimeError):
     """会话持久化失败;开会话时不降级为内存会话。"""
 
@@ -806,6 +816,7 @@ __all__ = [
     "describe_pending",
     "describe_tools",
     "effective_permissions",
+    "ensure_schema",
     "get_session",
     "history",
     "persist",

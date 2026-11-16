@@ -92,7 +92,7 @@ onUnmounted(() => window.removeEventListener('keydown', onHotkey))
 
     <CommandPalette v-if="paletteOpen" :groups="navGroups" @close="hidePalette()" />
 
-    <!-- 控制台助手:全局悬浮窗,权限与审批由引擎定 -->
-    <AgentDock />
+    <!-- 右下角悬浮区:挂什么由插件决定(默认是控制台助手),装没装由引擎说 -->
+    <PluginDock />
   </div>
 </template>

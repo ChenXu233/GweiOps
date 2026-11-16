@@ -60,6 +60,11 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 默认打印 `009 (head)`,没有 `Rev:` 前缀(`--verbose` 才有),按 `Rev:` 过滤只会数出 0 个头,
 于是仓库什么状态都判失败。
 
+**表定义只有一处**:核心的表由迁移建,不由应用的 `ensure_schema` 建。`ensure_schema`
+留着只是 checkfirst 兜底(单测用内存/SQLite,不跑迁移)。两边各建一份的话,干净库
+上跑 `alembic upgrade head` 会挂在 `relation ... does not exist`——而 CI 只检查
+"是不是一条链",不建库,这个错到部署时才炸。所以新增表时先写迁移。
+
 ## gRPC 桩也要跟着 proto
 
 `proto/plugin.proto` 是进程外插件的 wire 契约,桩生成后提交进仓库(`engine/plugin_manager/grpc_proto/`)——

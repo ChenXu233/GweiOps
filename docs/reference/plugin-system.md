@@ -59,6 +59,7 @@ ui:
 | `hooks.offered` | 本插件发布的扩展点(声明用途) |
 | `hooks.subscribe` | 扩展点订阅;mode/priority/failure_mode/handler 见 Hook 一节 |
 | `scopes` | 插件要的配置块(scope 名 → `prefix` / `required` / `optional`),见[配置(Scope)](#配置scope) |
+| `data` | 插件要的库数据级别(`scopes: [read:own \| write:own \| host]`),见[插件读库](#插件读库) |
 | `effects` | 能力的效果声明,见[效果声明](#效果声明) |
 | `ui.widgets` | 声明式卡片;slot 为插槽名,kind 为 metric 或 list,span 为 1–4 |
 | `ui.pages` | iframe 页面;entry 缺省 index.html,禁止绝对路径、`..` 与反斜杠 |
@@ -86,19 +87,89 @@ ui:
 
 ## 运行期启停
 
-发现之后,启停不用重启进程:
+启停是**两层**,不是两层里挑一层。真的在跑 = 平台提供了 且 这个租户没关掉它。
+
+| 层 | 回答什么 | 存在哪 | 谁能改 |
+| --- | --- | --- | --- |
+| 部署级 | 这个部署提不提供它 | `plugin-enablement` scope + `PLUGINS_ENABLED` / `PLUGINS_DISABLED` + 清单 `default_enabled` | 部署配置、控制面 |
+| 租户级 | 这个租户选没选它 | 表 `plugin_tenancy(tenant, plugin, enabled, config, updated_by, updated_at)` | 该租户的 `plugins.write` |
+
+- 两层不覆盖,取交集。租户只能在自己的集合里选,开不了平台关掉的插件;平台那层
+  也不会被某一户的开关改掉——实例是所有租户共用的,按一户的选择决定装不装,等于
+  让第一户替所有人做决定。
+- 租户级决定在**解析时**过一遍(`registry.resolve` / `run_capability`),不是在
+  "装不装"那一步。该租户关掉的插件不参与匹配;别的租户照旧。
+- 没有行 = 这个租户没选过,跟随平台默认。"没选过"与"明确关掉"必须分得开,压成
+  一个值之后页面上就再也开不回去了。
+- 为什么单起一张表:`plugin_settings` 那套 scope 是**配置**语义(公共值打底、
+  租户覆盖、默认可继承);这里是**授权**,要答得出"是谁在什么时候决定让这个租户
+  跑这个插件"。第三方插件进 SaaS 之后,审计一定会问这一句。
 
 | 操作 | 做什么 | 端点 |
 | --- | --- | --- |
-| 打开 | 导入 + 实例化 + 注册 + `on_startup` | `POST /api/plugins/{name}/enable` |
-| 关掉 | `on_shutdown` + 从事件/能力/效果/Hook 四个索引里摘掉 | `POST /api/plugins/{name}/disable` |
+| 打开 | 导入 + 实例化 + 注册 + `on_startup`,并写一条本租户的决定 | `POST /api/plugins/{name}/enable?tenant=…` |
+| 关掉 | `on_shutdown` + 从事件/能力/效果/Hook 四个索引里摘掉,并写一条本租户的决定 | `POST /api/plugins/{name}/disable?tenant=…` |
 | 重扫目录 | 新出现的按决定启用,磁盘上没了的停用,已加载且没变的不动 | `POST /api/plugins/rescan` |
 
 - 权限是 `plugins.write`;`GET /api/plugins` 与 `plugins.read`。
-- 决定写进 `plugin-enablement` scope(`键=插件名`,`值=on/off`),启动时装回。写库失败只告警:开关已经生效,差别只是活不过重启。
+- 租户来自调用方令牌(`tenant_scope`),不是查询参数:同一个令牌报别人的租户是越权。
+- 平台没提供的插件,租户点开它是 **409** 并把原因写清楚——这是配置错误,不是权限问题。
+- `GET /api/plugins` 的 `PluginDTO` 因此有两个字段:`platform_available`(部署级)与
+  `tenant_enabled`(本租户),`enabled` = 两者都真。一个开关表达不了两件事。
 - 摘索引是四个索引一起摘,停用后它不再被解析到。
-- `GET /api/plugins` 列出包括未启用在内的全部插件,`enabled` / `instances` / `reason` 说明它此刻的状态与原因。
-- `GET /api/plugins/widgets` 只取已启用插件的卡片。
+- `GET /api/plugins/widgets` 只取两层都成立的插件卡片。
+- 改不动的一处取舍:**关掉插件不结束已开的会话**这件事在助手那条链上单独收口,
+  见[控制台助手](runtime.md#控制台助手)。
+
+## 插件读库
+
+插件读的是"它干活需要的事实",写世界的路径仍然只有出口一条。这件事拆成两层强制:
+
+**声明**:清单 `data.scopes`,三档,按"泄露后果"分而不是按表分。
+
+```yaml
+data:
+  scopes: [read:own]      # read:own | write:own | host
+```
+
+| 级别 | 给什么 |
+| --- | --- |
+| `read:own` | 只读、只看本租户 |
+| `write:own` | 本租户内写,只到插件自己的命名空间 |
+| `host` | 跨租户。只有本仓库内置插件能声明,第三方永远拿不到 |
+
+加载期就判,判的不是行为是声明:
+
+- 名字写错(`read:all` 之类)直接拒;
+- **外部插件声明 `data.scopes` 一律拒**——它跑在核心进程里,给了库通道就没有边界;
+  要读数据就走能力通道,由核心代查;
+- `host` 只发给本仓库内置插件。
+
+**连接**:`execute_task(task, params, ctx)` 的第三个参数。`ctx` 带 `tenant` /
+`binding` / `actor` / 清单声明过的 `scopes`,插件要的会话从 `ctx.data` 拿:
+
+```python
+async def execute_task(self, task, params, ctx):
+    async with ctx.data.read() as session:      # 没有 read:own 就抛 DataScopeError
+        rows = await session.execute(text("SELECT * FROM v_plugin_changes"))
+```
+
+- 会话是**按租户收口**的:事务里 `SET LOCAL gwei.tenant`,库侧 RLS 策略据此过滤。
+  插件忘了写 `where` 的后果是读到空集,不是读到别人的账。
+- 不发连接串。给插件一个 `DATABASE_URL` 就等于这次分级白做——它连 `users`、
+  `api_keys` 都读得到。
+- 没声明就拿不到会话对象:这是结构强制,不是约定。
+- 两个参数的老 `execute_task(task, params)` 仍然调得通(核心按签名判),进程外
+  代理也走这条兼容路径。
+
+库侧对应的是:
+
+- 行级安全:租户可见的表开了策略,表达式读 `current_setting('gwei.tenant', true)`。
+  **变量没设时比较为假**,所以默认是看不见;核心自己的连接不设它,不受影响。
+- `FORCE ROW LEVEL SECURITY`:表属主也受约束。唯一绕过它的是超级用户与
+  `BYPASSRLS` 角色——部署里应用账号往往就是,所以插件那条路必须走受限角色。
+- 只读视图 `v_plugin_changes` / `v_plugin_incidents` / `v_plugin_issues` 与
+  `gwei_plugin_reader` 角色:只 `SELECT`,不授写。要写就走出口。
 
 ## 进程外 gRPC 插件
 
@@ -215,8 +286,10 @@ triggers:
 
 ## UI 插槽与 iframe 页面
 
-- **槽位是核心声明的清单**([slots.py](../../engine/plugin_manager/slots.py)):`issue-board.bento`(首页议题板的卡片列)、`issue-detail.sidebar`(议题详情右栏)、`settings.plugins`(设置页底部)。插件在清单里写了别的槽位,加载期直接拒绝。
-- **widgets**:核心前端按 schema 渲染,插件不注入代码;当前 kind 为 metric / list,variant 为 default / green / yellow / red。页面侧统一用 `<PluginSlot slot="...">` 渲染,拉不到卡片时留一句提示,不把页面撑成空白。
+- **槽位是核心声明的清单**([slots.py](../../engine/plugin_manager/slots.py)):`issue-board.bento`(首页议题板的卡片列)、`issue-detail.sidebar`(议题详情右栏)、`settings.plugins`(设置页底部)、`global.dock`(右下角悬浮区)。插件在清单里写了别的槽位,加载期直接拒绝。
+- **`global.dock` 是单占槽**:同一时刻只渲染一张卡片,由 `SINGLE_OCCUPANCY` 声明。两个插件抢同一个位置不会报错,只会叠成一团——看起来像样式坏了,而不是配置错了,所以这个约束由核心持有。
+- **助手浮窗就挂在这个槽上**:布局文件里没有 `<AgentDock />`,只有 `<PluginDock />`(拉槽,有卡片才渲染)。认领这个槽的插件是内置的 [console-agent](../../plugins/builtin/agents/console-agent/plugin.yaml);关掉它,窗口就不存在——不是渲染一个空窗口。
+- **widgets**:核心前端按 schema 渲染,插件不注入代码;当前 kind 为 metric / list(以及 `global.dock` 上的 `dock`),variant 为 default / green / yellow / red。页面侧统一用 `<PluginSlot slot="...">` 渲染,拉不到卡片时留一句提示,不把页面撑成空白。
 - **pages**:前端动态路由 `/plugins/<name>` 用 `<iframe sandbox="allow-scripts">` 加载;`GET /api/plugins/{name}/ui/{path}` 由 engine 提供资产,resolve 后必须仍在插件 ui 目录内。
 - 相关端点:`GET /api/plugins`、`GET /api/plugins/widgets`、`GET /api/metrics`。
 
@@ -259,8 +332,8 @@ config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GIT
 - 用模型声明时,写入前顺手做形状校验:类型不对拒(422),"还没填全"不算错,缺什么由 `missing` 单独报。
 - **值按租户分开**:`plugin_settings` 的主键是 `(tenant, scope, key)`。读的时候公共值打底、租户值覆盖;写的时候写进调用方令牌声明的租户。取值的接口都多一个 `tenant` 参数,不传就是只用公共值。
 - 删除按租户生效:删掉租户覆盖值,读的时候落回公共值而不是落空。要彻底去掉公共值,用运维通配令牌删。
-- `plugin_settings` 的表结构变过一次(加了 `tenant` 列),仓库没有迁移工具:`ensure_schema` 是 checkfirst,老库要先 `DROP TABLE plugin_settings;` 让它重建。
-- 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
+- **配置与授权是两套**:上面这些是配置(`plugin_settings`,打底 + 租户覆盖);插件启停是授权(`plugin_tenancy`,默认跟随平台、租户自己选),见[运行期启停](#运行期启停)。别把开关塞进 scope——混在一起之后,人以为在改配置,实际在改授权。
+- 缺项由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - **进程外插件在清单 `scopes` 块里声明**同一组事实,核心登记之后把值推下去(见[配置下发](#配置下发))。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
 - 现有使用者:`plugins/builtin/adapters/github-app/`、`plugins/builtin/adapters/alertmanager/`。
@@ -342,6 +415,11 @@ effects:
 - `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账。跑在进程外沙箱里的 harness 不经过这个接缝,它直接调[出口端点](runtime.md);
 - `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为查询付账本成本。模型拿不准就给空 effects,空效果是合法结论;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时**不产出补丁**并点名日志(不回退直连——回退直连会让 PLUGINS_DISABLED=sensor-agent,fixer-agent 失效);
+- 控制台助手的**循环**也是一个能力:`console.chat`。`engine/agent/provider.py` 的
+  `build_agent()` 向注册表要一个提供者(默认实现是内置插件 `console-agent`),
+  找不到就抛 `AgentUnavailable` 并点名该开哪个插件——不塞一个内置循环。会话、
+  权限、待批、`MAX_ACTIONS`、审计、出口闸门都留在核心,插件只负责"给定会话与工具
+  清单,给我一个能跑多步的 agent";
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不重复执行。
 
 ## 测试
@@ -352,5 +430,7 @@ effects:
 - `tests/test_integration/test_intent_llm.py`:模型提供者的正常路径、各类降级(不编)、菜单剔除、履历进提示词与 evidence。
 - `tests/test_integration/test_plugin_enablement_runtime.py`:运行期启停改真实行为、未启用的插件也列得出来、决定活过重启、白名单写错点名、内置插件声明的能力真的调得通。
 - `tests/test_integration/test_grpc_plugins.py`:真起一个 gRPC 服务端,覆盖能力解析、Hook 往返、超时隔离、连不上时的行为,以及 `deploy/grpc-plugin-demo` 的端到端跑通。
+- `tests/test_integration/test_plugin_tenancy.py`:两层启停(租户关了别的租户照旧、租户开不了平台关掉的、写的是租户决定不是全局)、助手浮窗确实挂在一个插件上。
+- `tests/test_integration/test_plugin_data.py`:数据声明的加载期判据(外部插件与 `host`)、没声明就没有会话、两参/三参 `execute_task` 都调得通,以及门控部分——策略确实把可见范围收到了本租户、受限角色写不进去。
 - `tests/test_integration/test_grpc_effect_provider.py`:进程外插件当效果提供者——四方法与进程内一致、句柄往返、两种失败分得开、verify 不过照样回滚、示例插件跑完一条完整单元。
 - `tests/test_integration/test_grpc_plugin_config.py`:清单声明的 scope 进配置表、启动后与改配置后推送、只推相关插件、拒收与缺项都说得出、没实现 `configure` 就不推。
