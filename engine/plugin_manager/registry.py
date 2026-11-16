@@ -514,7 +514,7 @@ class PluginRegistry:
         await self._disable_now_async(name)
 
     def _disable_now(self, name: str) -> None:
-        """同步摘除(磁盘上已经不在了的那种)。"""
+        """同步摘除,供磁盘上插件已被删除后的再发现流程使用。"""
         self._startup_errors.pop(name, None)
         self._config_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
@@ -798,7 +798,7 @@ class PluginRegistry:
     async def push_config(self, scope: str | None = None) -> dict[str, str]:
         """把配置重推给相关实例,返回 清单名 -> 失败说明。
 
-        `scope` 给了就只推声明了这个 scope 的插件——人改完一项配置,不该让所有
+        `scope` 给了就只推声明了该 scope 的插件——人改完一项配置,不该让所有
         插件的连接都抖一下。这是运行期的事:改配置不用重启。
         """
         from . import scopes as plugin_scopes

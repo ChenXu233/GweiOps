@@ -41,7 +41,7 @@ curl -sS -X PUT localhost:8000/api/settings/scopes/demo-remote-scan \
 清单里 `default_enabled: false`:不被显式打开就不会加载,`GET /api/plugins`
 会把它列出来并说明原因。
 
-`PLUGINS_GRPC` 形式的临时接入也给支持(`name=host:port`),但那种方式没有清单,
+`PLUGINS_GRPC` 形式的临时接入也给支持(`name=host:port`),但该方式没有清单,
 也就没有任何能力声明,只能用来确认远端可达。正式接入把 `plugin.yaml` 放进插件目录。
 
 ## 换个语言写

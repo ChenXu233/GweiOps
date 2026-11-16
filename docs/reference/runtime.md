@@ -322,4 +322,4 @@
 | --- | --- |
 | 清单里的 `endpoint` | 进程外插件监听 `host:port`;发现流程据此建代理,不导入代码 |
 | `PLUGINS_GRPC_TIMEOUT_S` | 调一个远端插件的超时,默认 10 秒 |
-| `PLUGINS_GRPC` | `name=host:port,...`,给"临时接一个没有清单的插件"用;那种接法没有能力声明 |
+| `PLUGINS_GRPC` | `name=host:port,...`,临时接入清单外的插件;该方式没有能力声明 |

@@ -45,7 +45,7 @@ def get_sensor():
 
 
 def get_fixer():
-    """取修复智能体。与 `get_sensor` 同一规矩:取不到就是没这个能力。"""
+    """取修复智能体。与 `get_sensor` 同一规矩:取不到就是 fixer 能力缺失。"""
     registry = _registry()
     instance = registry.get("fixer-agent")
     if instance is not None:

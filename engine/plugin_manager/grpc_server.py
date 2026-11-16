@@ -1,7 +1,7 @@
 # engine/plugin_manager/grpc_server.py
 """给进程外插件作者用的服务端骨架 —— 只实现业务方法,协议细节在这里。
 
-没有这个包的话,每个插件都要自己:定义 servicer、把 JSON 编解码写在每个 RPC 里、
+缺了本包的话,每个插件都要自己:定义 servicer、把 JSON 编解码写在每个 RPC 里、
 把返回值塞进对应的 protobuf 消息。那些都是机械劳动,而且每写一遍就多一处不一致。
 
 用法:
