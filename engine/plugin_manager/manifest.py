@@ -57,6 +57,21 @@ class EffectDecl:
         )
 
 
+@dataclass(frozen=True)
+class ScopeDecl:
+    """清单里声明的一块配置:插件要哪些键、从哪个前缀读。
+
+    进程内插件用自己的代码 `config.register_scope(...)` 声明,核心导入它之后才知道
+    它要什么;进程外插件没有代码可导入,声明只能落在清单里。两边要的东西是同一组
+    事实(字段名、前缀、必填与否),所以形状也照抄一份。
+    """
+
+    name: str
+    prefix: str = ""
+    required: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()
+
+
 SCHEDULE_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
@@ -146,6 +161,9 @@ class Manifest:
     ui_widgets: list[UiWidget] = field(default_factory=list)
     ui_pages: list[UiPage] = field(default_factory=list)
     effects: dict[str, EffectDecl] = field(default_factory=dict)
+    # 插件要的配置块。进程内插件在代码里注册;进程外插件只能在清单里说,
+    # 核心据此把 scope 注册进配置表并把值推下去。
+    scopes: dict[str, ScopeDecl] = field(default_factory=dict)
 
     @property
     def event_subscriptions(self) -> list[str]:
@@ -251,6 +269,7 @@ class Manifest:
             pages.append(UiPage(title=p["title"], entry=entry))
 
         effects = _parse_effects(path, raw.get("effects") or {})
+        scopes = _parse_scopes(path, raw.get("scopes") or {})
         schedules = _parse_schedules(
             path, list(raw.get("triggers") or []), list(raw.get("capabilities") or [])
         )
@@ -277,6 +296,7 @@ class Manifest:
             ui_widgets=widgets,
             ui_pages=pages,
             effects=effects,
+            scopes=scopes,
         )
 
 
@@ -343,6 +363,38 @@ def _parse_schedules(
 
         out.append(ScheduleDecl(capability=capability, every_s=seconds))
     return tuple(out)
+
+
+def _parse_scopes(path: Path, raw: Any) -> dict[str, ScopeDecl]:
+    """解析 scopes 块。形状不对即拒绝注册——写错的声明只会在第一次推配置时才炸。"""
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{path}: scopes 必须是映射(scope 名 -> 字段声明)")
+
+    out: dict[str, ScopeDecl] = {}
+    for name, spec in raw.items():
+        scope_name = str(name or "").strip()
+        if not scope_name:
+            raise ManifestError(f"{path}: scope 名不能为空")
+        if not isinstance(spec, dict):
+            raise ManifestError(f"{path}: scope {scope_name} 必须是映射")
+        required = spec.get("required") or []
+        optional = spec.get("optional") or []
+        for group, keys in (("required", required), ("optional", optional)):
+            if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+                raise ManifestError(f"{path}: scope {scope_name} 的 {group} 必须是字符串列表")
+        overlap = sorted(set(required) & set(optional))
+        if overlap:
+            raise ManifestError(
+                f"{path}: scope {scope_name} 的 {', '.join(overlap)} 同时在 required "
+                "与 optional 里:必填与可选只能挑一个"
+            )
+        out[scope_name] = ScopeDecl(
+            name=scope_name,
+            prefix=str(spec.get("prefix") or ""),
+            required=tuple(required),
+            optional=tuple(optional),
+        )
+    return out
 
 
 def _parse_effects(path: Path, raw: Any) -> dict[str, EffectDecl]:

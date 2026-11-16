@@ -49,6 +49,24 @@ def _env_names(var: str) -> set[str] | None:
     return {item.strip() for item in raw.replace(":", ",").split(",") if item.strip()}
 
 
+def _errors_of(name: str, startup: dict[str, str], config_errors: dict[str, str]) -> str:
+    """页面上那句"为什么它不能用"。起不来与配置没到是两件事,分行说清楚。"""
+    parts = [text for text in (startup.get(name, ""), config_errors.get(name, "")) if text]
+    return ";".join(parts)
+
+
+def _register_scopes(manifest: Manifest) -> None:
+    """把清单声明的配置块登记进配置表。写坏的声明在加载期就该拒。
+
+    清单在 `_record` 里已经解析并校验过 scopes 的形状,这里只做登记。
+    """
+    from .scopes import register_manifest_scopes
+
+    added = register_manifest_scopes(manifest)
+    if added:
+        logger.info("Plugin %s 声明了配置 scope: %s", manifest.name, ", ".join(added))
+
+
 def plugin_enabled(name: str, default_enabled: bool = True) -> bool:
     """发现 != 启用。
 
@@ -114,6 +132,9 @@ class PluginRegistry:
         self._decisions: dict[str, bool] = {}
         # 清单名 -> on_startup 的失败原因。注册成功不等于能用。
         self._startup_errors: dict[str, str] = {}
+        # 清单名 -> 配置没推到插件那边的原因。它不属于"起不来":插件在跑,
+        # 差别是它手里是旧配置——两种失败混在一起会让人去查错的地方。
+        self._config_errors: dict[str, str] = {}
         self._launched = False
 
     # ------------------------------------------------------------------
@@ -176,6 +197,7 @@ class PluginRegistry:
                 )
                 logger.error("Failed to load plugin at %s: %s", manifest_path, e)
                 continue
+            _register_scopes(manifest)
             if manifest.name in seen:
                 logger.error(
                     "Plugin %s 出现两次(%s 与 %s),只认第一个",
@@ -259,6 +281,7 @@ class PluginRegistry:
                 f"插件名 {manifest.name} 出现两次:{existing.plugin_dir} 与 "
                 f"{manifest_path.parent}。插件名是唯一标识,换一个目录名或改名"
             )
+        _register_scopes(manifest)
         self._available[manifest.name] = Discovered(manifest, manifest_path.parent, module_name)
 
     def _enabled(self, manifest: Manifest) -> bool:
@@ -350,6 +373,9 @@ class PluginRegistry:
                     f"{manifest.name}: effect {capability} 未列入 capabilities,解析不到提供者"
                 )
 
+        # 清单声明的配置先进配置表:直接 register() 进来的实例(进程外代理、
+        # 手工挂的替身)不经过发现流程,少了这一步它们推下去的值永远是空的。
+        _register_scopes(manifest)
         self._manifests.setdefault(manifest.name, manifest)
         self._instances[instance_key] = instance
         self._instance_names[instance_key] = manifest.name
@@ -405,6 +431,7 @@ class PluginRegistry:
 
     def _reset(self) -> None:
         self._startup_errors.clear()
+        self._config_errors.clear()
         self._manifests.clear()
         self._instances.clear()
         self._instance_names.clear()
@@ -446,7 +473,7 @@ class PluginRegistry:
                     enabled=bool(instances),
                     instances=instances,
                     reason=self._decision_reason(manifest),
-                    error=self._startup_errors.get(name, ""),
+                    error=_errors_of(name, self._startup_errors, self._config_errors),
                 )
             )
         # 直接 register() 进来的(进程外代理、单测手工挂的):没有目录,不能启停,
@@ -461,7 +488,7 @@ class PluginRegistry:
                     enabled=bool(instances),
                     instances=instances,
                     reason="直接注册(不在插件目录里)",
-                    error=self._startup_errors.get(name, ""),
+                    error=_errors_of(name, self._startup_errors, self._config_errors),
                 )
             )
         return out
@@ -500,6 +527,8 @@ class PluginRegistry:
                     metrics.increment("plugin_startup_errors_total", {"plugin": key})
                     logger.error("Plugin %s failed to start: %s", key, e)
                     self._startup_errors[name] = f"启动失败:{e}"
+                    continue
+                await self._push_config(key, instance)
 
     async def disable(self, name: str) -> None:
         """停用一个插件:关掉它的实例,再从索引里摘掉。已经停了也不报错。"""
@@ -511,6 +540,7 @@ class PluginRegistry:
     def _disable_now(self, name: str) -> None:
         """同步摘除(磁盘上已经不在了的那种),不留 on_shutdown 的机会。"""
         self._startup_errors.pop(name, None)
+        self._config_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
         for key in keys:
             self._drop_instance(key)
@@ -518,6 +548,7 @@ class PluginRegistry:
 
     async def _disable_now_async(self, name: str) -> None:
         self._startup_errors.pop(name, None)
+        self._config_errors.pop(name, None)
         keys = [k for k, owner in self._instance_names.items() if owner == name]
         for key in keys:
             instance = self._instances.get(key)
@@ -763,7 +794,57 @@ class PluginRegistry:
                 metrics.increment("plugin_startup_errors_total", {"plugin": key})
                 logger.error("Plugin %s failed to start: %s", key, e)
                 self._startup_errors[name] = f"启动失败:{e}"
+                continue
+            await self._push_config(key, instance)
         self._launched = True
+
+    async def _push_config(self, key: str, instance: PluginBase) -> None:
+        """把清单声明的配置交给这个实例。进程外插件只能从这里拿到值。
+
+        推失败不让启动失败:插件在跑,差别只是它手里没有配置——那件事要进
+        日志与 `states()` 的 error,而不是把整个插件判成起不来。
+        """
+        from . import scopes as plugin_scopes
+
+        manifest = self._manifests.get(self._instance_names.get(key, ""))
+        if manifest is None or not manifest.scopes:
+            return
+        problems = await plugin_scopes.push(
+            instance, manifest, str(getattr(instance, "tenant", "") or "")
+        )
+        name = manifest.name
+        if problems:
+            self._config_errors[name] = "配置没推下去:" + ";".join(problems)
+            logger.warning("Plugin %s 的配置没推完:%s", name, ";".join(problems))
+        else:
+            self._config_errors.pop(name, None)
+
+    async def push_config(self, scope: str | None = None) -> dict[str, str]:
+        """把配置重推给相关实例,返回 清单名 -> 失败说明。
+
+        `scope` 给了就只推声明了这个 scope 的插件——人改完一项配置,不该让所有
+        插件的连接都抖一下。这是运行期的事:改配置不用重启。
+        """
+        from . import scopes as plugin_scopes
+
+        failures: dict[str, str] = {}
+        for key, instance in self._instances.items():
+            manifest = self._manifests.get(self._instance_names.get(key, ""))
+            if manifest is None or not manifest.scopes:
+                continue
+            if scope is not None and scope not in manifest.scopes:
+                continue
+            problems = await plugin_scopes.push(
+                instance, manifest, str(getattr(instance, "tenant", "") or "")
+            )
+            if problems:
+                failures[manifest.name] = ";".join(problems)
+                self._config_errors[manifest.name] = "配置没推下去:" + ";".join(problems)
+            else:
+                # 推成功就把上一次的失败说明清掉,不然页面会一直挂着一句已经不成立的话
+                self._config_errors.pop(manifest.name, None)
+        return failures
+
 
     async def shutdown(self) -> None:
         for key, instance in self._instances.items():
