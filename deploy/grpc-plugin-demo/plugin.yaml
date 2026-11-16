@@ -1,7 +1,7 @@
 # 进程外插件示例:自己的进程,自己的依赖,核心只通过 gRPC 调它。
 #
 # 与进程内插件的差别只有一个:`endpoint` 代替 `class_name`。能力、任务名映射、
-# 效果声明、配置声明、Hook 订阅、周期这些照旧写在这里——声明留在清单,wire 只承载调用。
+# 效果声明、配置声明、Hook 订阅、周期照旧写在这里——声明留在清单,wire 只承载调用。
 name: demo-remote-scan
 version: 0.1.0
 type: action

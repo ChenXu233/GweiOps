@@ -39,7 +39,7 @@ def get_sensor():
             "插件注册表还没发现过任何插件:先 registry.discover() 再取 sensor-agent"
         )
     raise LookupError(
-        "这个部署没有启用 sensor-agent:检查 PLUGINS_ENABLED / PLUGINS_DISABLED "
+        "部署没有启用 sensor-agent:检查 PLUGINS_ENABLED / PLUGINS_DISABLED "
         "与清单里的 default_enabled,或在控制台的插件页把它打开"
     )
 
@@ -55,6 +55,6 @@ def get_fixer():
             "插件注册表还没发现过任何插件:先 registry.discover() 再取 fixer-agent"
         )
     raise LookupError(
-        "这个部署没有启用 fixer-agent:补丁生成没有提供者,"
+        "部署没有启用 fixer-agent:补丁生成没有提供者,"
         "检查 PLUGINS_ENABLED / PLUGINS_DISABLED,或在控制台的插件页把它打开"
     )

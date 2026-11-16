@@ -2,7 +2,7 @@
 """给进程外插件作者用的服务端骨架 —— 只实现业务方法,协议细节在这里。
 
 缺了本包的话,每个插件都要自己:定义 servicer、把 JSON 编解码写在每个 RPC 里、
-把返回值塞进对应的 protobuf 消息。那些都是机械劳动,而且每写一遍就多一处不一致。
+把返回值塞进对应的 protobuf 消息。这些都是机械劳动,而且每写一遍就多一处不一致。
 
 用法:
 
@@ -29,7 +29,7 @@
         async def window(self, effect, handle): ...          -> Window / dict
         async def verify(self, effect, handle): ...          -> (ok, facts)
 
-不写这四个方法也能用:那些阶段会退回同一个 `execute_task(task, params)`,
+不写 execute/undo/window/verify 四个方法也能用:对应阶段会退回同一个 `execute_task(task, params)`,
 `params` 里带着 `phase` / `effect` / `handle`,自己分派即可。
 
 **失败语义**:抛 `EffectNotApplied` 表示"确定没碰到下游",核心把单元记成可重试的
