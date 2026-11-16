@@ -6,7 +6,7 @@
 
 界面原来假设只有一个仓库。管三个仓库时,议题板是一张全量表,仓库页是一张全量卡片墙,配置与密钥只有一份 —— 要单独看某个仓库,没有地方点。
 
-这一版把**工作区**这一层落下来,侧边栏最上面加了选择器,仓库的身份换成"来源 + 仓库全名"。这份文档写那一版的判断与边界;**"一个人属于多个工作区"不在这一版里**,见 §6 与[身份与授权](identity-and-authorization.md)。
+工作区这一层已经落下来,侧边栏最上面是选择器,仓库的身份换成"来源 + 仓库全名",上面补回了项目这一级。这份文档写它的判断与边界;人、凭据与成员关系怎么分开,见[身份与授权](identity-and-authorization.md)。
 
 ## 1 一句话
 
@@ -108,17 +108,19 @@ changes.approve@github-acme-api      只在这一个仓库上
 
 形状与判据见[身份与授权](identity-and-authorization.md) §4,本文不重复。
 
-### 6.3 一人多工作区:还没做
+### 6.3 一人多工作区
 
-同一个人被邀进第二个工作区时,今天会按 `uq_users_tenant_email` 建第二条用户记录:第二份密码、两个"最后登录"。这是 SaaS 真正的缺口,目标形状与迁移四步在[身份与授权](identity-and-authorization.md) §5。
+同一个人被邀进第二个工作区时,多出来的是**一条成员关系**,不是第二条密码:`persons` 一条、`memberships` 两条,改一次密码两处同时生效。形状与迁移见[身份与授权](identity-and-authorization.md) §5。
 
 ## 7 已有接口
 
 | 接口 | 用途 |
 | --- | --- |
-| `GET /api/workspaces` | 这个部署里的工作区,以及每个里面有几个仓库、来自哪些平台 |
-| `GET /api/repos?workspace=` | 这个工作区里的仓库,每行带来源、slug 与所属项目 |
-| `GET /api/board?tenant=&project=&repo=` | 议题板,`project` / `repo` 是范围闸 |
-| `GET /api/me` | 我是谁、属于哪些工作区、在这里是什么角色 |
+| `GET /api/workspaces` | 我进得去的工作区,以及每个里面有几个仓库、来自哪些平台 |
+| `GET /api/workspaces/{slug}/repos` | 这个工作区里的仓库,每行带来源、slug 与所属项目 |
+| `GET /api/workspaces/{slug}/board?project=&repo=` | 议题板,`project` / `repo` 是范围闸 |
+| `GET /api/me` | 我是谁、属于哪些工作区、每个里面是什么角色 |
 
-当前工作区记在 cookie `gwei-workspace`。服务端渲染时也要知道它在哪个工作区,否则首屏画的内容和挂载后换掉的不一致。
+工作区**在路径里**:接口是 `/api/workspaces/{slug}/…`,界面是 `/workspaces/{slug}/issues`。理由在[身份与授权](identity-and-authorization.md) §2 第 4 条 —— 资源要有 URL,链接自带"这是哪一道账",刷新、分享、同事点开都落在同一道上。cookie 只说明"上次看的是哪个",它不该能改数据。
+
+一个只属于一个工作区的人不必每条链接都带那一段:没有工作区段时按他最早的那条成员关系回答。界面首屏也这样打开,随后把地址换成带那一段的。

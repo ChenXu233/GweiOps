@@ -14,7 +14,7 @@
 | 查当前运行行为 | [运行时参考](reference/runtime.md) → [插件系统](reference/plugin-system.md) |
 | 想知道一次自动变更的边界 | [变更单元契约](explanation/change-unit-contract.md) |
 | 改界面、对齐交互 | [议题工作台](explanation/issue-workspace.md) → [工作区模型](explanation/workspace-model.md) |
-| 改鉴权、成员、一人多工作区 | [身份与授权](explanation/identity-and-authorization.md) → [运行时参考 · 鉴权](reference/runtime.md#鉴权与租户) |
+| 改鉴权、成员、一人多工作区 | [身份与授权](explanation/identity-and-authorization.md) → [运行时参考 · 控制台鉴权](reference/runtime.md#控制台鉴权) |
 | 用/改界面右下角的助手 | [运行时参考 · 控制台助手](reference/runtime.md#控制台助手) |
 | 提交 PR 前想知道 CI 会查什么 | [CI 校验](../CI-CHECKS.md) |
 | 把 tag 部署到服务器 / 内网怎么连 | [根 README · 部署 CI](../README.md#部署-cidogfood) |

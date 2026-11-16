@@ -52,6 +52,19 @@ python scripts/dump_openapi.py                      # 改完响应模型就重�
 pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生成
 ```
 
+## 一人多工作区的审计清单
+
+拆表之后,"同一个邮箱挂在两个工作区"这件事的结论在 `deploy/identity-merge.json`。
+清单本身可以随时重跑:
+
+```bash
+python scripts/identity_audit.py            # 打出清单,待判定的在最前
+python scripts/identity_audit.py --check    # 有没结论的就非零退出
+```
+
+`--check` **不接进 CI**:它依赖一份特定的库,而且判据是"人看过没有",不是"代码对不对"。
+接成门禁只会让每次构建多一个与改动无关的红。
+
 ## 迁移也得是一条链
 
 `engine/migrations/versions/` 里每个文件写一个 `revision`,用 `down_revision` 指向上一个。

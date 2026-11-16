@@ -88,7 +88,7 @@
 | --- | --- | --- |
 | 密钥(`gwei_` 前缀) | 外界的 agent | 它的权限集 ∩ 它自己的工具白名单(`tools`) |
 | 静态令牌 | harness、alertmanager | `operate` 看全部,`read` 只看只读工具 |
-| 会话 cookie | 浏览器里的人 | 角色算出来的权限 |
+| 会话 cookie | 浏览器里的人 | 那一个工作区里的角色算出来的权限 |
 | 没有凭据 | 没配任何凭据的部署 | 不筛(单机自用) |
 
 同一套判据也用在出口(`GET /api/agent/exits` 与 `POST /api/agent/exits/{name}`):清单同样收窄,调越界的工具是 403。
@@ -206,11 +206,19 @@ changes.approve@github-acme-api     只在这一个仓库上能放行
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
 - 令牌写错(段数不对、scope 非法、重复)拒绝启动,不静默降级成"不鉴权"。
 
-### 成员身份的现状
+### 人、成员关系与会话
 
-一个人的身份今天就是一行 `users`(`tenant_id` + `email` 唯一)。同一份身份跨两个工作区共用还没有落地:同一个人被邀进第二个工作区时会建第二行。目标形状(person / membership)与迁移四步见[身份与授权](../explanation/identity-and-authorization.md) §5。
+| 表 | 一行是什么 |
+| --- | --- |
+| `persons` | 一个人。`email` 在整个部署里唯一,`password_hash` / `last_login_at` 只在这里 |
+| `memberships` | 一个人在**一个工作区**里的身份:主键 `user_id`、`parent_id`(子成员)、`permissions`(工作区级的个人追加) |
+| `user_sessions` | 一次登录,挂 `person_id` —— 换工作区不重新登录 |
+| `user_roles` | 成员 × 角色,`user_id` 是成员关系的 |
+| `user_contacts` / `password_reset_tokens` / `external_identities` | 联系方式 / 找回密码 / OIDC 绑定,都挂 `person_id` |
 
-`GET /api/me` 已经是拆开之后的形状(`ActorDTO`:一个人 + 他在每个工作区的角色),现在填的是一个工作区的那一份。
+`user_id` 这个列名保留下来,值是**成员关系的 id**:会话、审计、"谁点的头"问的一直是"这个工作区里的哪个人"。改密码只在 `POST /api/auth/password`(它属于人);成员接口带密码直接拒绝。
+
+`GET /api/me` 回答一个人 + 他在每个工作区里的角色,顶层那几个字段只对**这次请求落在的那个工作区**算数。形状与判据见[身份与授权](../explanation/identity-and-authorization.md) §5。
 
 ## 注册与账号核验
 
@@ -330,7 +338,8 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 ## 租户
 
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
-- `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
+- `projects` 唯一约束 `(tenant_id, slug)`(`slug` 是 `来源-仓库全名`,`/` 也压成 `-`);`issues` 唯一约束 `(project_id, github_id)`。
+- 工作区在路径里(`/api/workspaces/{slug}/…`),见[工作区怎么带](#工作区怎么带);查询串的 `tenant` 不再生效。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
 - **隔离在库上,不在 SQL 里**:租户可见的表开了行级安全,策略读
   `current_setting('gwei.tenant', true)`;变量没设时比较为假,所以默认是看不见。
@@ -373,16 +382,33 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 ## API
 
+### 工作区怎么带
+
+**路径里**:`/api/workspaces/{slug}/…`。资源要有 URL,链接自带"这是哪一道账"。中间件把这一段折成路由认得的那条路径,并在同一步把工作区定死(`engine/api/auth.py` 的 `make_middleware` / `workspace_access`)。
+
+| 情形 | 结果 |
+| --- | --- |
+| 路径里写了工作区,且他是成员 | 用这个 |
+| 路径里写了,但他不是成员 | 403,说清是哪个工作区 |
+| 路径里没写,令牌 / 会话声明了工作区 | 用令牌那一个 |
+| 路径里没写,令牌的租户是 `*`,或没配鉴权 | 不限 |
+
+查询串的 `tenant` 不再生效 —— 两份真相源迟早一边说 Acme 一边说 Beta。机器那侧(静态令牌、密钥、`/mcp`)本来就是写死一个租户,路径里写另一个是 403。
+
+界面那一侧同理:页面是 `/workspaces/{slug}/issues`,调用点由 `packages/core/api/typed.ts` 的 `scopePath()` 补上接口那一段。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查 |
-| GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它。`?project=<slug>` / `?repo=<slug>` 是范围闸的两档(项目 / 仓库),仓库档优先;`?tenant=<slug>` 与令牌声明的租户不一致时是 403 |
+| GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它。`?project=<slug>` / `?repo=<slug>` 是范围闸的两档(项目 / 仓库),仓库档优先。工作区在路径里,查询串的 `tenant` 不再生效 — 见上面的「工作区怎么带」 |
 | GET | `/api/issues/{id}/timeline` | 议题时间线:三个状态 + 各轮次的分段证据(见下) |
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
-| GET | `/api/workspaces` | 工作区列表(= 租户):各有几个仓库、来自哪些平台;令牌声明了租户时只返回它自己那一个 |
-| GET | `/api/repos` | 仓库列表;`?workspace=<slug>` 收窄到一个工作区,不给就是令牌那一个(无令牌时是全部)。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名,不用转义就能进查询串)、`project` / `projectName`。项目行不出现在这里 |
-| GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;`?workspace=<slug>` 同上 |
+| GET | `/api/workspaces` | **我进得去**的工作区(= 租户):各有几个仓库、来自哪些平台。人按成员关系算,机器返回令牌那一个 |
+| GET | `/api/repos` | 仓库列表:当前工作区里的仓库。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
+| GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题 |
 | GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/me` | 我是谁 + 我在每个工作区里的角色。顶层 `permissions` 只对这次请求落在的那个工作区算数 |
+| GET | `/api/auth/me` | 同一个形状,老入口 |
 | GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |
 | POST | `/api/auth/register/start` | 发注册验证码 |
 | POST | `/api/auth/register/verify` | 验码建号并登录 |
