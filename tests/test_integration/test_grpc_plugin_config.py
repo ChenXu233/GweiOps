@@ -1,7 +1,7 @@
 # tests/test_integration/test_grpc_plugin_config.py
 """进程外插件的配置:清单声明、核心登记、推给对面。
 
-进程外插件读不到核心的环境变量与业务库,`config.get_scope_config()` 在它那一侧
+进程外插件读不到核心的环境变量与业务库,`config.get_scope_config()` 在插件进程里
 什么都不返回。所以配置只有一条路可走:核心把它送过去。这里的用例钉的是这条路——
 以及"送不过去时说得清楚"这件事。
 """

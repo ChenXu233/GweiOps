@@ -144,7 +144,7 @@ def test_list_includes_disabled_plugins_with_reason():
     client = _client()
     rows = {p["name"]: p for p in client.get("/api/plugins").json()}
 
-    # 清单里 default_enabled: false 的那几个必须出现,且 enabled 为假
+    # 清单里 default_enabled: false 的 cnb/gitlab/alertmanager 适配器必须出现,且 enabled 为假
     for name in ("cnb-adapter", "gitlab-adapter", "alertmanager-adapter"):
         assert name in rows, f"{name} 在清单里,却没在列表里——页面上就没法把它打开"
         assert rows[name]["enabled"] is False

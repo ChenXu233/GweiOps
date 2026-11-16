@@ -1,5 +1,5 @@
 # engine/plugin_manager/scopes.py
-"""插件的配置声明与下发 —— 让进程外插件也能拿到自己的那几项配置。
+"""插件的配置声明与下发 —— 让进程外插件也能拿到清单 scopes 声明的配置。
 
 进程内插件用代码声明配置(`config.register_scope` / `register_model_scope`),核心
 导入它之后才知道它要什么。进程外插件没有代码可导入,声明只能落在清单里:
@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 def register_manifest_scopes(manifest: Manifest) -> list[str]:
     """把清单里的 scopes 块登记进配置表,返回这次新登记的 scope 名。
 
-    同名 scope 已经存在时**不覆盖**:那是插件自己在代码里注册的(带模型、带字段
-    说明),比清单里这份粗的声明更准。清单在进程内插件这里只是"也说了一遍"。
+    同名 scope 已经存在时**不覆盖**:已有声明来自插件代码的 `register_scope` / `register_model_scope`(带模型与字段
+    说明),比清单里的粗声明更准。清单在进程内插件这里只是"也说了一遍"。
     """
     added: list[str] = []
     for name, decl in sorted(manifest.scopes.items()):

@@ -202,7 +202,7 @@ def test_declared_capability_actually_resolves(builtin_registry, capability, par
     """清单里写的能力,`run_capability` 必须调得通。
 
     这条用例钉的是"任务名映射对不上实现":能力名 issue.label 缺省会推成
-    issue_label,而实现里叫 label——那时页面列着四个能力,一个都调不通。
+    issue_label,而实现里叫 label——修复前页面列着四个能力,一个都调不通。
     """
     result = asyncio.run(builtin_registry.run_capability(capability, params))
     assert "Unknown task" not in str(result.get("message", "")), result

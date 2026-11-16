@@ -52,8 +52,8 @@ def check_grpc_stubs() -> bool:
     """仓库里的 gRPC 桩必须与 proto/ 当前内容一致。
 
     桩是提交进仓库的(运行时不依赖 protoc),所以它和 openapi.json 一样会过期。
-    过期不会立刻报错:远端插件照样注册得上,只是调用时字段对不上——那是最难查的
-    一类。这里用生成脚本自己的 --check,不另写一份判据。
+    过期不会立刻报错:远端插件照样注册得上,只是调用时字段对不上,这类错误很难定位。
+    这里用生成脚本自己的 --check,不另写一份判据。
     """
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "gen_grpc_stubs.py"), "--check"],

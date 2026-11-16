@@ -49,7 +49,7 @@ def _env_names(var: str) -> set[str] | None:
 
 
 def _errors_of(name: str, startup: dict[str, str], config_errors: dict[str, str]) -> str:
-    """页面上那句"为什么它不能用"。起不来与配置没到是两件事,分行说清楚。"""
+    """GET /api/plugins 的 error 字段:"为什么它不能用"。起不来与配置推送失败是两件事,分行说清楚。"""
     parts = [text for text in (startup.get(name, ""), config_errors.get(name, "")) if text]
     return ";".join(parts)
 
@@ -777,7 +777,7 @@ class PluginRegistry:
     async def _push_config(self, key: str, instance: PluginBase) -> None:
         """把清单声明的配置交给该实例。进程外插件只能从这里拿到值。
 
-        推失败不让启动失败:插件在跑,差别只是它手里没有配置——那件事要进
+        推失败不让启动失败:插件在跑,差别只是它手里没有配置——推送失败要进
         日志与 `states()` 的 error,而不是把整个插件判成起不来。
         """
         from . import scopes as plugin_scopes

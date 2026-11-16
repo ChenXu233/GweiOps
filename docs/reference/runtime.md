@@ -101,7 +101,7 @@
 - 查询按 `tenant` 收窄(`GET /api/changes?tenant=`)。配置了令牌时它由令牌决定;未配置时它只是查询范围,见下节。
 - 阻断的单元有两个出口,各写一行账:放行(`approve`)与否决(`veto`)。放行只表示"此刻有人在场",执行后照样读窗口、照样验证,真正不可逆的如实记成 `irreversible`。
 - 撤销前置条件:最新行为已执行、有句柄,且窗口未过期。已撤销返回 409,未执行返回 400,提供者不可用返回 503;窗口过期或读不到窗口的撤销会被拒绝。窗口以写入时记下的值为准(对称撤销不会过期)。
-- 响应里每行带 `undoable` / `undo_reason` / `undo_expires_at`:撤销承诺会到期,`undoable` 在读取时计算,不落库。历史行按它自己的时刻计算——它就是那一刻的当前状态。
+- 响应里每行带 `undoable` / `undo_reason` / `undo_expires_at`:撤销承诺会到期,`undoable` 在读取时计算,不落库。历史行按它自己的时刻计算——每行在写入时就是当时的当前状态。
 - 放行前置条件:最新行为 `blocked`,否则 409。否决前置条件:最新行未执行,已执行的只能撤销。
 - 幂等:同一 `idempotency_key` 重放只复用账本结论,不二次外呼。
 
@@ -293,7 +293,7 @@
   或者 `incident_id` 落在该议题某次执行上。两条路都认。
 - **没有变更也返回**:`rounds` 为空数组(与"查不到"的 404 区分)。
 - 账本与事故各只扫最近的 `LEDGER_SCAN` / `INCIDENT_SCAN` 条,超了把 `truncated` 置真。
-- 同一条判定也服务 `GET /api/board`(首页那张列表),两处共用 `normalize_state`。
+- 同一判定也服务 `GET /api/board`(首页议题板),两处共用 `normalize_state`。
 - **继续改**是 `POST /api/issues/{id}/continue`(`{"instruction": "..."}`,≤500 字):
   把人的一句话排成一轮 `fix_suggestion_workflow`,与人在 GitHub 上 `@gwei` 走同一条
   路径,"接着哪个分支改"由同一个 `_thread_for` 决定。人说的话进 signal,时间线上
