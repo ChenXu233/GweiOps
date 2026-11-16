@@ -333,8 +333,8 @@ export interface paths {
          *     最久在前,跑着与落了的按最新在前。
          *
          *     `project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看
-         *     的范围 —— 整个工作区 → 某个项目 → 某个仓库。仓库档优先于项目档(更窄的那一
-         *     个说了算),两档都给时按仓库存的父判定,不额外相信调用方拼的一致性。
+         *     的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,
+         *     而它能被选到,本身就说明它属于当前这一档。
          */
         get: operations["issue_board_api_board_get"];
         put?: never;
@@ -1312,62 +1312,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * ActorDTO
-         * @description `GET /api/me`:我是谁、我属于哪些工作区、每个里面是什么角色。
-         *
-         *     `workspace` 是这次请求实际落在哪个工作区(按 `X-Gwei-Workspace`),
-         *     `permissions` / `scoped_permissions` 只对那一个工作区算数——不然界面上
-         *     "能不能点这个按钮"就得自己把多个工作区的权限并起来,而那正好是越权的起点。
-         *     不属于任何工作区时 `workspace` 为空、权限为空:能登录不等于能看账。
-         */
-        ActorDTO: {
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
-            /**
-             * Email
-             * @default
-             */
-            email: string;
-            /**
-             * Is Sub User
-             * @default false
-             */
-            is_sub_user: boolean;
-            /**
-             * Permissions
-             * @default []
-             */
-            permissions: string[];
-            /**
-             * Roles
-             * @default []
-             */
-            roles: components["schemas"]["MembershipRoleDTO"][];
-            /**
-             * Scoped Permissions
-             * @default []
-             */
-            scoped_permissions: string[];
-            /**
-             * Workspace
-             * @default
-             */
-            workspace: string;
-            /**
-             * Workspace Name
-             * @default
-             */
-            workspace_name: string;
-            /**
-             * Workspaces
-             * @default []
-             */
-            workspaces: components["schemas"]["PersonMembershipDTO"][];
-        };
         /** ChangeDetailDTO */
         ChangeDetailDTO: {
             /** History */
@@ -2143,96 +2087,6 @@ export interface components {
             /** Tools */
             tools: components["schemas"]["KeyToolDTO"][];
         };
-        /**
-         * MembershipDTO
-         * @description 工作区成员页的一行:这个人在这里是谁。
-         *
-         *     `user_id` 是成员关系的 id,不是全局那个人的 —— 同一个人在两个工作区里是
-         *     两条成员关系、两个不同的 id,页面只认得当前工作区。
-         */
-        MembershipDTO: {
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
-            /**
-             * Email
-             * @default
-             */
-            email: string;
-            /**
-             * Is Sub User
-             * @default false
-             */
-            is_sub_user: boolean;
-            /**
-             * Last Login At
-             * @default
-             */
-            last_login_at: string;
-            /**
-             * Permissions
-             * @default []
-             */
-            permissions: string[];
-            /**
-             * Person Id
-             * @default
-             */
-            person_id: string;
-            /**
-             * Roles
-             * @default []
-             */
-            roles: components["schemas"]["MembershipRoleDTO"][];
-            /**
-             * Scoped Permissions
-             * @default []
-             */
-            scoped_permissions: string[];
-            /**
-             * Status
-             * @default active
-             */
-            status: string;
-            /**
-             * User Id
-             * @default
-             */
-            user_id: string;
-        };
-        /** MembershipListDTO */
-        MembershipListDTO: {
-            /**
-             * Items
-             * @default []
-             */
-            items: components["schemas"]["MembershipDTO"][];
-            /**
-             * Total
-             * @default 0
-             */
-            total: number;
-        };
-        /** MembershipRoleDTO */
-        MembershipRoleDTO: {
-            /**
-             * Id
-             * @default
-             */
-            id: string;
-            /**
-             * Key
-             * @default
-             */
-            key: string;
-            /**
-             * Name
-             * @default
-             */
-            name: string;
-        };
         /** LoginDTO */
         LoginDTO: {
             /** Email */
@@ -2253,62 +2107,6 @@ export interface components {
             name: string;
             /** Value */
             value: number;
-        };
-        /** PersonDTO */
-        PersonDTO: {
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
-            /**
-             * Email
-             * @default
-             */
-            email: string;
-        };
-        /**
-         * PersonMembershipDTO
-         * @description 这个人在某个工作区里的样子:角色与范围授权都在这里。
-         */
-        PersonMembershipDTO: {
-            /**
-             * Is Sub User
-             * @default false
-             */
-            is_sub_user: boolean;
-            /**
-             * Permissions
-             * @default []
-             */
-            permissions: string[];
-            /**
-             * Roles
-             * @default []
-             */
-            roles: components["schemas"]["MembershipRoleDTO"][];
-            /**
-             * Scoped Permissions
-             * @default []
-             */
-            scoped_permissions: string[];
-            /**
-             * Status
-             * @default active
-             */
-            status: string;
-            /**
-             * User Id
-             * @default
-             */
-            user_id: string;
-            /** Workspace */
-            workspace: string;
-            /**
-             * Workspace Name
-             * @default
-             */
-            workspace_name: string;
         };
         /** PasswordDTO */
         PasswordDTO: {
