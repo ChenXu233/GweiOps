@@ -4,7 +4,7 @@
 > 读者:插件作者
 > 上游:[插件系统参考](../reference/plugin-system.md)、[变更单元契约](../explanation/change-unit-contract.md)
 
-插件与平台之间只有一份合同:`plugin.yaml`。本文按"能被加载 → 能接来源 → 能改世界 → 能被定时调用 → 会配置 → 怎么验"的顺序写;**字段的完整语义不在这里重复**,统一查[插件系统参考](../reference/plugin-system.md)。读之前先看一眼[平台架构](../explanation/platform-architecture.md)第 4 节:为什么直接改核心代码是被禁止的,以及三条合法的变更通道。
+插件与平台之间只有一份合同:`plugin.yaml`。本文按"能被加载 → 能接来源 → 能改世界 → 能被定时调用 → 会配置 → 怎么验"的顺序写;**字段的完整语义不在本文重复**,统一查[插件系统参考](../reference/plugin-system.md)。读之前先看一眼[平台架构](../explanation/platform-architecture.md)第 4 节:为什么直接改核心代码是被禁止的,以及三条合法的变更通道。
 
 ## 1 先选对形状
 
@@ -100,7 +100,7 @@ class MyPlugin(PluginBase):
 两种产出共用同一套验签、去重和 503 口径。适配器还要实现三个小方法:
 
 ```python
-source = "caddy"                  # 入口按这个名字分发
+source = "caddy"                  # 入口按 source 名分发
 produces = "signal"               # event | signal
 config_hint = "CADDY_WEBHOOK_TOKEN"   # 没配密钥时入口告诉你该填哪个变量
 
@@ -128,7 +128,7 @@ def parse_webhook(self, headers, body):
 
 ### 5.2 产信号:一次投递 = 零到多条信号
 
-信号回答"哪里出了什么事",不带动作。用 `normalize(...)` 组装,`occurrence` 是这一次发作的身份(例如告警的 `startsAt`):同一个 `ref` 再次出现算另一件事,不填则入口按 `ref` 去重。
+信号回答"哪里出了什么事",不带动作。用 `normalize(...)` 组装,`occurrence` 是单次发作的身份(例如告警的 `startsAt`):同一个 `ref` 再次出现算另一件事,不填则入口按 `ref` 去重。
 
 ```python
 from engine.ingest.signal import normalize
@@ -148,7 +148,7 @@ def parse_signals(self, headers, body):
     )]
 ```
 
-内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.py)是这一种的完整样板,接 Caddy、云雀、Grafana 照它写即可。
+内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.py)是产信号适配器的完整样板,接 Caddy、云雀、Grafana 照它写即可。
 
 ### 5.3 自测
 
@@ -312,4 +312,4 @@ python -m pytest tests/ -q
 | Webhook 回 400 | `parse_signals` 抛了:投递不是 JSON、或信号缺 `subject` / `title` |
 | 投递回 200 但没有工作流 | 产事件时返回了 `None`、`kind` 不在这四类里,或信号被去重(同一 `ref + occurrence`) |
 | 效果被记成 `blocked` | 能力没人提供、缺 `binding`、或 intent 点了清单里没声明的参数 |
-| 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉那一项 |
+| 改了环境变量但没生效 | 配置可能已经在库里存过——库里的值优先;去控制台改,或删掉库里的配置项 |

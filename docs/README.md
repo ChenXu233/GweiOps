@@ -6,7 +6,7 @@
 
 ## 先读哪份
 
-| 你想做什么 | 读这些 |
+| 你想做什么 | 读这些文档 |
 | --- | --- |
 | 第一次了解平台 | [目标](explanation/goals.md) → [平台架构](explanation/platform-architecture.md) |
 | 本地跑起来 | [根 README](../README.md) 的快速开始 |

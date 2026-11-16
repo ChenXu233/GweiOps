@@ -87,7 +87,7 @@ triggers:
     capability: scan.dependencies
 ```
 
-- **周期写成 `every`,不收 cron**。cron 读不出「多久一次」,也读不出「会不会漏」;换成秒数是平台的事。时长支持 `s` / `m` / `h` / `d` 与纯秒数,必须整除它所在那一档:不整除的「每 45 分钟」在任何按整点对齐的调度器上都会走成 45 → 15 → 45。写错的在发现阶段就被拒,计入 `plugin_discovery_errors_total`。
+- **周期写成 `every`,不收 cron**。cron 读不出「多久一次」,也读不出「会不会漏」;换成秒数是平台的事。时长支持 `s` / `m` / `h` / `d` 与纯秒数,必须整除所属档位:不整除的「每 45 分钟」在任何按整点对齐的调度器上都会走成 45 → 15 → 45。写错的在发现阶段就被拒,计入 `plugin_discovery_errors_total`。
 - **能力必须同时列在 `capabilities` 里**,与效果声明同一条规矩。
 - **调度与幂等都由 DBOS 承担**:工作流 id 是 `sched-<调度名>-<点火时刻>`,重启后同一周期不会补跑。平台不自建循环。
 - **启动时对账**:每条周期单独装上(一条写坏不拖累其余);清单里已经没人声明的周期按前缀清理,不让一个退役的巡检继续每六小时跑一次。
@@ -154,13 +154,13 @@ config.register_model_scope("adapter-github-app", GitHubAppSettings, prefix="GIT
 
 - 命名:scope 为 `{类型}-{平台}-{功能}`,字段名 snake_case;环境变量为 `{PREFIX}{FIELD_NAME}`。
 - 取值按序:`Settings` 里有同名字段就用它 → 进程环境变量 → `.env`。**插件声明的字段不需要先写进 `Settings`**,声明了就是可配的——声明了却读不出来,等于没这套机制。
-- 缺项在启动时以 warning 点名(写的就是你该去设的那个环境变量名):声明了却没人填,比没声明更糟,那种沉默会拖到第一次真要调下游时才爆。
+- 缺项在启动时以 warning 点名(warning 里就是要设的环境变量名):声明了却没人填,比没声明更糟——缺配置会拖到第一次真要调下游时才爆。
 - **值可以存进业务库**:`PUT /api/settings/scopes/{scope}` 写一次,重启不丢,改完立即生效。库里存的值排在 `Settings` 与环境变量之前——人在页面上填过的东西,不该被某次部署的环境变量悄悄盖掉。
 - **回显是字段自己的事,不是接口一刀切**:`expose` 取 `never`(默认)、`masked`(给出 `sk-a…3456` 这种认得出的形状)、`always`;`read_scope` 取 `read`(默认)或 `operate`(只有运维令牌看得到值)。没声明的字段不出去——没写的就不给,比默认全给安全。
 - **`multiline: true`** 表示值里带换行(私钥、证书):控制台会换成多行输入,单行输入在粘贴时会把换行吃掉。字段的 `description` 同时用作输入框提示和校验失败时的那句"该填什么"。
 - 用模型声明时,写入前顺手做形状校验:类型不对拒(422),"还没填全"不算错(缺什么由 `missing` 单独报,不该拦住先填一半)。
-- **值按租户分开**:`plugin_settings` 的主键是 `(tenant, scope, key)`。读的时候公共值打底、租户值覆盖;写的时候写进调用方令牌声明的那个租户。取值的接口都多一个 `tenant` 参数,不传就是只用公共值。
-- 删除按租户生效:删掉租户那一份,读的时候落回公共值而不是落空。要彻底去掉公共值,用运维通配令牌删。
+- **值按租户分开**:`plugin_settings` 的主键是 `(tenant, scope, key)`。读的时候公共值打底、租户值覆盖;写的时候写进调用方令牌声明的租户。取值的接口都多一个 `tenant` 参数,不传就是只用公共值。
+- 删除按租户生效:删掉租户的值,读的时候落回公共值而不是落空。要彻底去掉公共值,用运维通配令牌删。
 - `plugin_settings` 的表结构变过一次(加了 `tenant` 列),仓库没有迁移工具:`ensure_schema` 是 checkfirst,老库要先 `DROP TABLE plugin_settings;` 让它重建。
 - 必填缺失由插件在 `on_startup` 自行决定:抛错、降级或忽略,核心不强制。
 - 封装配置类是可选的;插件也可以直接读 `config.settings`。
@@ -173,10 +173,10 @@ Webhook 的字段名、事件名与验签方式都属于来源,不属于核心�
 - 实例属性 `source` 是来源名(`github` / `gitlab` / `cnb`),`binding` 是它的下游目标;
 - 清单声明 `webhook.receive`,注册表按来源找它(`registry.webhook_adapter(source)`);同一来源有两个提供者直接报错,不猜;
 - 适配器实现三个方法:`webhook_configured()`(密钥配没配)、`verify_webhook(headers, body)`(验签)、`parse_webhook(headers, body)`(投递 → 归一化事件);
-- 实例属性 `mentions` 是**这个来源上人叫平台的触发词**:评论里没出现其中任何一个就不入队。`@gwei` 是 GitHub 适配器声明的,CNB 上是 `@CodeBuddy`;空元组 = 这个来源不接评论触发。核心不认识任何一个具体名字;
+- 实例属性 `mentions` 是**来源上人叫平台的触发词**:评论里没出现其中任何一个就不入队。`@gwei` 是 GitHub 适配器声明的,CNB 上是 `@CodeBuddy`;空元组 = 该来源不接评论触发。核心不认识任何一个具体名字;
 - 归一化事件只有一种说法,定义在 [engine/ingest/events.py](../../engine/ingest/events.py):`kind`(issue / comment / merge / ping)、`source`、`repo`、`number`、`merge_sha` 等。核心不认识任何一家的原始字段;
 - 入口只有一个:`POST /webhook/{source}`。新增来源不加路由分支:装上适配器,投递就有地方去;没装则回 503,不回落到"默认适配器"——把 GitLab 的投递交给 GitHub,比拒绝更糟。
-- 适配器声明 `produces`:`event`(默认,产 issue / comment / merge 这类事件)或 `signal`(产信号,直接进事故管线)。产信号的适配器实现 `parse_signals(headers, body) -> list[signal]`,入口按 `ref + occurrence` 逐条去重后入队;一条重复不拖累其余。内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.yaml)就是这一种,接 Caddy、云雀、Grafana 也照这个形状写,核心一行不改。
+- 适配器声明 `produces`:`event`(默认,产 issue / comment / merge 这类事件)或 `signal`(产信号,直接进事故管线)。产信号的适配器实现 `parse_signals(headers, body) -> list[signal]`,入口按 `ref + occurrence` 逐条去重后入队;一条重复不拖累其余。内置的 [alertmanager 适配器](../../plugins/builtin/adapters/alertmanager/plugin.yaml)就是产信号的适配器,接 Caddy、云雀、Grafana 也照它写,核心一行不改。
 - `config_hint` 是适配器告诉人"该去填哪个环境变量"的一个字符串;没配密钥时入口按它回 503,核心不维护来源清单。
 
 当前内置:`github-app`(issues / issue_comment / pull_request,`comment.create` + `pr.open`)、`cnb`(议题 / 评论 / 合并请求,`comment.create` + `pr.open`)、`gitlab`(仅合并请求)。GitLab 还没补回评与开 MR 的能力,所以不声明、也不接评论触发 —— 声明了却调不通的效果比不声明更糟。
@@ -205,15 +205,15 @@ effects:
 
 效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。
 
-适配器还负责"这场运行的代码从哪来",三件事各有各的方法:
+适配器还负责代码从哪来,三件事各有各的方法:
 
 | 方法 | 谁在用 | 拿不到时 |
 | --- | --- | --- |
-| `workspace_source(repo) -> harness.workspace.Source` | 交给 harness 之前把代码铺进工作区 | 抛错,这一场如实报告"没开工" |
+| `workspace_source(repo) -> harness.workspace.Source` | 交给 harness 之前把代码铺进工作区 | 抛错,本次运行如实报告"没开工" |
 | `read_pull(repo, number)` | 话题上已有 PR 时接着改它(要分支与地址) | 抛错,当成"没有 PR" |
 | `mentions` | 评论里算不算叫了平台 | 空 = 不接评论触发 |
 
-`Source` 是 `archive_url` / `token` / `branch` 三样:一个能下整棵树的归档地址(不走 git 协议——有些网络里 `github.com` 连不上,API 还在)、一份只在平台这一侧用一次的凭证、一条基线分支。代码由**这条投递的来源**给:CNB 的议题进来,工作区里就是 CNB 那份仓库,不会拿 GitHub App 去拉一个同名仓库。它不是能力、不进出口菜单,容器永远拿不到凭证。
+`Source` 是 `archive_url` / `token` / `branch` 三样:一个能下整棵树的归档地址(不走 git 协议——有些网络里 `github.com` 连不上,API 还在)、一份只在平台这一侧用一次的凭证、一条基线分支。代码由**这条投递的来源**给:CNB 的议题进来,工作区里就是 CNB 的仓库,不会拿 GitHub App 去拉一个同名仓库。它不是能力、不进出口菜单,容器永远拿不到凭证。
 
 `execute` 抛什么,决定这次失败怎么记账:认得出没碰到下游(构造请求就失败、下游明确拒绝 4xx)时抛 `engine.change_unit.EffectNotApplied`,单元记 `failed`(可重试);抛别的异常一律记 `unknown`(请求可能已经到了对面,要人去核)。分不清的时候不要猜着抛 `EffectNotApplied` —— 把 `unknown` 说成 `failed`,等于教人放心重试一次可能已经生效的操作。
 
@@ -229,9 +229,9 @@ effects:
 - `*.read` 结尾的能力天然落在 `changes.read` 下;
 - 真要一把单独的权限(例如 `secrets.read`),在 `engine/auth/keys.py` 的 `CAPABILITY_PERMISSIONS` 里点名,再往 `engine/auth/__init__.py` 的 `PERMISSIONS` 里加一条。
 
-资源这一关也在这里:工具能作用在哪些下游目标,由提供者实例自己声明的 `binding` 决定(`registry.tool_bindings`)。插件不需要另写一份资源清单——实例挂在哪,它的能力就在哪;同一能力在 `local` 与 `remote` 上各有一个实例,资源和工具清单里就有两个目标。密钥上勾了哪些资源,就只看得见那些目标上的工具。只读能力通常说不出自己在哪个目标上,资源这一关对它不适用。
+资源约束也来自这里:工具能作用在哪些下游目标,由提供者实例自己声明的 `binding` 决定(`registry.tool_bindings`)。插件不需要另写一份资源清单——实例挂在哪,它的能力就在哪;同一能力在 `local` 与 `remote` 上各有一个实例,资源和工具清单里就有两个目标。密钥上勾了哪些资源,就只看得见对应目标上的工具。只读能力通常说不出自己在哪个目标上,资源对它不适用。
 
-只读能力拿到的是平台按身份定下的租户,不是调用方写在参数里的那个:收不住范围,读口就成了越权口。
+只读能力拿到的是平台按身份定下的租户,不是调用方写在参数里的租户:收不住范围,读口就成了越权口。
 
 界面右下角的[控制台助手](runtime.md#控制台助手)用同一份清单:按会话身份筛一遍,再由会话白名单收窄。给助手加能力就是加能力,不是加接口。
 
@@ -239,7 +239,7 @@ effects:
 
 - `app.py` lifespan:`registry.discover() → registry.launch()`,失败隔离;
 - triage:persist 成功后 `hooks.apply("issue.triaged")`,再经 `intent.propose` 与效果单元回评;
-- `@gwei` 评论:配了 `HARNESS_COMMAND` 就直接交给 harness(先开事故、再跑、再收口),没配才走补丁建议那条老路;
+- `@gwei` 评论:配了 `HARNESS_COMMAND` 就直接交给 harness(先开事故、再跑、再收口),没配才走补丁建议路径;
 - `incident.handle` 是"整场交给 agent"的接缝:有提供者时告警工作流先走它,没有才回落到 `intent.propose` + 应用效果。循环写在插件里([operator](../../plugins/builtin/agents/operator/plugin.py)),平台只提供出口:改世界的能力每次落一个变更单元,只读能力(`.read` 结尾)不落账。跑在进程外沙箱里的 harness 不经过这个接缝,它直接调[出口端点](runtime.md);
 - `intent.propose` 有两个内置提供者:`intent-builder`(规则,默认)与 `intent-llm`(模型,优先级 -1,要用得自己调上来)。提供者声明 `wants_history = True` 时,工作流会额外给它该租户最近的账本结论;没人声明的部署不为这次查询付钱。模型拿不准就给空 effects —— 空效果是合法结论,编一个动作不是;
 - fix:`patch.generated` transform → `comment.posting` veto 检查;补丁生成经 `registry.run_capability("patch.generate")`,无提供者时回退 `FixerAgent`;
