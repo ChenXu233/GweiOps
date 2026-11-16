@@ -4,11 +4,12 @@
 三件事在这里定死,别处不再判第二遍:
 
 - **会话**:一次对话是一个会话语义对象(`ConsoleSession`),权限、资源、绑定、模型
-  都记在它身上。进程内内存,引擎重启就散 —— 对话不是账本,值不值得留由人来定,
-  不用先写一张表。
-- **权限**:能调哪些工具由身份算(与 `/mcp` 的 `tools/list` 同一条判据
-  `tool_visible`),再被会话自己的白名单收窄一层。会话只能越用越窄:签的时候
-  不能超过这个人手上的权限,改的时候也一样。
+  都记在它身上。落库(`console_sessions`、`console_messages`),进程内只留一层
+  缓存 —— 权限依据与每一句都要能回查,否则这个入口没有审计。
+- **权限**:能调哪些工具由**此刻的调用者**算(与 `/mcp` 的 `tools/list` 同一条判据
+  `tool_visible`),再被会话自己的白名单收窄一层。会话不是一次性的签名:每一轮
+  都按当下这个人的权限重算一遍,会话上留着的权限只做上限 —— 人的权限被回收、
+  凭据换了人,都不能靠一个还没过期的会话继续用。
 - **允许**:会话开了 `confirm`,改世界的调用不直接执行,落成一条待批的调用;
   人点了允许才走出口。只读口(名字以 `.read` 结尾的能力)不受这条约束 ——
   看一眼不需要批准,也就不用把人也拉过来点一下。
@@ -19,13 +20,17 @@ loop 不自己写:推一版、看一眼、改主意的循环交给 `bub.core.Age
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from engine.auth import ALL_PERMISSIONS, is_write_permission
 from engine.auth.keys import is_scoped, permission_for_tool, tool_visible
+
+logger = logging.getLogger(__name__)
 
 # 一次对话最多几步模型调用。够它看两眼看一步再收尾,又不把账单跑飞。
 MAX_STEPS = 8
@@ -127,7 +132,12 @@ class ConsoleSession:
         }
 
 
+# 进程内只做缓存:事实在 console_sessions / console_messages 两张表里。
 _SESSIONS: dict[str, ConsoleSession] = {}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _sweep() -> None:
@@ -136,7 +146,7 @@ def _sweep() -> None:
 
 
 def reset() -> None:
-    """测试用:清空进程内的会话。"""
+    """测试用:清空进程内的缓存。"""
     _SESSIONS.clear()
 
 
@@ -145,28 +155,205 @@ def sessions() -> dict[str, ConsoleSession]:
     return _SESSIONS
 
 
-def get_session(session_id: str) -> ConsoleSession:
+async def get_session(session_id: str) -> ConsoleSession:
+    """取会话。缓存里没有就从库里读回来 —— 进程重启不该让一段对话连依据一起消失。"""
     _sweep()
     found = _SESSIONS.get(session_id)
     if found is None:
-        raise SessionError("这个会话已经不在了(进程重启或闲置太久),重新开一个")
+        found = await _load(session_id)
+        if found is None:
+            raise SessionError("会话不存在:已关闭,或闲置超过 SESSION_TTL_SECONDS 被回收")
+        _SESSIONS[found.id] = found
     found.touch()
     return found
 
 
 def _held_permissions(actor: Any) -> frozenset[str]:
-    """这个人手上有哪些权限。会话能给出去的,不会超过这一份。
+    """这个人此刻手上有哪些权限。会话能给出去的,不会超过这一份。
 
     静态令牌没有权限集(只有 read/operate),它对"能签什么"的回答是全部或没有。
     这一条与 `grantable` 的口径一致,免得同一个部署里两种说法。
     """
     if actor is None:
+        # 没配凭据的部署:没有"人"可以比对。会话按 operate 记账(单机自用)。
         return frozenset(ALL_PERMISSIONS)
     if is_scoped(actor):
         return frozenset(getattr(actor, "permissions", frozenset()))
-    from engine.auth import PERMISSIONS
+    return _scope_permissions(getattr(actor, "scope", ""))
 
-    return frozenset(PERMISSIONS) if getattr(actor, "scope", "") == "operate" else frozenset()
+
+def _scope_permissions(scope: str) -> frozenset[str]:
+    """静态令牌:read 只剩只读口,operate 是全部。
+
+    以前这里把 read 一律算成空集 —— 于是「会话的权限」对一个只读令牌是空的,
+    会话带着空权限去判 `tool_visible`,静态令牌那条"权限为空就按 scope 放行"的
+    旧路径会因此放行更多。宁可少给:read 就只给只读口。
+    """
+    from engine.auth import PERMISSIONS, READ_PERMISSIONS
+
+    if scope != "operate":
+        return frozenset(READ_PERMISSIONS)
+    return frozenset(PERMISSIONS)
+
+
+def effective_permissions(session: ConsoleSession, actor: Any) -> frozenset[str]:
+    """这一轮真正生效的权限 = 会话留着的 ∩ 调用者此刻手上的。
+
+    会话只是上限,不是签名:人的权限被回收、换了令牌调用同一个会话,都不该
+    继续拿到会话创建时的权限。`actor is None` 表示这个部署没开鉴权,没有可比对
+    的人,于是只看会话自己(`_session` 已经核对过归属)。
+    """
+    if actor is None:
+        return session.permissions
+    return frozenset(session.permissions) & _held_permissions(actor)
+
+
+def _check_owner(session: ConsoleSession, actor: Any) -> None:
+    """会话属于这个身份吗。归属不对就是 403 —— 借一个会话等于借它的权限。"""
+    name = str(getattr(actor, "name", "") or "")
+    if name and session.actor and session.actor != name:
+        raise SessionError("这个会话不属于当前身份")
+    tenant = str(getattr(actor, "tenant", "") or "")
+    if tenant and session.tenant and tenant != session.tenant:
+        raise SessionError("这个会话不属于当前租户")
+
+
+# ---------------------------------------------------------------------------
+# 落库:会话(mutable,一行)与对话(append-only,一行一句)
+# ---------------------------------------------------------------------------
+
+
+class StorageUnavailable(RuntimeError):
+    """会话存不下来。开会话时这必须是错误,不能退化成"只在内存里活着"。"""
+
+
+async def persist(session: ConsoleSession) -> None:
+    """把会话当前的样子写回去。失败就是失败 —— 权限改窄了却没落库,下次读回来是旧的。"""
+    from sqlalchemy import update
+
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleSessionRow
+
+    try:
+        async with async_session_factory() as db:
+            await db.execute(
+                update(ConsoleSessionRow)
+                .where(ConsoleSessionRow.id == session.id)
+                .values(
+                    permissions=sorted(session.permissions),
+                    bindings=sorted(session.bindings),
+                    tools=sorted(session.tools),
+                    confirm=session.confirm,
+                    actions=session.actions,
+                    binding=session.binding,
+                    model=session.model,
+                    last_used_at=_now_iso(),
+                )
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 - 换个类型抛出去,免得路由把它当 500 的意外
+        raise StorageUnavailable(f"会话未能落库:{type(exc).__name__}: {exc}") from exc
+
+
+async def record(
+    session: ConsoleSession,
+    role: str,
+    content: str = "",
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """追加一行对话。审计靠它:说了什么、调了什么、结果是拒还是被允许。
+
+    写不进去时只记日志、不打断这一轮 —— 对话仍在继续,但库里的审计会缺一段,
+    所以这一条在 WARNING 里带上会话 id。
+    """
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleMessageRow
+
+    try:
+        async with async_session_factory() as db:
+            db.add(
+                ConsoleMessageRow(
+                    session_id=session.id,
+                    tenant=session.tenant,
+                    actor=session.actor,
+                    role=role,
+                    content=content or "",
+                    payload=payload or {},
+                )
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001 - 记日志比让这一轮断掉更有用
+        logger.warning("控制台对话未能落库:session=%s role=%s", session.id, role, exc_info=True)
+
+
+async def _load(session_id: str) -> ConsoleSession | None:
+    from sqlalchemy import select
+
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleSessionRow
+
+    try:
+        async with async_session_factory() as db:
+            row = (
+                await db.execute(select(ConsoleSessionRow).where(ConsoleSessionRow.id == session_id))
+            ).scalar_one_or_none()
+    except Exception as exc:  # noqa: BLE001
+        raise StorageUnavailable(f"会话未能读取:{type(exc).__name__}: {exc}") from exc
+    if row is None:
+        return None
+    return ConsoleSession(
+        id=row.id,
+        tenant=row.tenant,
+        actor=row.actor,
+        permissions=frozenset(row.permissions or ()),
+        bindings=frozenset(row.bindings or ()),
+        tools=frozenset(row.tools or ()),
+        confirm=bool(row.confirm),
+        model=row.model,
+        binding=row.binding,
+        actions=int(row.actions or 0),
+        created_at=_parse_ts(row.created_at),
+        last_used_at=_parse_ts(row.last_used_at),
+    )
+
+
+def _parse_ts(raw: str) -> float:
+    try:
+        return datetime.fromisoformat(raw).timestamp()
+    except (TypeError, ValueError):
+        return time.time()
+
+
+async def history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """这一段对话的行,按写入顺序。审计与"界面重开还能看到"共用这一份。"""
+    from sqlalchemy import select
+
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleMessageRow
+
+    async with async_session_factory() as db:
+        rows = (
+            (
+                await db.execute(
+                    select(ConsoleMessageRow)
+                    .where(ConsoleMessageRow.session_id == session_id)
+                    .order_by(ConsoleMessageRow.id)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [
+        {
+            "id": row.id,
+            "role": row.role,
+            "content": row.content,
+            "payload": row.payload or {},
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
 
 
 def _refuse_overreach(wanted: set[str], granted: frozenset[str], what: str) -> None:
@@ -175,7 +362,7 @@ def _refuse_overreach(wanted: set[str], granted: frozenset[str], what: str) -> N
         raise SessionError(f"你手上没有这些{what},给不出去:{', '.join(over)}")
 
 
-def open_session(
+async def open_session(
     *,
     actor: Any,
     tenant: str,
@@ -214,11 +401,46 @@ def open_session(
         model=model or "",
         binding=binding or "",
     )
+    await _insert(session)
     _SESSIONS[session.id] = session
+    await _audit(session, "session.open", {"permissions": sorted(granted), "confirm": session.confirm})
     return session
 
 
-def update_session(
+async def _insert(session: ConsoleSession) -> None:
+    """建一行。写不进去就别返回这个会话 —— 一个只在内存里的会话没有审计依据。"""
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleSessionRow
+
+    try:
+        async with async_session_factory() as db:
+            db.add(
+                ConsoleSessionRow(
+                    id=session.id,
+                    tenant=session.tenant,
+                    actor=session.actor,
+                    binding=session.binding,
+                    model=session.model,
+                    permissions=sorted(session.permissions),
+                    bindings=sorted(session.bindings),
+                    tools=sorted(session.tools),
+                    confirm=session.confirm,
+                    actions=session.actions,
+                    created_at=_now_iso(),
+                    last_used_at=_now_iso(),
+                )
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        raise StorageUnavailable(f"会话未能落库:{type(exc).__name__}: {exc}") from exc
+
+
+async def _audit(session: ConsoleSession, action: str, detail: dict[str, Any] | None = None) -> None:
+    """会话本身的变更(开、改、关)。与对话分开记,免得"谁把权限改窄了"埋在对话里。"""
+    await record(session, "session", action, {"action": action, **(detail or {})})
+
+
+async def update_session(
     session: ConsoleSession,
     *,
     actor: Any = None,
@@ -239,11 +461,35 @@ def update_session(
     if confirm is not None:
         session.confirm = bool(confirm)
     session.touch()
+    await persist(session)
+    await _audit(
+        session,
+        "session.update",
+        {
+            "permissions": sorted(session.permissions),
+            "tools": sorted(session.tools),
+            "confirm": session.confirm,
+        },
+    )
     return session
 
 
-def close_session(session_id: str) -> bool:
-    return _SESSIONS.pop(session_id, None) is not None
+async def close_session(session_id: str) -> bool:
+    found = _SESSIONS.pop(session_id, None)
+    if found is None:
+        found = await _load(session_id)
+    if found is None:
+        return False
+    await _audit(found, "session.close", {})
+    from sqlalchemy import delete
+
+    from engine.db.engine import async_session_factory
+    from engine.db.models.console_session import ConsoleSessionRow
+
+    async with async_session_factory() as db:
+        await db.execute(delete(ConsoleSessionRow).where(ConsoleSessionRow.id == session_id))
+        await db.commit()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -251,28 +497,44 @@ def close_session(session_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def session_allows(session: ConsoleSession, tool: str, bindings_of: Any = None) -> bool:
+def session_allows(
+    session: ConsoleSession, tool: str, bindings_of: Any = None, actor: Any = None
+) -> bool:
     """这个会话够不够得着这个工具。
 
     判据全在 `tool_visible`:权限集、身份自带的白名单、资源三关。会话再收窄一层。
     这里不重写一遍权限表 —— 第二份判据迟早与第一份打架。
+
+    **权限按此刻的调用者现算**,不是会话创建时的那一份:`effective_permissions`
+    取会话权限与这个人当下权限的交集。少了这一步,一个人被收回权限之后,他手上
+    还没过期的会话仍能拿到原来的工具集 —— 那就是静默提权。
     """
     from engine.api.auth import Actor
 
+    granted = effective_permissions(session, actor)
     proxy = Actor(
         token_id="console",
         name=session.actor,
         tenant=session.tenant,
-        scope="operate" if any(is_write_permission(p) for p in session.permissions) else "read",
-        permissions=session.permissions,
+        scope="operate" if any(is_write_permission(p) for p in granted) else "read",
+        permissions=granted,
         bindings=session.bindings,
     )
-    if not tool_visible(tool, proxy, bindings_of):
+    visible = tool_visible(tool, actor or proxy, bindings_of) if actor is not None else tool_visible(
+        tool, proxy, bindings_of
+    )
+    if not visible:
         return False
-    return not session.tools or tool in session.tools
+    if session.tools and tool not in session.tools:
+        return False
+    # 最后一道:这个工具要的权限得在这次生效的权限集里。`tool_visible` 已经判过一遍,
+    # 这里再落一次是因为它收窄用的身份可能带 static 态;权限判据只认 `granted`。
+    return permission_for_tool(tool) in granted
 
 
-def describe_tools(session: ConsoleSession, registry: Any) -> list[dict[str, Any]]:
+def describe_tools(
+    session: ConsoleSession, registry: Any, actor: Any = None
+) -> list[dict[str, Any]]:
     """会话看到的工具清单。与 `/mcp` 的 `tools/list` 同一份事实来源:出口清单。"""
     from engine.agent.tools import tool_specs
 
@@ -280,7 +542,9 @@ def describe_tools(session: ConsoleSession, registry: Any) -> list[dict[str, Any
     for spec in tool_specs(registry):
         function = spec.get("function") or {}
         name = str(function.get("name") or "")
-        if not name or not session_allows(session, name, getattr(registry, "tool_bindings", None)):
+        if not name or not session_allows(
+            session, name, getattr(registry, "tool_bindings", None), actor
+        ):
             continue
         out.append(
             {
@@ -303,16 +567,17 @@ def model_tool_name(capability: str) -> str:
     return capability.replace(".", "_")
 
 
-def bub_tools(session: ConsoleSession, registry: Any) -> list[Any]:
+def bub_tools(session: ConsoleSession, registry: Any, actor: Any = None) -> list[Any]:
     """把会话的工具清单翻成 bub 的 `Tool`。
 
     参数 schema 直接用出口清单给的那份 —— 参数名来自插件声明,不是这里编的。
     `additionalProperties` 打开:出口清单只说了"有这些参数",没说"只能有这些"。
+    `actor` 是这一轮的调用者:清单按他当下的权限算。
     """
     from bub.core.tools import Tool
 
     out: list[Tool] = []
-    for spec in describe_tools(session, registry):
+    for spec in describe_tools(session, registry, actor):
         name = model_tool_name(str(spec["name"]))
         parameters = dict(spec["parameters"] or {"type": "object", "properties": {}})
         parameters.setdefault("type", "object")
@@ -320,7 +585,7 @@ def bub_tools(session: ConsoleSession, registry: Any) -> list[Any]:
         out.append(
             Tool(
                 name=name,
-                handler=_make_handler(session, registry, name),
+                handler=_make_handler(session, registry, name, actor),
                 description=str(spec["description"]),
                 parameters=parameters,
             )
@@ -328,11 +593,11 @@ def bub_tools(session: ConsoleSession, registry: Any) -> list[Any]:
     return out
 
 
-def _make_handler(session: ConsoleSession, registry: Any, model_name: str):
+def _make_handler(session: ConsoleSession, registry: Any, model_name: str, actor: Any = None):
     capability = capability_of(model_name)
 
     async def handler(**kwargs: Any) -> dict[str, Any]:
-        return await call_tool(session, registry, capability, kwargs)
+        return await call_tool(session, registry, capability, kwargs, actor=actor)
 
     return handler
 
@@ -351,7 +616,11 @@ def capability_of(model_name: str) -> str:
 
 
 async def call_tool(
-    session: ConsoleSession, registry: Any, name: str, args: dict[str, Any]
+    session: ConsoleSession,
+    registry: Any,
+    name: str,
+    args: dict[str, Any],
+    actor: Any = None,
 ) -> dict[str, Any]:
     """一次工具调用。只读直接做,改世界的要人点允许。
 
@@ -362,22 +631,28 @@ async def call_tool(
     from engine.change_unit import create_ledger
 
     args = dict(args or {})
-    if not session_allows(session, name, getattr(registry, "tool_bindings", None)):
-        return ToolResult(
-            False, reason=f"这个会话没有 {permission_for_tool(name)} 权限,或者够不着它作用的那几个资源"
+    await record(session, "tool_call", name, {"args": _public_args(args)})
+    if not session_allows(session, name, getattr(registry, "tool_bindings", None), actor):
+        result = ToolResult(
+            False,
+            reason=f"权限不足:{permission_for_tool(name)}(会话权限或当前身份的资源绑定不满足)",
         ).to_dict()
+        await record(session, "tool_result", name, result)
+        return result
 
     effects = registry.declared_effects()
     mutating = name in effects
 
     if mutating and session.confirm:
-        return await ask(session, name, args)
+        return await ask(session, name, args, actor=actor)
 
     if mutating:
         if session.actions >= MAX_ACTIONS:
-            return ToolResult(
+            result = ToolResult(
                 False, reason=f"这次对话已经改了 {session.actions} 次,到上限 {MAX_ACTIONS} 了;停手,由人接手"
             ).to_dict()
+            await record(session, "tool_result", name, result)
+            return result
         session.actions += 1
 
     result = await run_tool(
@@ -389,7 +664,16 @@ async def call_tool(
         summary=args.get("_summary") or f"控制台助手调用 {name}",
         actor=session.actor,
     )
-    return result.to_dict()
+    out = result.to_dict()
+    await record(session, "tool_result", name, {"args": _public_args(args), **out})
+    if mutating:
+        await persist(session)
+    return out
+
+
+def _public_args(args: dict[str, Any]) -> dict[str, Any]:
+    """审计里不留内部关键字(`_summary` 这类由平台补的)。"""
+    return {k: v for k, v in (args or {}).items() if not str(k).startswith("_")}
 
 
 # ---------------------------------------------------------------------------
@@ -407,15 +691,19 @@ def pending_of(session: ConsoleSession) -> PendingCall | None:
     return None
 
 
-async def ask(session: ConsoleSession, name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def ask(
+    session: ConsoleSession, name: str, args: dict[str, Any], actor: Any = None
+) -> dict[str, Any]:
     """把这次调用摆到人面前,等到他点。
 
     这里等的是**人**,不是锁:同一个人可以有多个会话,但一个会话只有一次在等。
+
+    批准之后再判一次权限:等人点的这段时间里,人的权限可能已经被收回。
     """
     import asyncio
 
     if pending_of(session) is not None:
-        return ToolResult(False, reason="上一个动作还在等人点,先处理它").to_dict()
+        return ToolResult(False, reason="上一个批准请求仍在等待,先处理它").to_dict()
 
     call = PendingCall(
         id=secrets.token_urlsafe(8),
@@ -432,19 +720,30 @@ async def ask(session: ConsoleSession, name: str, args: dict[str, Any]) -> dict[
         _PENDING.pop(call.id, None)
 
     if not call.decision:
-        return ToolResult(False, reason="人等急了,这个动作没点允许,当作没做").to_dict()
+        await record(session, "denied", name, {"reason": "approval_timeout"})
+        return ToolResult(False, reason="审批超时:未在限期内点允许,本次调用未执行").to_dict()
     if call.decision == "deny":
-        return ToolResult(False, reason=call.reason or "人不同意这个动作").to_dict()
+        await record(session, "denied", name, {"reason": call.reason or "operator_denied"})
+        return ToolResult(False, reason=call.reason or "审批被拒绝:本次调用未执行").to_dict()
 
-    if session.actions >= MAX_ACTIONS:
-        return ToolResult(
-            False, reason=f"这次对话已经改了 {session.actions} 次,到上限 {MAX_ACTIONS} 了;停手,由人接手"
-        ).to_dict()
-    session.actions += 1
     from engine.agent.tools import ToolCall, run_tool
     from engine.change_unit import create_ledger
 
     registry = _registry()
+    if not session_allows(session, name, getattr(registry, "tool_bindings", None), actor):
+        result = ToolResult(
+            False, reason=f"权限已变更:{permission_for_tool(name)} 在等待审批期间不再有效,本次调用未执行"
+        ).to_dict()
+        await record(session, "tool_result", name, result)
+        return result
+
+    if session.actions >= MAX_ACTIONS:
+        result = ToolResult(
+            False, reason=f"这次对话已经改了 {session.actions} 次,到上限 {MAX_ACTIONS} 了;停手,由人接手"
+        ).to_dict()
+        await record(session, "tool_result", name, result)
+        return result
+    session.actions += 1
     result = await run_tool(
         ToolCall(name, args),
         registry=registry,
@@ -454,7 +753,10 @@ async def ask(session: ConsoleSession, name: str, args: dict[str, Any]) -> dict[
         summary=call.summary or f"控制台助手调用 {name}",
         actor=session.actor,
     )
-    return result.to_dict()
+    out = result.to_dict()
+    await record(session, "tool_result", name, {"approved_by": session.actor, **out})
+    await persist(session)
+    return out
 
 
 def _registry() -> Any:
@@ -463,14 +765,26 @@ def _registry() -> Any:
     return registry
 
 
-def decide(session: ConsoleSession, call_id: str, allow: bool, reason: str = "") -> PendingCall:
-    """人点了。由前端那条批准接口调用,判据只有一条:这个会话确实有这么一次在等。"""
+async def decide(
+    session: ConsoleSession, call_id: str, allow: bool, reason: str = "", actor: Any = None
+) -> PendingCall:
+    """人点了。判据:这个会话确实有这么一次在等,并且点的人此刻仍然拿得到这个工具。
+
+    后一条不是多余的:批准这一步本身就是一次授权,如果那时权限已经没了,
+    点一下就把旧权限延长到了执行 —— 静默提权最常见的形状。
+    """
     found = _PENDING.get(call_id)
     if found is None or found[0] is not session:
-        raise SessionError("这次调用已经不在等你了(超时,或者不在这个会话里)")
+        raise SessionError("审批请求不存在:已超时、已处理,或不属于当前会话")
     call = found[1]
     if call.decision:
-        raise SessionError("这次调用已经点过了")
+        raise SessionError("审批请求已处理")
+    if allow and not session_allows(
+        session, call.name, getattr(_registry(), "tool_bindings", None), actor
+    ):
+        raise SessionError(
+            f"权限不足:{permission_for_tool(call.name)} 当前无效,不能批准这次调用"
+        )
     call.decision = "allow" if allow else "deny"
     call.reason = reason
     return call
@@ -498,6 +812,7 @@ __all__ = [
     "PendingCall",
     "SYSTEM_PROMPT",
     "SessionError",
+    "StorageUnavailable",
     "ToolResult",
     "ask",
     "bub_tools",
@@ -506,7 +821,11 @@ __all__ = [
     "decide",
     "describe_pending",
     "describe_tools",
+    "effective_permissions",
     "get_session",
+    "history",
+    "persist",
+    "record",
     "open_session",
     "pending_of",
     "reset",

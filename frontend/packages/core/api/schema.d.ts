@@ -342,6 +342,26 @@ export interface paths {
         patch: operations["patch_session_api_console_session__session_id__patch"];
         trace?: never;
     };
+    "/api/console/session/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Messages
+         * @description 这一段对话的落库记录:说了什么、调了什么、结果是拒、超时还是执行了。
+         */
+        get: operations["messages_api_console_session__session_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/console/session/{session_id}/pending": {
         parameters: {
             query?: never;
@@ -2892,6 +2912,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConsoleSessionDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    messages_api_console_session__session_id__messages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

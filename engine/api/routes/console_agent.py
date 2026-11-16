@@ -66,7 +66,8 @@ class DecisionDTO(BaseModel):
     reason: str = ""
 
 
-def _dtos(session: store.ConsoleSession, registry_: Any) -> ConsoleSessionDTO:
+def _dtos(session: store.ConsoleSession, registry_: Any, actor: Any = None) -> ConsoleSessionDTO:
+    """会话当前的样子。工具清单按**调用者当下**的权限算,不是会话创建时的那一份。"""
     tools = [
         ConsoleToolDTO(
             name=t["name"],
@@ -74,22 +75,26 @@ def _dtos(session: store.ConsoleSession, registry_: Any) -> ConsoleSessionDTO:
             permission=t["permission"],
             mutating=bool(t["mutating"]),
         )
-        for t in store.describe_tools(session, registry_)
+        for t in store.describe_tools(session, registry_, actor)
     ]
-    return ConsoleSessionDTO(**session.to_dict(), available=tools)
+    body = session.to_dict()
+    body["permissions"] = sorted(store.effective_permissions(session, actor))
+    return ConsoleSessionDTO(**body, available=tools)
 
 
-def _session(request: Request, session_id: str) -> store.ConsoleSession:
+async def _session(request: Request, session_id: str) -> store.ConsoleSession:
     """取会话,并核对它属于当前这个身份。别人的会话不能借来用 —— 那是借权限。"""
     try:
-        found = store.get_session(session_id)
+        found = await store.get_session(session_id)
     except store.SessionError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except store.StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     actor = actor_of(request)
-    if actor is not None and found.actor and found.actor != actor.name:
-        raise HTTPException(status_code=403, detail="这个会话不是你的")
-    if actor is not None and actor.tenant and found.tenant and actor.tenant != found.tenant:
-        raise HTTPException(status_code=403, detail="这个会话不属于你的租户")
+    try:
+        store._check_owner(found, actor)
+    except store.SessionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return found
 
 
@@ -105,7 +110,7 @@ async def open_session(request: Request, body: SessionOpenDTO | None = None) -> 
     draft = body or SessionOpenDTO()
     tenant = tenant_scope(request, draft.tenant or None) or config.settings.default_tenant_slug
     try:
-        session = store.open_session(
+        session = await store.open_session(
             actor=actor,
             tenant=tenant,
             binding=draft.binding or config.settings.default_binding,
@@ -117,13 +122,16 @@ async def open_session(request: Request, body: SessionOpenDTO | None = None) -> 
         )
     except store.SessionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return _dtos(session, registry)
+    except store.StorageUnavailable as exc:
+        # 不降级成"只在内存里开会话":没有落库就没有审计,这个入口不该存在
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return _dtos(session, registry, actor)
 
 
 @router.get("/api/console/session/{session_id}")
 async def get_session(session_id: str, request: Request) -> ConsoleSessionDTO:
     require(request, "changes.read")
-    return _dtos(_session(request, session_id), registry)
+    return _dtos(await _session(request, session_id), registry, actor_of(request))
 
 
 @router.patch("/api/console/session/{session_id}")
@@ -132,9 +140,9 @@ async def patch_session(
 ) -> ConsoleSessionDTO:
     """收窄会话的权限、资源、工具,或者开关"要不要人点"。收窄不需要别人的批准,放宽不会越过这个人。"""
     require(request, "changes.read")
-    session = _session(request, session_id)
+    session = await _session(request, session_id)
     try:
-        store.update_session(
+        await store.update_session(
             session,
             actor=actor_of(request),
             permissions=body.permissions,
@@ -144,30 +152,40 @@ async def patch_session(
         )
     except store.SessionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return _dtos(session, registry)
+    except store.StorageUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return _dtos(session, registry, actor_of(request))
 
 
 @router.delete("/api/console/session/{session_id}")
 async def close_session(session_id: str, request: Request) -> dict:
     require(request, "changes.read")
-    session = _session(request, session_id)
-    return {"closed": store.close_session(session.id)}
+    session = await _session(request, session_id)
+    return {"closed": await store.close_session(session.id)}
 
 
 @router.get("/api/console/session/{session_id}/tools")
 async def list_tools(session_id: str, request: Request) -> dict:
     """这个会话此刻看得见的工具。与 `/mcp` 的 `tools/list` 同一份事实来源。"""
     require(request, "changes.read")
-    session = _session(request, session_id)
-    return {"tools": store.describe_tools(session, registry)}
+    session = await _session(request, session_id)
+    return {"tools": store.describe_tools(session, registry, actor_of(request))}
 
 
 @router.get("/api/console/session/{session_id}/pending")
 async def pending(session_id: str, request: Request) -> ConsolePendingDTO:
     """正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。"""
     require(request, "changes.read")
-    session = _session(request, session_id)
+    session = await _session(request, session_id)
     return ConsolePendingDTO(pending=store.describe_pending(store.pending_of(session)))
+
+
+@router.get("/api/console/session/{session_id}/messages")
+async def messages(session_id: str, request: Request) -> dict:
+    """这一段对话的落库记录:说了什么、调了什么、结果是拒、超时还是执行了。"""
+    require(request, "changes.read")
+    session = await _session(request, session_id)
+    return {"messages": await store.history(session.id)}
 
 
 @router.post("/api/console/session/{session_id}/pending/{call_id}")
@@ -176,9 +194,9 @@ async def decide(
 ) -> dict:
     """人点了允许或拒绝。允许之后才轮到出口判它能不能改世界 —— 两关都要过。"""
     require(request, "changes.execute")
-    session = _session(request, session_id)
+    session = await _session(request, session_id)
     try:
-        store.decide(session, call_id, body.allow, body.reason)
+        await store.decide(session, call_id, body.allow, body.reason, actor=actor_of(request))
     except store.SessionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True}
@@ -188,28 +206,42 @@ def _event(kind: str, data: dict[str, Any]) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _stream(session: store.ConsoleSession, message: str) -> AsyncIterator[str]:
+async def _stream(
+    session: store.ConsoleSession, message: str, actor: Any = None
+) -> AsyncIterator[str]:
     """把 bub 的事件流摊成 SSE。
 
     前端要的是"正在说"和"正在做什么":文本增量、工具调用、工具结果、批准卡、
     收尾。bub 的事件正好是这几种,这里只做改名,不改含义。
     """
-    from engine.agent.loop import HAS_BUB, session_agent
+    from engine.agent.loop import HAS_BUB, NOT_CONFIGURED, NOT_INSTALLED, missing_key, session_agent
 
     if not HAS_BUB:  # pragma: no cover - 只在没装 bub 的部署里走到
-        yield _event("error", {"message": "这台机器的引擎没装 bub,控制台助手起不来"})
+        await store.record(session, "error", NOT_INSTALLED)
+        yield _event("error", {"message": NOT_INSTALLED})
         yield _event("done", {})
         return
 
-    agent = session_agent(session=session, registry=registry)
+    # 模型这一侧没配好:先把人说的话记下来,再报一个可搜索的错误码。
+    await store.record(session, "user", message)
+    if missing_key():
+        await store.record(session, "error", NOT_CONFIGURED)
+        yield _event("error", {"message": NOT_CONFIGURED})
+        yield _event("done", {"steps": [], "actions": session.actions})
+        return
+
+    agent = session_agent(session=session, registry=registry, actor=actor)
     steps: list[dict[str, Any]] = []
+    said: list[str] = []
     try:
         async with agent.run(message, tape=session.id) as stream:
             async for event in stream:
                 kind = getattr(event, "kind", "")
                 data = dict(getattr(event, "data", {}) or {})
                 if kind == "text":
-                    yield _event("delta", {"text": data.get("delta", "")})
+                    delta = str(data.get("delta", ""))
+                    said.append(delta)
+                    yield _event("delta", {"text": delta})
                 elif kind == "tool_call":
                     for call in data.get("tool_calls") or ():
                         steps.append({"tool": call.get("name", "")})
@@ -224,9 +256,11 @@ async def _stream(session: store.ConsoleSession, message: str) -> AsyncIterator[
                     # 计量与显示都不该让这一轮断掉
                     continue
         # 工具是同步跑完的,批准卡也就没有"等"的中间态:一次运行里点过允许就执行过了
+        await store.record(session, "assistant", "".join(said), {"steps": steps})
         yield _event("done", {"steps": steps, "actions": session.actions})
     except Exception as exc:  # noqa: BLE001 - 一轮对话的失败要回到界面上,不是 500
         logger.warning("控制台助手这一轮失败", exc_info=True)
+        await store.record(session, "error", f"{type(exc).__name__}: {exc}")
         yield _event("error", {"message": f"{type(exc).__name__}: {exc}"})
         yield _event("done", {"steps": steps, "actions": session.actions})
 
@@ -238,9 +272,9 @@ async def turn(session_id: str, request: Request, body: TurnDTO) -> StreamingRes
     用 SSE 而不是 WebSocket:这是一问一答,断了就重说一句,不需要双向。
     """
     require(request, "changes.read")
-    session = _session(request, session_id)
+    session = await _session(request, session_id)
     return StreamingResponse(
-        _stream(session, body.message),
+        _stream(session, body.message, actor_of(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

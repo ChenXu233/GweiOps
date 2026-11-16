@@ -147,7 +147,7 @@ export function streamTurn(
       else if (kind === 'tool') on.tool?.(String(payload.name ?? ''), String(payload.args ?? ''))
       else if (kind === 'tool_result') {
         on.toolResult?.(JSON.stringify(payload.results ?? []))
-      } else if (kind === 'error') on.error?.(String(payload.message ?? '出错了'))
+      } else if (kind === 'error') on.error?.(String(payload.message ?? '未知错误:事件流未带 message 字段'))
       else if (kind === 'done') on.done?.(Number(payload.actions ?? 0))
     }
     for (;;) {

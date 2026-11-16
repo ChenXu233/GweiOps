@@ -95,10 +95,12 @@ async def lifespan(app: FastAPI):
         from engine.db.change_ledger import ensure_schema
 
         await ensure_schema()
+        from engine.agent.console_store import ensure_schema as ensure_console_schema
         from engine.incidents import ensure_schema as ensure_incident_schema
 
         await ensure_incident_schema()
-        logger.info("Change ledger + incidents ready (backend=db)")
+        await ensure_console_schema()
+        logger.info("Change ledger + incidents + console sessions ready (backend=db)")
 
     # Startup: 启动 DBOS 并注册工作流队列(按租户分区,公平性执行点)
     logger.info("Launching DBOS...")

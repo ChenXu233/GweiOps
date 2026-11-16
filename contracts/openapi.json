@@ -3113,6 +3113,48 @@
         "summary": "Patch Session"
       }
     },
+    "/api/console/session/{session_id}/messages": {
+      "get": {
+        "description": "这一段对话的落库记录:说了什么、调了什么、结果是拒、超时还是执行了。",
+        "operationId": "messages_api_console_session__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Messages Api Console Session  Session Id  Messages Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Messages"
+      }
+    },
     "/api/console/session/{session_id}/pending": {
       "get": {
         "description": "正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。",

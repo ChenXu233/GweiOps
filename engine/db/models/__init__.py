@@ -11,6 +11,7 @@ from .incident import Incident
 from .plugin_setting import PluginSetting
 from .rbac import AuditLog, Role, User, UserRole, UserSession
 from .api_key import ApiKey
+from .console_session import ConsoleMessageRow, ConsoleSessionRow
 
 __all__ = [
     "Project",
@@ -29,4 +30,6 @@ __all__ = [
     "UserSession",
     "AuditLog",
     "ApiKey",
+    "ConsoleMessageRow",
+    "ConsoleSessionRow",
 ]

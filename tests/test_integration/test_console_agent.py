@@ -3,8 +3,10 @@
 
 要紧的几件事各有一条用例盯着:
 - 权限:会话只能越用越窄,签的时候不能超过这个人手上的;
+- 不静默提权:会话只是上限,每一轮都按调用者当下的权限重算;
 - 允许:改世界的调用先摆到人面前,点了允许才执行,点了拒绝就当没做;
 - 只读:看一眼不需要批准;
+- 落库:会话与每一句都进库,拒绝、超时、执行都有据可查;
 - loop:bub 的循环真的会被驱动(模型要工具 → 工具跑 → 结果回给模型)。
 """
 
@@ -17,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from engine.agent import console as store
 from engine.agent import loop as loop_mod
@@ -111,6 +114,8 @@ class Role:
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
+    import importlib
+
     from engine.api.auth import load_tokens, make_middleware
     from engine.api.routes import console_agent as routes
 
@@ -118,15 +123,27 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config.settings, "change_ledger_path", str(tmp_path / "ledger.jsonl"))
     stub = Registry()
     monkeypatch.setattr(routes, "registry", stub)
-    # 让"一次补全"走脚本,不打真模型
-    async def fake_chat(llm, messages, tools):
-        script = LOOP_SCRIPT.pop(0) if LOOP_SCRIPT else {"content": "好的", "tool_calls": []}
-        SEEN.append({"messages": messages, "tools": tools})
-        return script
 
+    # 会话与对话要落库:用内存 SQLite 当那一份库,不碰部署里的 Postgres
+    test_engine = create_async_engine("sqlite+aiosqlite://")
+    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    # `engine.db.engine` 这个名字在包 `__init__` 里被同名对象遮住了,只能从 sys.modules 拿
+    db_engine = importlib.import_module("engine.db.engine")
+    monkeypatch.setattr(db_engine, "async_session_factory", factory)
+    monkeypatch.setattr(db_engine, "engine", test_engine)
+
+    async def schema():
+        from engine.agent.console_store import ensure_schema
+
+        await ensure_schema()
+
+    asyncio.run(schema())
     LOOP_SCRIPT.clear()
     SEEN.clear()
-    monkeypatch.setattr(loop_mod, "chat", fake_chat)
+    monkeypatch.setattr(loop_mod, "HAS_BUB", True, raising=False)
+    monkeypatch.setattr(loop_mod, "SessionAgent", None, raising=False)
+    monkeypatch.setattr(loop_mod, "session_agent", lambda **kw: ScriptedAgent(**kw))
+    monkeypatch.setattr(config.settings, "llm_api_key", "sk-test")
     monkeypatch.setattr("engine.plugin_manager.registry", stub, raising=False)
     store.reset()
     store.reset_pending()
@@ -140,14 +157,71 @@ def env(tmp_path, monkeypatch):
         stub=stub,
         ledger=JsonlLedger(config.settings.change_ledger_path),
         monkeypatch=monkeypatch,
+        factory=factory,
     )
     store.reset()
     store.reset_pending()
+    asyncio.run(test_engine.dispose())
 
 
-# 一次补全的剧本与记录:每个用例自己填,env 装进去
+def _rows(env, session_id: str) -> list[dict]:
+    return asyncio.run(store.history(session_id))
+
+
+# 模型这一侧的剧本与记录:每个用例自己填,env 装进去。
+# bub 的循环由 `ScriptedAgent` 顶着 —— 这里测的是"平台这一侧怎么接",不是 bub 本身。
 LOOP_SCRIPT: list[dict] = []
 SEEN: list[dict] = []
+
+
+class ScriptedAgent:
+    """一个照着剧本走的假 bub agent。
+
+    事件的名字与形状与 bub 的一致(text / tool_call / tool_result),所以要测的
+    那几件事(工具现算、事件摊成 SSE、失败回到界面上)走的是同一条路径。
+    """
+
+    def __init__(self, *, session, registry, actor=None) -> None:
+        self.session = session
+        self.registry = registry
+        self.actor = actor
+
+    def run(self, prompt, *, tape, **kw):
+        return _ScriptedRun(self.session, self.registry, self.actor)
+
+
+class _ScriptedRun:
+    def __init__(self, session, registry, actor) -> None:
+        self.session = session
+        self.registry = registry
+        self.actor = actor
+
+    async def __aenter__(self):
+        from engine.agent.console import bub_tools
+
+        tools = bub_tools(self.session, self.registry, self.actor)
+        SEEN.append({"tools": [t.name for t in tools]})
+        self._pending: list[tuple[str, dict]] = []
+        # 一轮可以有好几步:每步一个剧本,直到剧本用完或者某一步不再要工具
+        while True:
+            step = LOOP_SCRIPT.pop(0) if LOOP_SCRIPT else {"content": "好的", "tool_calls": []}
+            if step.get("content"):
+                self._pending.append(("text", {"delta": step["content"]}))
+            for call in step.get("tool_calls") or ():
+                self._pending.append(("tool_call", {"tool_calls": [call]}))
+                handler = {t.name: t.handler for t in tools}[call["name"]]
+                result = await handler(**(call.get("args") or {}))
+                self._pending.append(("tool_result", {"tool_results": [result]}))
+            if not step.get("tool_calls"):
+                break
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def __aiter__(self):
+        for kind, data in self._pending:
+            yield SimpleNamespace(kind=kind, data=data)
 
 
 def _h(token: str = "t-operate") -> dict:
@@ -237,7 +311,7 @@ def test_a_tool_whitelist_narrows_the_session(env):
 
 def _session(**kw) -> store.ConsoleSession:
     actor = Role({"changes.read", "changes.execute"}, bindings={BINDING})
-    return store.open_session(actor=actor, tenant="acme", binding=BINDING, **kw)
+    return asyncio.run(store.open_session(actor=actor, tenant="acme", binding=BINDING, **kw))
 
 
 def _call(session, name: str, args: dict, registry) -> dict:
@@ -268,7 +342,7 @@ def test_an_effect_waits_for_a_person(env):
             await asyncio.sleep(0.02)
         assert call is not None
         assert call.name == "compose.scale"
-        store.decide(session, call.id, True)
+        await store.decide(session, call.id, True)
         return await task
 
     out = asyncio.run(scenario())
@@ -292,7 +366,7 @@ def test_a_refused_effect_is_not_executed(env):
             if call is not None:
                 break
             await asyncio.sleep(0.02)
-        store.decide(session, call.id, False, "现在别动")
+        await store.decide(session, call.id, False, "现在别动")
         return await task
 
     out = asyncio.run(scenario())
@@ -368,9 +442,9 @@ def test_the_bub_loop_drives_a_tool_then_answers(env):
     # 模型看到的名字是 compose_scale(点换成了下划线),落账的是 compose.scale
     assert tools == ["compose_scale"]
     assert "加好了" in "".join(texts)
-    assert [t["function"]["name"] for t in SEEN[0]["tools"]] == ["compose_scale", "changes_read"]
-    # 第二轮模型看到的就是工具跑完的结果
-    assert any(m.get("role") == "tool" for m in SEEN[1]["messages"])
+    assert SEEN[0]["tools"] == ["compose_scale", "changes_read"]
+    # 工具真的跑了:账本里多一行,会话的动作计数跟着走
+    assert asyncio.run(env.ledger.latest())[0]["verdict"] == "kept"
     assert session.actions == 1
 
 
@@ -385,7 +459,7 @@ def test_the_loop_only_sees_what_the_session_allows(env):
 
     asyncio.run(run())
 
-    assert [t["function"]["name"] for t in SEEN[0]["tools"]] == ["changes_read"]
+    assert SEEN[0]["tools"] == ["changes_read"]
 
 
 # ---------------------------------------------------------------------------
@@ -416,3 +490,216 @@ def test_the_available_tool_list_is_the_exit_menu(env):
     assert [t["name"] for t in body["tools"]] == ["compose.scale", "changes.read"]
     assert body["resources"] == [BINDING]
     assert json.dumps(body)  # 可序列化,前端直接吃
+
+
+# ---------------------------------------------------------------------------
+# 不静默提权:会话是上限,不是签名
+# ---------------------------------------------------------------------------
+
+
+def test_a_revoked_permission_is_gone_on_the_next_turn(env):
+    """会话开着的时候人的权限被收回了 —— 下一轮不能还按开的时候那份算。"""
+    session = _session()
+
+    narrowed = Role({"changes.read"}, bindings={BINDING})
+    out = asyncio.run(store.call_tool(session, env.stub, "compose.scale", {}, actor=narrowed))
+
+    assert out["ok"] is False
+    assert "changes.execute" in out["reason"]
+    # 清单也跟着少一件:工具清单与判据是同一条
+    names = [t["name"] for t in store.describe_tools(session, env.stub, narrowed)]
+    assert names == ["changes.read"]
+
+
+def test_the_session_is_only_an_upper_bound(env):
+    """会话自己收窄过之后,调用者再宽也没用:取交集,不取并集。"""
+    session = _session(permissions=["changes.read"])
+    wide = Role({"changes.read", "changes.execute"}, bindings={BINDING})
+
+    assert "compose.scale" not in {t["name"] for t in store.describe_tools(session, env.stub, wide)}
+    out = asyncio.run(store.call_tool(session, env.stub, "compose.scale", {}, actor=wide))
+    assert out["ok"] is False
+
+
+def test_approval_rechecks_the_permission(env):
+    """等待批准的那段时间里权限没了,点允许也要拒 —— 否则点一下就是延长旧权限。"""
+    session = _session()
+    narrowed = Role({"changes.read"}, bindings={BINDING})
+
+    async def scenario():
+        task = asyncio.create_task(store.call_tool(session, env.stub, "compose.scale", {"replicas": 1}))
+        for _ in range(100):
+            call = store.pending_of(session)
+            if call is not None:
+                break
+            await asyncio.sleep(0.02)
+        assert call is not None
+        with pytest.raises(store.SessionError):
+            await store.decide(session, call.id, True, actor=narrowed)
+        await store.decide(session, call.id, False, "权限已收回", actor=narrowed)
+        return await task
+
+    out = asyncio.run(scenario())
+
+    assert out["ok"] is False
+    assert env.stub.provider.executed == 0
+
+
+def test_a_read_only_identity_does_not_lose_its_read_tools(env):
+    """`read` 只给只读口,不给"空集"—— 空集在静态令牌那条路上会变成放行。"""
+    assert "changes.read" in store._scope_permissions("read")
+    assert "changes.execute" not in store._scope_permissions("read")
+
+
+# ---------------------------------------------------------------------------
+# 落库:会话与每一句都要能回查
+# ---------------------------------------------------------------------------
+
+
+def test_the_session_is_persisted(env):
+    opened = _open(env)
+
+    rows = asyncio.run(store.history(opened["id"]))
+    assert [r["role"] for r in rows] == ["session"]
+    assert rows[0]["payload"]["action"] == "session.open"
+
+
+def test_a_session_survives_the_process_cache(env):
+    """缓存清空(相当于进程重启)之后,会话从库里读回来,连权限上限一起。"""
+    opened = _open(env, permissions=["changes.read"])
+    store.reset()
+
+    body = env.client.get(f"/api/console/session/{opened['id']}", headers=_h()).json()
+
+    assert body["permissions"] == ["changes.read"]
+    assert [t["name"] for t in body["available"]] == ["changes.read"]
+
+
+def test_a_refusal_is_on_the_record(env):
+    session = _session()
+
+    async def scenario():
+        task = asyncio.create_task(store.call_tool(session, env.stub, "compose.scale", {"replicas": 2}))
+        for _ in range(100):
+            call = store.pending_of(session)
+            if call is not None:
+                break
+            await asyncio.sleep(0.02)
+        await store.decide(session, call.id, False, "现在别动")
+        return await task
+
+    asyncio.run(scenario())
+
+    rows = _rows(env, session.id)
+    assert [r["role"] for r in rows] == ["session", "tool_call", "denied"]
+    assert rows[2]["payload"]["reason"] == "现在别动"
+    # 拒绝没有落到账本:改世界的动作没做
+    assert asyncio.run(env.ledger.latest()) == []
+
+
+def test_a_permission_refusal_is_on_the_record(env):
+    session = _session(permissions=["changes.read"])
+
+    asyncio.run(store.call_tool(session, env.stub, "compose.scale", {}))
+
+    rows = _rows(env, session.id)
+    assert [r["role"] for r in rows] == ["session", "tool_call", "tool_result"]
+    assert rows[2]["payload"]["ok"] is False
+
+
+def test_the_turn_is_recorded(env):
+    LOOP_SCRIPT.append({"content": "看过了", "tool_calls": []})
+    opened = _open(env)
+
+    env.client.post(
+        f"/api/console/session/{opened['id']}/turn",
+        json={"message": "现在怎么样"},
+        headers=_h(),
+    )
+
+    rows = _rows(env, opened["id"])
+    assert [r["role"] for r in rows] == ["session", "user", "assistant"]
+    assert rows[1]["content"] == "现在怎么样"
+    assert rows[2]["content"] == "看过了"
+
+
+def test_the_messages_endpoint_is_the_audit_trail(env):
+    opened = _open(env)
+
+    body = env.client.get(
+        f"/api/console/session/{opened['id']}/messages", headers=_h()
+    ).json()
+
+    assert body["messages"][0]["payload"]["action"] == "session.open"
+
+
+# ---------------------------------------------------------------------------
+# 模型:交给 bub 自己的 provider,不再绕 litellm
+# ---------------------------------------------------------------------------
+
+
+def test_the_spec_is_provider_colon_model(monkeypatch):
+    monkeypatch.setattr(config.settings, "llm_provider", "gemini")
+    monkeypatch.setattr(config.settings, "llm_model", "gemini-2.5-pro")
+
+    # litellm 那套的名字与 republic 不总一样;对不上的在这里换掉
+    assert loop_mod.model_spec() == "google:gemini-2.5-pro"
+
+
+def test_a_model_string_with_a_prefix_wins(monkeypatch):
+    monkeypatch.setattr(config.settings, "llm_provider", "openai")
+    monkeypatch.setattr(config.settings, "llm_model", "deepseek/deepseek-chat")
+
+    assert loop_mod.model_spec() == "deepseek:deepseek-chat"
+
+
+def test_client_options_carry_the_key_and_the_endpoint(monkeypatch):
+    monkeypatch.setattr(config.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(config.settings, "llm_base_url", "http://localhost:8000/v1")
+
+    options = loop_mod.client_options("openai:qwen")
+
+    assert options == {"api_key": "sk-test", "base_url": "http://localhost:8000/v1", "model": "qwen"}
+
+
+def test_the_agent_uses_bubs_model_not_a_translation(monkeypatch):
+    """会话 agent 的模型是 bub 自己的 `BubModel`:一个 provider:model,不是自己摊事件流。
+
+    这一条要真 bub,所以绕开 env 里那个替身,直接按装了 bub 的样子构造。
+    """
+    try:
+        from bub.builtin.model import BubModel  # noqa: F401
+    except ImportError:
+        pytest.skip("没装 bub")
+    real = pytest.importorskip("engine.agent.loop")
+    monkeypatch.setattr(real, "HAS_BUB", True)
+    monkeypatch.setattr("engine.agent.loop.session_agent", real.session_agent, raising=False)
+
+    session = _session()
+    agent = real.session_agent(session=session, registry=Registry())
+
+    assert type(agent.model).__name__ == "BubModel"
+    assert ":" in agent.model.spec
+
+
+# ---------------------------------------------------------------------------
+# 模型不可用:报错要能被搜索到
+# ---------------------------------------------------------------------------
+
+
+def test_a_missing_key_is_an_error_not_a_persona(env, monkeypatch):
+    monkeypatch.setattr(config.settings, "llm_api_key", "")
+    opened = _open(env)
+
+    resp = env.client.post(
+        f"/api/console/session/{opened['id']}/turn",
+        json={"message": "在吗"},
+        headers=_h(),
+    )
+
+    assert "event: error" in resp.text
+    assert "LLM_API_KEY" in resp.text
+    # 不是"我说不了话"那种拟人句
+    assert "说不了话" not in resp.text
+    rows = _rows(env, opened["id"])
+    assert [r["role"] for r in rows][-1] == "error"
