@@ -1,0 +1,8 @@
+# 自定义部署环境。在这里选环境与镜像 tag,触发 .cnb.yml 里的 tag_deploy.* 流水线。
+# 部署是可信事件:只有仓库写权限且能推 tag 的人能点(未配 permissions 时的默认),
+# 且 CNB_TOKEN 带 registry-package:rw,能拉制品库镜像。
+environments:
+  - name: dogfood
+    description: 初始 dogfood 部署——把指定 tag 的镜像切到腾讯内网目标机
+    env:
+      name: dogfood

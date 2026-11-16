@@ -132,3 +132,35 @@ master:
             corepack enable
             corepack prepare pnpm@10.15.0 --activate
             bash .ci/web-checks.sh
+
+# ---------------------------------------------------------------------------
+# 部署 CI:初始 dogfood(正确接入 dogfood 之前的过渡形态)。
+#
+# 触发:在仓库页面给一个 tag 点「部署到 dogfood」(见 .cnb/tag_deploy.yml)。
+# 用 tag_deploy 而不是 master push:部署要挑版本、要能审计、最好带一道人工确认,
+# 不该每次推代码就往服务器上切。发布制品仍由上面的 v* tag_push 负责,这里只做
+# 「把已经发布的镜像切到目标机」这一件事。
+#
+# 凭据走密钥仓库 imports(本仓库没有 from_secret)。密钥文件里除了 SSH 私钥,
+# 还带 allow_slugs / allow_events 把范围收紧到本仓库、仅部署事件。
+# 模板见 deploy/ci/secret.example.yml。
+#
+# 内网目标机:CNB SaaS 的构建节点在公网,默认连不进腾讯内网。两种走法二选一:
+#   1) 密钥里给 PROXY_*,经跳板机进内网(deploy-via-ssh.sh 已按变量处理);
+#   2) 把目标机接成根组织的自定义 Runner(namespace: group),流水线在内网里跑,
+#      直连目标机。自定义 Runner 要能出网访问 CNB 站点。
+# 两种都不需要目标机主动暴露端口到公网。见 README「部署 CI」。
+#
+# 部署脚本从仓库现场生成(内嵌 compose 与 remote-deploy.sh),经 SSH stdin 送到
+# 目标机执行——目标机不依赖手工同步的脚本副本,凭据也不经过流水线日志。
+# ---------------------------------------------------------------------------
+
+  tag_deploy.dogfood:
+    - name: deploy dogfood
+      imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/gwei-deploy.yml
+      stages:
+        - name: 切流到目标机
+          image: alpine:3.20
+          script: |
+            apk add --no-cache openssh-client bash >/dev/null
+            bash deploy/ci/deploy-via-ssh.sh "$CNB_BRANCH" "$CNB_REPO_SLUG_LOWERCASE"

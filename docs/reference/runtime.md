@@ -407,6 +407,17 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 - `frontend/packages/core/types/*` 是 schema 里 DTO 的别名,字段与后端同源;类型名对不上时 `vue-tsc` 直接报错。
 - 改响应模型后两个命令都要重跑;`tests/test_integration/test_openapi_contract.py` 会在 `contracts/openapi.json` 过期时报错(不需要 Postgres)。
 
+## 部署
+
+一次部署 = 给 tag 在仓库页面点「部署到 dogfood」（`.cnb/tag_deploy.yml`），
+触发 `.cnb.yml` 的 `tag_deploy.dogfood`：目标机拉制品库里该 tag 的 engine/web 镜像，
+compose 切流，验 `/api/health`，失败自动回滚。目标机的编排是
+`docker-compose.deploy.yml`（自包含，拉现成镜像、不 build），凭据在目标机的
+`.env.prod`，SSH 与内网跳板配置在密钥仓库。
+
+目标机准备、密钥仓库字段与内网连通方式见[根 README · 部署 CI](../../README.md#部署-cidogfood)；
+密钥文件格式模板见 `deploy/ci/secret.example.yml`。
+
 ## 插件
 
 发现、运行期启停、进程外 gRPC 接入、事件总线、Hook、UI 插槽与配置见 [插件系统](plugin-system.md)。
