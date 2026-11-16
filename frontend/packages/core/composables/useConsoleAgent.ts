@@ -1,11 +1,11 @@
 // packages/core/composables/useConsoleAgent.ts
 //
-// 悬浮窗助手的状态：一条会话、一串消息、一张待批的调用。
+// 悬浮窗助手的状态:会话、消息、待批调用。
 //
-// 三件事都在引擎那边定，这里只负责显示与转发：
-// - 能调哪些工具（会话的权限 + 白名单），`available` 就是引擎算出来的清单；
-// - 改世界要先有人点允许，`pending` 就是等在门口的那一次；
-// - 每次运行的动作数、上限，都由引擎给，不在这里自己数。
+// 权限与计数都由引擎定,这里只做显示与转发:
+// - 可用工具(`available`)由引擎按会话权限 + 白名单算出;
+// - 改世界的调用待批时 `pending` 非空;
+// - 动作计数与上限由引擎给出,不在前端累计。
 import { computed, ref } from 'vue'
 import {
   ConsoleAgentApi,
@@ -20,7 +20,7 @@ export interface ChatMessage {
   id: number
   role: MessageRole
   text: string
-  /** 工具调用：名字与它跑出来的结果，两者分开显示，人才能看清"它做了什么" */
+  /** 工具调用:参数与结果分开存,分开显示 */
   tool?: { name: string; args: string; result?: string }
   at: number
 }
@@ -80,7 +80,7 @@ export function useConsoleAgent() {
     say('user', body)
     busy.value = true
     error.value = ''
-    // 这一轮的回答先占一条空消息，增量往里长
+    // 先占一条空消息,增量往里填
     const agent: ChatMessage = { id: nextId(), role: 'agent', text: '', at: Date.now() }
     messages.value.push(agent)
     let toolIndex = 0
@@ -104,7 +104,7 @@ export function useConsoleAgent() {
       },
       done: () => {
         if (!agent.text.trim()) {
-          agent.text = '(这一轮没有话要说)'
+          agent.text = '(无输出)'
         }
         void refresh()
       },
@@ -128,7 +128,7 @@ export function useConsoleAgent() {
     try {
       session.value = (await ConsoleAgentApi.getSession(session.value.id)) as unknown as ConsoleSession
     } catch {
-      // 会话过期了：下次说话时重新开一个，不在这里吵
+      // 会话已失效,下次发送时重建
       session.value = null
       return
     }
@@ -154,7 +154,7 @@ export function useConsoleAgent() {
     }
   }
 
-  /** 收窄这次对话能给的工具。放宽不会越过这个人手上的权限 —— 引擎会拒。 */
+  /** 收窄会话工具白名单;放宽不会超出当前权限,由引擎拒。 */
   async function narrowTools(names: string[]) {
     if (!session.value) return
     try {

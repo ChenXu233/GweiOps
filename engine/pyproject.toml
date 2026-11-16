@@ -16,10 +16,9 @@ dependencies = [
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",
     "litellm>=1.89.0",
-    # 控制台助手的 agent loop。不自己手搓:工具执行、多步、事件流都由它给。
-    # bub 的模型入口 `bub.builtin.model` 先 import `bub.builtin` 的包级 __init__,
-    # 那里会拉进 framework(要 typer / pluggy)。不装这一组 extras,`BubModel` 就
-    # import 不到,loop 只能退成"bub 未安装"。
+    # 控制台助手的 agent loop(工具执行、多步、事件流)。
+    # `bub.builtin.model` 的 import 会拉进 `bub.builtin` 包级 __init__,那里要
+    # framework(typer / pluggy),所以必须带 [app] extras,否则 import 不到 BubModel。
     "bub[app]>=0.6.1",
     "httpx>=0.28.0",
     "pyyaml>=6.0",

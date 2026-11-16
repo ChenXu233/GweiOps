@@ -1,21 +1,15 @@
 # engine/agent/console.py
-"""控制台里的那个悬浮窗 agent —— loop 用 bub,出口还是出口。
+"""控制台助手的会话、权限与审批。loop 用 bub,出口仍是 `run_tool`。
 
-三件事在这里定死,别处不再判第二遍:
+- **会话**(`ConsoleSession`):权限、资源、绑定、模型记在会话上,落库
+  (`console_sessions`、`console_messages`),进程内只留缓存,便于审计回查。
+- **权限**:工具清单按**此刻的调用者**算(与 `/mcp` 的 `tools/list` 同一判据
+  `tool_visible`),再被会话白名单收窄。会话权限只是上限,每轮与调用者当前
+  权限取交集——权限被回收或换了令牌,旧会话不能继续用。
+- **审批**:会话开着 `confirm` 时,改世界的调用不直接执行,落成待批调用,
+  批准后才走出口。只读能力(名字以 `.read` 结尾)不需要批准。
 
-- **会话**:一次对话是一个会话语义对象(`ConsoleSession`),权限、资源、绑定、模型
-  都记在它身上。落库(`console_sessions`、`console_messages`),进程内只留一层
-  缓存 —— 权限依据与每一句都要能回查,否则这个入口没有审计。
-- **权限**:能调哪些工具由**此刻的调用者**算(与 `/mcp` 的 `tools/list` 同一条判据
-  `tool_visible`),再被会话自己的白名单收窄一层。会话不是一次性的签名:每一轮
-  都按当下这个人的权限重算一遍,会话上留着的权限只做上限 —— 人的权限被回收、
-  凭据换了人,都不能靠一个还没过期的会话继续用。
-- **允许**:会话开了 `confirm`,改世界的调用不直接执行,落成一条待批的调用;
-  人点了允许才走出口。只读口(名字以 `.read` 结尾的能力)不受这条约束 ——
-  看一眼不需要批准,也就不用把人也拉过来点一下。
-
-loop 不自己写:推一版、看一眼、改主意的循环交给 `bub.core.Agent`,它带工具执行、
-多步、事件流。平台这一侧只剩"出口"这一件事,和沙箱里那个 agent 完全相同。
+多步循环由 `bub.core.Agent` 提供,平台只负责出口。
 """
 
 from __future__ import annotations
@@ -32,33 +26,33 @@ from engine.auth.keys import is_scoped, permission_for_tool, tool_visible
 
 logger = logging.getLogger(__name__)
 
-# 一次对话最多几步模型调用。够它看两眼看一步再收尾,又不把账单跑飞。
+# 一次对话最多几步模型调用。
 MAX_STEPS = 8
-# 一次运行最多几次改世界的调用。与出口的小时上限不是一回事:那是租户级的,这是会话语级。
+# 一次会话最多几次改世界的调用;与租户级的出口小时上限是两回事。
 MAX_ACTIONS = 6
-# 等待人点"允许"的上限。人没在屏幕前,这一轮就收在这里,不挂着连接等到天荒地老。
+# 等待人工批准的超时;超时后本轮结束。
 APPROVAL_TIMEOUT_SECONDS = 300.0
-# 会话闲置多久回收。只在进程内,不落库,所以这是一句内存约定。
+# 会话闲置回收时限;只作用于进程内缓存。
 SESSION_TTL_SECONDS = 1800.0
 
-SYSTEM_PROMPT = """你是 GweiOps 控制台里的值班助手。用户在运维这台机器,你替他做事。
+SYSTEM_PROMPT = """你是 GweiOps 控制台助手,在这台机器上代用户执行运维操作。
 
 规则:
-1. 只有工具能改变外部世界。每次改世界的调用都会经过平台判定:可能被拒、被拦、被撤销。
-   被拒不是错误,是结论;读 reason,换办法或者停手,同一个动作不要反复试。
-2. 拿不准就先看。只读工具不要钱,猜要。
-3. 需要人点的动作,平台会替你把话问到用户面前。不要自己宣称已经执行。
-4. 回答用中文,短句。说清楚:看了什么、做了什么、结果如何、还剩什么。
+1. 只有工具能改变外部状态,每次改世界的调用都经过平台判定,可能被拒、被拦、被撤销。
+   被拒时读 reason,换办法或停手,不要反复重试同一动作。
+2. 拿不准先用只读工具确认。
+3. 需要人工批准的操作由平台向用户发起确认;未经确认不要宣称已执行。
+4. 用中文回答,句子简短:看了什么、做了什么、结果如何、还剩什么。
 """
 
 
 class SessionError(ValueError):
-    """会话操作被规则拒绝。message 直接给人看。"""
+    """会话操作被拒绝。message 面向用户。"""
 
 
 @dataclass
 class PendingCall:
-    """一次等人点的改世界调用。参数原样留着 —— 允许之后要照着它执行。"""
+    """一次待人工批准的改世界调用;参数保留到批准后原样执行。"""
 
     id: str
     name: str
@@ -71,7 +65,7 @@ class PendingCall:
 
 @dataclass
 class ToolResult:
-    """回给模型的结果。必须能读懂,所以 ok / verdict / reason 原样带回去。"""
+    """回给模型的结果:ok / verdict / reason / data 原样带回。"""
 
     ok: bool
     verdict: str = ""
@@ -91,21 +85,21 @@ class ToolResult:
 
 @dataclass
 class ConsoleSession:
-    """一次对话。权限、资源、模型都记在这,运行时不从请求里再读一遍。"""
+    """一个会话;权限、资源、模型等运行时上下文。"""
 
     id: str
     tenant: str
     actor: str
     permissions: frozenset[str] = field(default_factory=frozenset)
     bindings: frozenset[str] = field(default_factory=frozenset)
-    # 白名单:会话只允许够哪些工具。空 = 按权限给全部(与密钥那一栏同一口径)。
+    # 工具白名单;空 = 按权限给全部(与密钥同口径)。
     tools: frozenset[str] = field(default_factory=frozenset)
     confirm: bool = True
     model: str = ""
     binding: str = ""
     created_at: float = field(default_factory=time.time)
     last_used_at: float = field(default_factory=time.time)
-    # 已用掉的改世界次数。按会话累计,不按运行 —— 一次对话的总账。
+    # 已用的改世界次数,按会话累计。
     actions: int = 0
 
     def touch(self) -> None:
@@ -156,26 +150,25 @@ def sessions() -> dict[str, ConsoleSession]:
 
 
 async def get_session(session_id: str) -> ConsoleSession:
-    """取会话。缓存里没有就从库里读回来 —— 进程重启不该让一段对话连依据一起消失。"""
+    """取会话;缓存未命中时从库读回。"""
     _sweep()
     found = _SESSIONS.get(session_id)
     if found is None:
         found = await _load(session_id)
         if found is None:
-            raise SessionError("会话不存在:已关闭,或闲置超过 SESSION_TTL_SECONDS 被回收")
+            raise SessionError("会话不存在:已关闭或已超时")
         _SESSIONS[found.id] = found
     found.touch()
     return found
 
 
 def _held_permissions(actor: Any) -> frozenset[str]:
-    """这个人此刻手上有哪些权限。会话能给出去的,不会超过这一份。
+    """调用者当前持有的权限;会话授权不能超过它。
 
-    静态令牌没有权限集(只有 read/operate),它对"能签什么"的回答是全部或没有。
-    这一条与 `grantable` 的口径一致,免得同一个部署里两种说法。
+    静态令牌没有权限集(只有 read/operate scope),按 scope 映射,口径与 `grantable` 一致。
     """
     if actor is None:
-        # 没配凭据的部署:没有"人"可以比对。会话按 operate 记账(单机自用)。
+        # 未开鉴权的部署:按 operate 记账(单机自用)。
         return frozenset(ALL_PERMISSIONS)
     if is_scoped(actor):
         return frozenset(getattr(actor, "permissions", frozenset()))
@@ -183,11 +176,10 @@ def _held_permissions(actor: Any) -> frozenset[str]:
 
 
 def _scope_permissions(scope: str) -> frozenset[str]:
-    """静态令牌:read 只剩只读口,operate 是全部。
+    """静态令牌的权限集:read 只给只读口,operate 给全部。
 
-    以前这里把 read 一律算成空集 —— 于是「会话的权限」对一个只读令牌是空的,
-    会话带着空权限去判 `tool_visible`,静态令牌那条"权限为空就按 scope 放行"的
-    旧路径会因此放行更多。宁可少给:read 就只给只读口。
+    read 不能映射成空集:空权限在 `tool_visible` 的静态令牌路径上会按 scope 放行,
+    反而放行更多。
     """
     from engine.auth import PERMISSIONS, READ_PERMISSIONS
 
@@ -197,11 +189,10 @@ def _scope_permissions(scope: str) -> frozenset[str]:
 
 
 def effective_permissions(session: ConsoleSession, actor: Any) -> frozenset[str]:
-    """这一轮真正生效的权限 = 会话留着的 ∩ 调用者此刻手上的。
+    """本轮生效的权限 = 会话权限 ∩ 调用者当前权限。
 
-    会话只是上限,不是签名:人的权限被回收、换了令牌调用同一个会话,都不该
-    继续拿到会话创建时的权限。`actor is None` 表示这个部署没开鉴权,没有可比对
-    的人,于是只看会话自己(`_session` 已经核对过归属)。
+    会话只是上限:权限被回收、换了令牌,都不能继续用会话创建时的权限。
+    `actor is None` 表示未开鉴权,此时只看会话本身(归属已由 `_session` 核对)。
     """
     if actor is None:
         return session.permissions
@@ -209,7 +200,7 @@ def effective_permissions(session: ConsoleSession, actor: Any) -> frozenset[str]
 
 
 def _check_owner(session: ConsoleSession, actor: Any) -> None:
-    """会话属于这个身份吗。归属不对就是 403 —— 借一个会话等于借它的权限。"""
+    """核对会话归属;借到会话等于借到权限,归属不符即拒绝。"""
     name = str(getattr(actor, "name", "") or "")
     if name and session.actor and session.actor != name:
         raise SessionError("这个会话不属于当前身份")
@@ -224,11 +215,11 @@ def _check_owner(session: ConsoleSession, actor: Any) -> None:
 
 
 class StorageUnavailable(RuntimeError):
-    """会话存不下来。开会话时这必须是错误,不能退化成"只在内存里活着"。"""
+    """会话持久化失败;开会话时不降级为内存会话。"""
 
 
 async def persist(session: ConsoleSession) -> None:
-    """把会话当前的样子写回去。失败就是失败 —— 权限改窄了却没落库,下次读回来是旧的。"""
+    """把会话当前状态写回数据库;失败直接抛出,否则权限收窄会落空。"""
     from sqlalchemy import update
 
     from engine.db.engine import async_session_factory
@@ -261,10 +252,7 @@ async def record(
     content: str = "",
     payload: dict[str, Any] | None = None,
 ) -> None:
-    """追加一行对话。审计靠它:说了什么、调了什么、结果是拒还是被允许。
-
-    写不进去时只记日志、不打断这一轮 —— 对话仍在继续,但库里的审计会缺一段,
-    所以这一条在 WARNING 里带上会话 id。
+    """追加一行对话记录(审计)。写失败只记日志、不打断本轮;日志带会话 id。
     """
     from engine.db.engine import async_session_factory
     from engine.db.models.console_session import ConsoleMessageRow
@@ -325,7 +313,7 @@ def _parse_ts(raw: str) -> float:
 
 
 async def history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
-    """这一段对话的行,按写入顺序。审计与"界面重开还能看到"共用这一份。"""
+    """会话的对话记录,按写入顺序。"""
     from sqlalchemy import select
 
     from engine.db.engine import async_session_factory
@@ -359,7 +347,7 @@ async def history(session_id: str, limit: int = 200) -> list[dict[str, Any]]:
 def _refuse_overreach(wanted: set[str], granted: frozenset[str], what: str) -> None:
     over = sorted(wanted - granted)
     if over:
-        raise SessionError(f"你手上没有这些{what},给不出去:{', '.join(over)}")
+        raise SessionError(f"不能授予当前身份没有的{what}:{', '.join(over)}")
 
 
 async def open_session(
@@ -374,13 +362,12 @@ async def open_session(
     model: str = "",
     storage: bool = True,
 ) -> ConsoleSession:
-    """开一个新会话。默认给到这个身份的全部 —— 只有它自己能收窄自己。
+    """开一个新会话,默认授予该身份的全部权限(只能收窄)。
 
-    `storage=False` 只给口令判据本身的用例用:会话不落库,也没有审计。默认是
-    落库 —— 一个只在内存里的会话没有审计依据,生产上不能这么开。
+    `storage=False` 仅用于测试;默认落库,不落库的会话没有审计依据。
     """
     held = _held_permissions(actor)
-    # 不填 = 按这个人能给的来。填了就核对一遍:会话只能越用越窄。
+    # 不填 = 按身份可给的全部;填了则核对,会话只能收窄。
     granted = frozenset(permissions) if permissions is not None else held
     unknown = set(granted) - ALL_PERMISSIONS
     if unknown:
@@ -417,7 +404,7 @@ async def open_session(
 
 
 async def _insert(session: ConsoleSession) -> None:
-    """建一行。写不进去就别返回这个会话 —— 一个只在内存里的会话没有审计依据。"""
+    """插入会话行;失败即报错,不返回会话。"""
     from engine.db.engine import async_session_factory
     from engine.db.models.console_session import ConsoleSessionRow
 
@@ -445,7 +432,7 @@ async def _insert(session: ConsoleSession) -> None:
 
 
 async def _audit(session: ConsoleSession, action: str, detail: dict[str, Any] | None = None) -> None:
-    """会话本身的变更(开、改、关)。与对话分开记,免得"谁把权限改窄了"埋在对话里。"""
+    """会话级变更(开、改、关)的审计,与对话记录分开。"""
     await record(session, "session", action, {"action": action, **(detail or {})})
 
 
@@ -458,7 +445,7 @@ async def update_session(
     bindings: list[str] | None = None,
     confirm: bool | None = None,
 ) -> ConsoleSession:
-    """改会话。能给的只有这个人手上有的 —— 改的时候与开的时候同一条红线。"""
+    """修改会话;授权上限与开会话一致。"""
     if permissions is not None:
         wanted = frozenset(permissions)
         _refuse_overreach(set(wanted), _held_permissions(actor), "权限")
@@ -509,14 +496,11 @@ async def close_session(session_id: str) -> bool:
 def session_allows(
     session: ConsoleSession, tool: str, bindings_of: Any = None, actor: Any = None
 ) -> bool:
-    """这个会话够不够得着这个工具。
+    """会话能否使用这个工具。
 
-    判据全在 `tool_visible`:权限集、身份自带的白名单、资源三关。会话再收窄一层。
-    这里不重写一遍权限表 —— 第二份判据迟早与第一份打架。
-
-    **权限按此刻的调用者现算**,不是会话创建时的那一份:`effective_permissions`
-    取会话权限与这个人当下权限的交集。少了这一步,一个人被收回权限之后,他手上
-    还没过期的会话仍能拿到原来的工具集 —— 那就是静默提权。
+    判据在 `tool_visible`(权限、白名单、资源),会话白名单再收窄一层,不另写权限表。
+    权限按**此刻的调用者**取交集(`effective_permissions`):否则权限被收回后,
+    未过期的会话仍能用旧工具集,形成静默提权。
     """
     from engine.api.auth import Actor
 
@@ -536,8 +520,8 @@ def session_allows(
         return False
     if session.tools and tool not in session.tools:
         return False
-    # 最后一道:这个工具要的权限得在这次生效的权限集里。`tool_visible` 已经判过一遍,
-    # 这里再落一次是因为它收窄用的身份可能带 static 态;权限判据只认 `granted`。
+    # 工具所需权限须落在生效权限集里:`tool_visible` 收窄用的身份可能带静态 scope,
+    # 这里只认 `granted`。
     return permission_for_tool(tool) in granted
 
 
@@ -568,20 +552,15 @@ def describe_tools(
 
 
 def model_tool_name(capability: str) -> str:
-    """能力名交给模型时的样子。
-
-    `.` 换成 `_`:同一个名字要走通好几家的函数调用格式,而 `compose.scale` 这种
-    带点的名字在中间被改写是常态(bub 自己也会换)。换回来的映射只此一处。
+    """模型看到的工具名:`.` 换成 `_`(部分函数调用格式不接受带点的名字)。
+    反向映射见 `capability_of`。
     """
     return capability.replace(".", "_")
 
 
 def bub_tools(session: ConsoleSession, registry: Any, actor: Any = None) -> list[Any]:
-    """把会话的工具清单翻成 bub 的 `Tool`。
-
-    参数 schema 直接用出口清单给的那份 —— 参数名来自插件声明,不是这里编的。
-    `additionalProperties` 打开:出口清单只说了"有这些参数",没说"只能有这些"。
-    `actor` 是这一轮的调用者:清单按他当下的权限算。
+    """把会话的工具清单转成 bub 的 `Tool`。参数 schema 沿用出口清单,不另编;
+    `additionalProperties` 打开(出口清单未限定参数集)。清单按 `actor` 当前权限算。
     """
     from bub.core.tools import Tool
 
@@ -612,7 +591,7 @@ def _make_handler(session: ConsoleSession, registry: Any, model_name: str, actor
 
 
 def capability_of(model_name: str) -> str:
-    """模型给的名字 → 能力名。清单里的每一个都由 `model_tool_name` 换过一次,这里换回来。"""
+    """模型工具名 → 能力名(`model_tool_name` 的反向)。"""
     for capability in _registry().declared_effects():
         if model_tool_name(capability) == model_name:
             return capability
@@ -631,10 +610,9 @@ async def call_tool(
     args: dict[str, Any],
     actor: Any = None,
 ) -> dict[str, Any]:
-    """一次工具调用。只读直接做,改世界的要人点允许。
+    """执行一次工具调用:只读直接执行,改世界的先经人工批准(如开启 confirm)。
 
-    人点拒绝、超时、次数用完都是**结论**,不是异常:它们原样回到模型手里,
-    模型据此换办法或者收尾。抛出只会让这轮对话断在半路。
+    拒绝、超时、超限都作为**结论**返回给模型,不抛异常,避免中断本轮对话。
     """
     from engine.agent.tools import ToolCall, run_tool
     from engine.change_unit import create_ledger
@@ -658,7 +636,7 @@ async def call_tool(
     if mutating:
         if session.actions >= MAX_ACTIONS:
             result = ToolResult(
-                False, reason=f"这次对话已经改了 {session.actions} 次,到上限 {MAX_ACTIONS} 了;停手,由人接手"
+                False, reason=f"已达本次对话的改动上限({MAX_ACTIONS}),需人工处理"
             ).to_dict()
             await record(session, "tool_result", name, result)
             return result
@@ -693,7 +671,7 @@ _PENDING: dict[str, tuple[ConsoleSession, PendingCall]] = {}
 
 
 def pending_of(session: ConsoleSession) -> PendingCall | None:
-    """这个会话正在等的那一次。一次只等一件:排队批的东西人看不明白。"""
+    """会话当前待批的调用;同一时间只保留一件。"""
     for owner, call in _PENDING.values():
         if owner is session and not call.decision:
             return call
@@ -703,16 +681,14 @@ def pending_of(session: ConsoleSession) -> PendingCall | None:
 async def ask(
     session: ConsoleSession, name: str, args: dict[str, Any], actor: Any = None
 ) -> dict[str, Any]:
-    """把这次调用摆到人面前,等到他点。
+    """挂起这次调用等待人工批准;一个会话同时只等一件。
 
-    这里等的是**人**,不是锁:同一个人可以有多个会话,但一个会话只有一次在等。
-
-    批准之后再判一次权限:等人点的这段时间里,人的权限可能已经被收回。
+    批准后重新校验权限:等待期间权限可能已被收回。
     """
     import asyncio
 
     if pending_of(session) is not None:
-        return ToolResult(False, reason="上一个批准请求仍在等待,先处理它").to_dict()
+        return ToolResult(False, reason="已有待批准的调用未处理").to_dict()
 
     call = PendingCall(
         id=secrets.token_urlsafe(8),
@@ -748,7 +724,7 @@ async def ask(
 
     if session.actions >= MAX_ACTIONS:
         result = ToolResult(
-            False, reason=f"这次对话已经改了 {session.actions} 次,到上限 {MAX_ACTIONS} 了;停手,由人接手"
+            False, reason=f"已达本次对话的改动上限({MAX_ACTIONS}),需人工处理"
         ).to_dict()
         await record(session, "tool_result", name, result)
         return result
@@ -777,10 +753,9 @@ def _registry() -> Any:
 async def decide(
     session: ConsoleSession, call_id: str, allow: bool, reason: str = "", actor: Any = None
 ) -> PendingCall:
-    """人点了。判据:这个会话确实有这么一次在等,并且点的人此刻仍然拿得到这个工具。
+    """记录人工决定。校验:该调用确实在等待,且决定者当前仍持有对应工具的权限。
 
-    后一条不是多余的:批准这一步本身就是一次授权,如果那时权限已经没了,
-    点一下就把旧权限延长到了执行 —— 静默提权最常见的形状。
+    后者不可省:批准即授权,权限已失效时批准会把旧权限延长到执行,形成静默提权。
     """
     found = _PENDING.get(call_id)
     if found is None or found[0] is not session:

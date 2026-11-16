@@ -31,9 +31,8 @@ logger = logging.getLogger(__name__)
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 SCOPES = ("read", "operate")
 
-# 只读身份也要能用 POST 的几处:它们是"开始一次对话",不是"改变世界"。
-# 真正改不改由工具自己判 —— 控制台助手里改世界的调用要人在界面上点允许,
-# 只读身份根本看不见那些工具。这是同一个理由,不是第二个入口。
+# 只读身份可 POST 的例外:开会话本身不改世界,改不改由工具判——改世界的调用
+# 要界面上批准,只读身份也看不到那些工具。与放开读口是同一个理由,不是新入口。
 READ_ONLY_POST_PREFIXES = ("/api/console/session",)
 # 健康检查要能在没有凭据时访问:它是不带数据的存活探测。
 EXEMPT_PATHS = frozenset({"/api/health", "/openapi.json", "/docs", "/redoc"})

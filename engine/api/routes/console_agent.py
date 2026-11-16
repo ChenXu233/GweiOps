@@ -1,16 +1,13 @@
 # engine/api/routes/console_agent.py
-"""控制台助手 —— 界面右上角那个小窗口背后的两条接口。
+"""控制台助手的 HTTP 接口(界面上的悬浮窗)。
 
-它和 `/mcp`、`/api/agent/exits` 是同一件事的第三种说法:能做什么、做一次会怎样。
-所以这里不另开一套权限、不另记一本账:
+与 `/mcp`、`/api/agent/exits` 同一套权限与账本,不另开一套:
 
 - 工具清单来自出口(`tool_specs`),按会话身份收窄(`tool_visible`);
 - 每次改世界的调用都落到 `run_tool`,走同一条闸门、同一本账;
-- 唯一的差别是**多了一道人的允许** —— 会话开着 `confirm` 时,改世界的调用先摆到
-  人面前,点了允许才执行。只读工具不受这条约束。
+- 多一道人工批准:会话开着 `confirm` 时,改世界的调用先经批准才执行;只读工具不受此约束。
 
-循环不在这里:推一版、看一眼、改主意的多步循环交给 bub(`engine/agent/loop.py`),
-这个文件只负责把事件流摊给前端、把等待批准的那一次接住。
+多步循环在 bub(`engine/agent/loop.py`),这里只把事件流转成 SSE、接住待批调用。
 """
 
 from __future__ import annotations
@@ -39,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionOpenDTO(BaseModel):
-    """开一个会话。三样都可以不填:不填就按这个身份能给的全部算。"""
+    """开会话的请求体;各字段不填时按当前身份可给的全部。"""
 
     permissions: list[str] | None = None
     bindings: list[str] | None = None
@@ -67,7 +64,7 @@ class DecisionDTO(BaseModel):
 
 
 def _dtos(session: store.ConsoleSession, registry_: Any, actor: Any = None) -> ConsoleSessionDTO:
-    """会话当前的样子。工具清单按**调用者当下**的权限算,不是会话创建时的那一份。"""
+    """会话当前状态;工具清单按**调用者当下**的权限算,而非创建时的快照。"""
     tools = [
         ConsoleToolDTO(
             name=t["name"],
@@ -83,7 +80,7 @@ def _dtos(session: store.ConsoleSession, registry_: Any, actor: Any = None) -> C
 
 
 async def _session(request: Request, session_id: str) -> store.ConsoleSession:
-    """取会话,并核对它属于当前这个身份。别人的会话不能借来用 —— 那是借权限。"""
+    """取会话并核对归属;他人的会话不可使用。"""
     try:
         found = await store.get_session(session_id)
     except store.SessionError as exc:
@@ -100,7 +97,7 @@ async def _session(request: Request, session_id: str) -> store.ConsoleSession:
 
 @router.post("/api/console/session")
 async def open_session(request: Request, body: SessionOpenDTO | None = None) -> ConsoleSessionDTO:
-    """开一个会话。签出去的权限不会超过调用者自己的。"""
+    """开一个会话;授予的权限不超过调用者自己。"""
     require(request, "changes.read")
     from engine.api.auth import auth_required
 
@@ -123,7 +120,7 @@ async def open_session(request: Request, body: SessionOpenDTO | None = None) -> 
     except store.SessionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except store.StorageUnavailable as exc:
-        # 不降级成"只在内存里开会话":没有落库就没有审计,这个入口不该存在
+        # 不降级为内存会话:没有落库就没有审计
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _dtos(session, registry, actor)
 
@@ -138,7 +135,7 @@ async def get_session(session_id: str, request: Request) -> ConsoleSessionDTO:
 async def patch_session(
     session_id: str, request: Request, body: SessionPatchDTO
 ) -> ConsoleSessionDTO:
-    """收窄会话的权限、资源、工具,或者开关"要不要人点"。收窄不需要别人的批准,放宽不会越过这个人。"""
+    """收窄会话的权限、资源、工具,或开关审批。收窄无需批准,放宽不越过当前身份。"""
     require(request, "changes.read")
     session = await _session(request, session_id)
     try:
@@ -166,7 +163,7 @@ async def close_session(session_id: str, request: Request) -> dict:
 
 @router.get("/api/console/session/{session_id}/tools")
 async def list_tools(session_id: str, request: Request) -> dict:
-    """这个会话此刻看得见的工具。与 `/mcp` 的 `tools/list` 同一份事实来源。"""
+    """该会话当前可见的工具;与 `/mcp` 的 `tools/list` 同源。"""
     require(request, "changes.read")
     session = await _session(request, session_id)
     return {"tools": store.describe_tools(session, registry, actor_of(request))}
@@ -174,7 +171,7 @@ async def list_tools(session_id: str, request: Request) -> dict:
 
 @router.get("/api/console/session/{session_id}/pending")
 async def pending(session_id: str, request: Request) -> ConsolePendingDTO:
-    """正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。"""
+    """当前待批的调用;前端轮询绘制批准卡,没有则为 null。"""
     require(request, "changes.read")
     session = await _session(request, session_id)
     return ConsolePendingDTO(pending=store.describe_pending(store.pending_of(session)))
@@ -182,7 +179,7 @@ async def pending(session_id: str, request: Request) -> ConsolePendingDTO:
 
 @router.get("/api/console/session/{session_id}/messages")
 async def messages(session_id: str, request: Request) -> dict:
-    """这一段对话的落库记录:说了什么、调了什么、结果是拒、超时还是执行了。"""
+    """该会话的对话记录:消息、调用、结果、拒绝、超时。"""
     require(request, "changes.read")
     session = await _session(request, session_id)
     return {"messages": await store.history(session.id)}
@@ -192,7 +189,7 @@ async def messages(session_id: str, request: Request) -> dict:
 async def decide(
     session_id: str, call_id: str, request: Request, body: DecisionDTO
 ) -> dict:
-    """人点了允许或拒绝。允许之后才轮到出口判它能不能改世界 —— 两关都要过。"""
+    """记录允许或拒绝;允许后仍需出口闸门判定,两关都要过。"""
     require(request, "changes.execute")
     session = await _session(request, session_id)
     try:
@@ -209,10 +206,10 @@ def _event(kind: str, data: dict[str, Any]) -> str:
 async def _stream(
     session: store.ConsoleSession, message: str, actor: Any = None
 ) -> AsyncIterator[str]:
-    """把 bub 的事件流摊成 SSE。
+    """把 bub 的事件流转成 SSE。
 
-    前端要的是"正在说"和"正在做什么":文本增量、工具调用、工具结果、批准卡、
-    收尾。bub 的事件正好是这几种,这里只做改名,不改含义。
+    前端需要文本增量、工具调用、工具结果、错误与收尾;bub 事件正好一一对应,
+    这里只做字段映射。
     """
     from engine.agent.loop import HAS_BUB, NOT_CONFIGURED, NOT_INSTALLED, missing_key, session_agent
 
@@ -222,7 +219,7 @@ async def _stream(
         yield _event("done", {})
         return
 
-    # 模型这一侧没配好:先把人说的话记下来,再报一个可搜索的错误码。
+        # 模型不可用:先记录用户消息,再报可检索的错误。
     await store.record(session, "user", message)
     if missing_key():
         await store.record(session, "error", NOT_CONFIGURED)
@@ -255,7 +252,7 @@ async def _stream(
                 elif kind == "usage":
                     # 计量与显示都不该让这一轮断掉
                     continue
-        # 工具是同步跑完的,批准卡也就没有"等"的中间态:一次运行里点过允许就执行过了
+        # 工具同步执行完毕,运行中没有"等待批准"的中间态
         await store.record(session, "assistant", "".join(said), {"steps": steps})
         yield _event("done", {"steps": steps, "actions": session.actions})
     except Exception as exc:  # noqa: BLE001 - 一轮对话的失败要回到界面上,不是 500
@@ -267,9 +264,9 @@ async def _stream(
 
 @router.post("/api/console/session/{session_id}/turn")
 async def turn(session_id: str, request: Request, body: TurnDTO) -> StreamingResponse:
-    """说一句,拿回一条事件流(text/event-stream)。
+    """发一句话,返回事件流(text/event-stream)。
 
-    用 SSE 而不是 WebSocket:这是一问一答,断了就重说一句,不需要双向。
+    一问一答,用 SSE 即可,无需 WebSocket 的双向通道。
     """
     require(request, "changes.read")
     session = await _session(request, session_id)
@@ -282,7 +279,7 @@ async def turn(session_id: str, request: Request, body: TurnDTO) -> StreamingRes
 
 @router.get("/api/console/tools")
 async def available_tools(request: Request) -> dict:
-    """这个身份能给出去的工具全集:开面板时挑的就是它,前端不自己编。"""
+    """当前身份可授予的工具全集;前端面板从中选取。"""
     require(request, "changes.read")
     from engine.agent.tools import tool_specs
 

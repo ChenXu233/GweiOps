@@ -400,7 +400,7 @@ class KeyToolListDTO(BaseModel):
 
 
 class ConsoleToolDTO(BaseModel):
-    """控制台助手看得见的一个工具。判据与密钥那一栏同一条,所以字段也就同一条。"""
+    """控制台助手可见的一个工具;判据与密钥那一栏相同。"""
 
     name: str
     description: str = ""
@@ -409,7 +409,7 @@ class ConsoleToolDTO(BaseModel):
 
 
 class ConsoleSessionDTO(BaseModel):
-    """一次对话的形状:谁在用、手上有什么、能做什么、已经改了几次。"""
+    """一次会话:谁在用、权限与白名单、已用改动次数。"""
 
     id: str
     tenant: str = ""
@@ -428,6 +428,6 @@ class ConsoleSessionDTO(BaseModel):
 
 
 class ConsolePendingDTO(BaseModel):
-    """正在等人点的那一次改世界调用。没有就是 null —— 别用空字符串表示"没有"。"""
+    """待批准的改世界调用;没有时为 null。"""
 
     pending: dict | None = None

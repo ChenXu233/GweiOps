@@ -1,12 +1,10 @@
 <script setup lang="ts">
-// 控制台助手 —— 右下角那个小窗口。
+// 控制台助手:右下角悬浮窗。
 //
-// 三块从上到下按"它做了什么"的顺序：说了什么、正在做什么、要不要允许。
-// 权限那一条永远看得见：手上剩几次改动、需要人点的动作是不是还开着。
-//
-// 两个判断都在引擎那边，这里只显示：
-// - 它看见的工具就是它会话的权限，`available` 是引擎算出来的，前端不自己筛；
-// - 改世界的调用在等人点时才出现在批准卡上，点完才算执行过了。
+// 从上到下:工具与权限面板、对话、批准卡、输入。
+// 权限判定都在引擎侧,前端只展示:
+// - 可用工具来自引擎的 `available`,前端不自行筛选;
+// - 改世界的调用待批时才出现批准卡,决定后才执行。
 import { useConsoleAgent } from '@gwei/core/composables/useConsoleAgent'
 
 const agent = useConsoleAgent()
@@ -20,9 +18,7 @@ const { can } = useAuth()
 const allowed = computed(() => can('changes.read'))
 
 const placeholder = computed(() =>
-  agent.actionsLeft.value > 0
-    ? '问点什么，或者让它去做一件事…'
-    : '这次对话的改动次数用完了，重开一个再继续',
+  agent.actionsLeft.value > 0 ? '输入消息…' : '本次对话改动次数已用完,请重新开始会话',
 )
 
 async function submit() {
@@ -49,7 +45,7 @@ async function toggle() {
 function toggleTool(name: string) {
   const current = new Set(agent.session.value?.tools ?? [])
   if (current.size === 0) {
-    // 现在不限（空 = 按权限给全部）：第一次取消勾选要把"全部"落成一份名单
+    // 空 = 不限;首次取消勾选时把全部工具落成名单
     for (const tool of agent.tools.value) current.add(tool.name)
   }
   if (current.has(name)) current.delete(name)
@@ -78,7 +74,7 @@ function prettyArgs(raw: string): string {
   }
 }
 
-// 新消息进来时把视口钉到底部：对话是往前长的一条线，人永远看最新那句
+// 新消息进来时滚动到底部
 watch(
   () => agent.messages.value.length,
   async () => {
@@ -87,7 +83,7 @@ watch(
   },
 )
 
-const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
+const dockLabel = computed(() => (open.value ? '收起助手' : '打开助手'))
 </script>
 
 <template>
@@ -108,12 +104,12 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
           <span class="text-[13px] font-medium">控制台助手</span>
           <span class="chip ml-1">
             <span class="dot" :class="agent.busy.value ? 'bg-amber' : 'bg-ok'" />
-            {{ agent.busy.value ? '在跑' : '待命' }}
+            {{ agent.busy.value ? '运行中' : '空闲' }}
           </span>
           <button
             class="btn-ghost ml-auto h-7 px-2 text-[11.5px]"
             :class="showTools ? 'text-ink' : 'text-ink-faint'"
-            :title="'它现在能调什么'"
+            title="工具与权限"
             @click="showTools = !showTools"
           >
             <AppIcon name="list-checks" :size="13" />
@@ -137,7 +133,7 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
               :disabled="!agent.session.value || agent.busy.value"
               @change="agent.setConfirm(($event.target as HTMLInputElement).checked)"
             >
-            改世界的动作先问我（关掉就一路直通，每次仍会落账）
+            改世界前需确认(关闭后直接执行,仍会记账)
           </label>
 
           <div class="mt-2.5 space-y-1.5">
@@ -174,10 +170,10 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
               </div>
             </div>
             <p v-if="!agent.tools.value.length" class="text-[11.5px] text-ink-faint">
-              这个身份还没有能调的工具。先找所有者要一条权限。
+              当前身份没有可用工具。
             </p>
             <p class="text-[10.5px] leading-relaxed text-ink-faint">
-              点掉一个工具就是收窄；收窄不需要批准，放宽不会越过你手上的权限。
+              取消勾选即收窄工具;收窄无需批准,放宽不会超出当前权限。
             </p>
           </div>
         </div>
@@ -185,11 +181,11 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
         <!-- 对话 -->
         <div ref="scroller" class="flex-1 space-y-3 overflow-y-auto px-4 py-3">
           <div v-if="agent.useMock" class="panel-inset px-3 py-2 text-[11.5px] text-ink-soft">
-            演示模式没有引擎，也就没有能调的出口。接上真实引擎后这里能干活。
+            演示模式未连接引擎,工具不可用。
           </div>
 
           <div v-else-if="!allowed" class="panel-inset px-3 py-2 text-[11.5px] text-ink-soft">
-            你手上没有 <code class="font-mono text-[11px]">changes.read</code>，看不到这台机器上的东西。
+            缺少 <code class="font-mono text-[11px]">changes.read</code> 权限,无法使用。
           </div>
 
           <template v-else>
@@ -197,20 +193,10 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
               v-if="!agent.messages.value.length"
               class="space-y-2 text-[12px] leading-relaxed text-ink-soft"
             >
-              <p>我能看这台机器的账、议题和插件，也能替你做需要授权的动作。</p>
+              <p>可查询账本、议题与插件,也可执行需要授权的操作。</p>
               <p class="text-[11.5px] text-ink-faint">
-                改世界的动作会先摆到你面前，你点了允许才执行；执行完照样过闸门、落一行账。
+                改世界的动作需批准后执行,执行仍过闸门并记账。
               </p>
-              <div class="flex flex-wrap gap-1 pt-1">
-                <button
-                  v-for="hint in ['最近有没有被拦的变更？', '这个部署能做什么？', '给我看一下议题']"
-                  :key="hint"
-                  class="chip text-[11px] hover:border-line-strong"
-                  @click="draft = hint; submit()"
-                >
-                  {{ hint }}
-                </button>
-              </div>
             </div>
 
             <div
@@ -226,7 +212,7 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
 
               <div v-else-if="m.role === 'agent'" class="max-w-[92%] text-[12.5px] leading-relaxed">
                 <span class="whitespace-pre-wrap">{{ m.text }}</span>
-                <span v-if="agent.busy.value && !m.text" class="text-ink-faint">在想…</span>
+                <span v-if="agent.busy.value && !m.text" class="text-ink-faint">生成中…</span>
               </div>
 
               <div v-else-if="m.role === 'error'" class="rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[11.5px] text-coral">
@@ -237,8 +223,8 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
                 <summary class="flex cursor-pointer items-center gap-1.5 text-[11.5px]">
                   <AppIcon name="terminal" :size="12" class="text-ink-faint" />
                   <span class="font-mono">{{ m.tool?.name }}</span>
-                  <span v-if="m.tool?.result" class="chip ml-auto text-[10px]">跑过了</span>
-                  <span v-else class="chip chip-warn ml-auto text-[10px]">等结果</span>
+                  <span v-if="m.tool?.result" class="chip ml-auto text-[10px]">已完成</span>
+                  <span v-else class="chip chip-warn ml-auto text-[10px]">进行中</span>
                 </summary>
                 <pre class="mt-1.5 overflow-x-auto font-mono text-[10.5px] leading-relaxed text-ink-soft">{{ prettyArgs(m.tool?.args || '') }}</pre>
                 <pre v-if="m.tool?.result" class="mt-1 overflow-x-auto border-t border-line/60 pt-1.5 font-mono text-[10.5px] leading-relaxed text-ink-faint">{{ m.tool.result }}</pre>
@@ -256,7 +242,7 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
         >
           <div class="flex items-center gap-1.5 text-[12px] font-medium">
             <AppIcon name="shield-alert" :size="13" class="text-amber" />
-            它想改一次外部世界
+            改世界的调用待批准
           </div>
           <div class="mt-1 font-mono text-[11.5px]">{{ agent.pending.value.name }}</div>
           <pre class="mt-1 max-h-24 overflow-auto rounded-card border border-line bg-well px-2 py-1.5 font-mono text-[10.5px] leading-relaxed text-ink-soft">{{ prettyArgs(JSON.stringify(agent.pending.value.args)) }}</pre>
@@ -264,10 +250,10 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
             <button class="btn-solid h-7 px-2.5 text-[11.5px]" @click="agent.decide(true)">
               允许并执行
             </button>
-            <button class="btn-outline h-7 px-2.5 text-[11.5px]" @click="agent.decide(false, '人点的不允许')">
+            <button class="btn-outline h-7 px-2.5 text-[11.5px]" @click="agent.decide(false)">
               不允许
             </button>
-            <span class="text-[10.5px] text-ink-faint">过了这一关,出口还会再判一次</span>
+            <span class="text-[10.5px] text-ink-faint">批准后仍需通过出口判定</span>
           </div>
         </div>
 
@@ -276,7 +262,7 @@ const dockLabel = computed(() => (open.value ? '收起助手' : '叫出助手'))
           <p v-if="agent.error.value" class="mb-1.5 text-[11px] text-coral">{{ agent.error.value }}</p>
           <textarea
             v-model="draft"
-            :placeholder="allowed ? placeholder : '你没有跟它说话的权限'"
+            :placeholder="allowed ? placeholder : '无使用权限'"
             :disabled="!allowed || agent.busy.value"
             rows="2"
             class="w-full resize-none rounded-card border border-line bg-well px-2.5 py-2 text-[12.5px] leading-relaxed outline-none focus:border-line-strong disabled:opacity-60"

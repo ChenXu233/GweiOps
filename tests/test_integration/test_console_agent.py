@@ -1,13 +1,8 @@
 # tests/test_integration/test_console_agent.py
-"""控制台里的那个助手:多一道人的允许,其余全是同一条闸门。
+"""控制台助手:改世界的调用多一道人工批准,其余与出口同一条闸门。
 
-要紧的几件事各有一条用例盯着:
-- 权限:会话只能越用越窄,签的时候不能超过这个人手上的;
-- 不静默提权:会话只是上限,每一轮都按调用者当下的权限重算;
-- 允许:改世界的调用先摆到人面前,点了允许才执行,点了拒绝就当没做;
-- 只读:看一眼不需要批准;
-- 落库:会话与每一句都进库,拒绝、超时、执行都有据可查;
-- loop:bub 的循环真的会被驱动(模型要工具 → 工具跑 → 结果回给模型)。
+覆盖:权限收窄与上限、按调用者当前权限重算(防静默提权)、批准/拒绝、
+只读免批、会话与对话落库、bub 循环驱动工具。
 """
 
 from __future__ import annotations
@@ -29,7 +24,7 @@ from engine.shared.config import config
 
 OPERATOR = "t-operate:acme:值班人:operate"
 VIEWER = "t-read:acme:只读:read"
-# 有权限集的密钥式身份:权限是它的全部,没有"默认全放"
+# 有权限集的密钥式身份:权限就是它的全部
 OPERATOR_PERMISSIONS = frozenset({"changes.read", "changes.execute", "settings.read"})
 BINDING = "github"
 
@@ -97,7 +92,7 @@ class Registry:
 
 
 class Role:
-    """测试里的身份:与 `engine.api.auth.Actor` 同一形状。"""
+    """测试里的身份,与 `engine.api.auth.Actor` 同形状。"""
 
     def __init__(self, permissions, bindings=frozenset(), static=False, name="值班人"):
         self.name = name
@@ -124,10 +119,10 @@ def env(tmp_path, monkeypatch):
     stub = Registry()
     monkeypatch.setattr(routes, "registry", stub)
 
-    # 会话与对话要落库:用内存 SQLite 当那一份库,不碰部署里的 Postgres
+    # 会话与对话落库用内存 SQLite,不碰部署里的 Postgres
     test_engine = create_async_engine("sqlite+aiosqlite://")
     factory = async_sessionmaker(test_engine, expire_on_commit=False)
-    # `engine.db.engine` 这个名字在包 `__init__` 里被同名对象遮住了,只能从 sys.modules 拿
+    # `engine.db.engine` 被包 `__init__` 的同名对象遮住,只能从 sys.modules 拿
     db_engine = importlib.import_module("engine.db.engine")
     monkeypatch.setattr(db_engine, "async_session_factory", factory)
     monkeypatch.setattr(db_engine, "engine", test_engine)
@@ -168,17 +163,14 @@ def _rows(env, session_id: str) -> list[dict]:
     return asyncio.run(store.history(session_id))
 
 
-# 模型这一侧的剧本与记录:每个用例自己填,env 装进去。
-# bub 的循环由 `ScriptedAgent` 顶着 —— 这里测的是"平台这一侧怎么接",不是 bub 本身。
+# 模型侧的剧本与记录:各用例自己填,env 装进去。
+# bub 的循环由 `ScriptedAgent` 代替,测的是平台侧的接线,不是 bub 本身。
 LOOP_SCRIPT: list[dict] = []
 SEEN: list[dict] = []
 
 
 class ScriptedAgent:
-    """一个照着剧本走的假 bub agent。
-
-    事件的名字与形状与 bub 的一致(text / tool_call / tool_result),所以要测的
-    那几件事(工具现算、事件摊成 SSE、失败回到界面上)走的是同一条路径。
+    """按剧本走的假 bub agent;事件名与形状(text / tool_call / tool_result)同 bub。
     """
 
     def __init__(self, *, session, registry, actor=None) -> None:
@@ -202,7 +194,7 @@ class _ScriptedRun:
         tools = bub_tools(self.session, self.registry, self.actor)
         SEEN.append({"tools": [t.name for t in tools]})
         self._pending: list[tuple[str, dict]] = []
-        # 一轮可以有好几步:每步一个剧本,直到剧本用完或者某一步不再要工具
+        # 一轮可有多步:每步一个剧本,直到剧本用完或某步不再要工具
         while True:
             step = LOOP_SCRIPT.pop(0) if LOOP_SCRIPT else {"content": "好的", "tool_calls": []}
             if step.get("content"):
@@ -248,7 +240,7 @@ def test_a_session_starts_with_what_the_identity_has(env):
 
     assert body["actor"] == "值班人"
     assert body["tenant"] == "acme"
-    # 静态令牌的 operate 就是"全部":与密钥那条路径同一个口径(见 engine/auth/keys.py)
+    # 静态令牌的 operate 即全部,与密钥路径同口径(见 engine/auth/keys.py)
     assert {"changes.read", "changes.execute", "settings.read"} <= set(body["permissions"])
     names = {t["name"] for t in body["available"]}
     assert names == {"changes.read", "compose.scale"}
@@ -257,13 +249,13 @@ def test_a_session_starts_with_what_the_identity_has(env):
 
 
 def test_a_read_only_identity_does_not_get_the_effect(env):
-    """只读令牌 sign 不出一条写权限:会话里看得见的工具也就只剩只读的。"""
+    """只读令牌签不出写权限,会话可见工具只剩只读。"""
     resp = env.client.post("/api/console/session", json={}, headers=_h("t-read"))
 
     body = resp.json()
     assert resp.status_code == 200
     assert "changes.execute" not in body["permissions"]
-    # 静态令牌没有权限集,tool_visible 只认 `.read` 后缀 —— 与 MCP 那一侧同一个结果
+    # 静态令牌没有权限集,tool_visible 只认 `.read` 后缀,与 MCP 侧同结果
     assert "compose.scale" not in {t["name"] for t in body["available"]}
 
 
@@ -310,9 +302,7 @@ def test_a_tool_whitelist_narrows_the_session(env):
 
 
 def _session(*, storage: bool = False, **kw) -> store.ConsoleSession:
-    """默认不落库:这一批用例判的是权限与闸门,不判持久化。
-
-    查审计、重开还能看到的那几条要真库 —— env 里那份内存 SQLite —— 传 `storage=True`。
+    """默认不落库(这批用例只判权限与闸门);查审计的用例传 `storage=True`。
     """
     actor = Role({"changes.read", "changes.execute"}, bindings={BINDING})
     return asyncio.run(
@@ -340,7 +330,7 @@ def test_an_effect_waits_for_a_person(env):
         task = asyncio.create_task(
             store.call_tool(session, env.stub, "compose.scale", {"service": "web", "replicas": 3})
         )
-        # 等它摆到人面前
+        # 等待待批调用出现
         for _ in range(100):
             call = store.pending_of(session)
             if call is not None:
@@ -445,11 +435,11 @@ def test_the_bub_loop_drives_a_tool_then_answers(env):
 
     texts, tools = asyncio.run(run())
 
-    # 模型看到的名字是 compose_scale(点换成了下划线),落账的是 compose.scale
+    # 模型看到的名字是 compose_scale(点换下划线),落账的是 compose.scale
     assert tools == ["compose_scale"]
     assert "加好了" in "".join(texts)
     assert SEEN[0]["tools"] == ["compose_scale", "changes_read"]
-    # 工具真的跑了:账本里多一行,会话的动作计数跟着走
+    # 工具已执行:账本多一行,动作计数递增
     assert asyncio.run(env.ledger.latest())[0]["verdict"] == "kept"
     assert session.actions == 1
 
@@ -492,7 +482,7 @@ def test_the_turn_endpoint_streams_events(env):
 def test_the_available_tool_list_is_the_exit_menu(env):
     body = env.client.get("/api/console/tools", headers=_h()).json()
 
-    # 出口清单里改世界的在前,只读的在后 —— 这份顺序就是 `tool_specs` 的顺序
+    # 出口清单里改世界的在前、只读的在后,顺序即 `tool_specs` 的顺序
     assert [t["name"] for t in body["tools"]] == ["compose.scale", "changes.read"]
     assert body["resources"] == [BINDING]
     assert json.dumps(body)  # 可序列化,前端直接吃
@@ -504,7 +494,7 @@ def test_the_available_tool_list_is_the_exit_menu(env):
 
 
 def test_a_revoked_permission_is_gone_on_the_next_turn(env):
-    """会话开着的时候人的权限被收回了 —— 下一轮不能还按开的时候那份算。"""
+    """人的权限被收回后,下一轮不能按开会话时的权限算。"""
     session = _session()
 
     narrowed = Role({"changes.read"}, bindings={BINDING})
@@ -512,13 +502,13 @@ def test_a_revoked_permission_is_gone_on_the_next_turn(env):
 
     assert out["ok"] is False
     assert "changes.execute" in out["reason"]
-    # 清单也跟着少一件:工具清单与判据是同一条
+    # 清单同步收窄:工具清单与判据是同一条
     names = [t["name"] for t in store.describe_tools(session, env.stub, narrowed)]
     assert names == ["changes.read"]
 
 
 def test_the_session_is_only_an_upper_bound(env):
-    """会话自己收窄过之后,调用者再宽也没用:取交集,不取并集。"""
+    """会话收窄后,调用者再宽也没用:取交集不取并集。"""
     session = _session(permissions=["changes.read"])
     wide = Role({"changes.read", "changes.execute"}, bindings={BINDING})
 
@@ -528,7 +518,7 @@ def test_the_session_is_only_an_upper_bound(env):
 
 
 def test_approval_rechecks_the_permission(env):
-    """等待批准的那段时间里权限没了,点允许也要拒 —— 否则点一下就是延长旧权限。"""
+    """等待批准期间权限没了,点允许也要拒,否则等于延长旧权限。"""
     session = _session()
     narrowed = Role({"changes.read"}, bindings={BINDING})
 
@@ -552,7 +542,7 @@ def test_approval_rechecks_the_permission(env):
 
 
 def test_a_read_only_identity_does_not_lose_its_read_tools(env):
-    """`read` 只给只读口,不给"空集"—— 空集在静态令牌那条路上会变成放行。"""
+    """`read` 只给只读口,不映射成空集——空集在静态令牌路径上会放行更多。"""
     assert "changes.read" in store._scope_permissions("read")
     assert "changes.execute" not in store._scope_permissions("read")
 
@@ -571,7 +561,7 @@ def test_the_session_is_persisted(env):
 
 
 def test_a_session_survives_the_process_cache(env):
-    """缓存清空(相当于进程重启)之后,会话从库里读回来,连权限上限一起。"""
+    """缓存清空(相当于进程重启)后,会话连权限上限一起从库里读回。"""
     opened = _open(env, permissions=["changes.read"])
     store.reset()
 
@@ -599,7 +589,7 @@ def test_a_refusal_is_on_the_record(env):
     rows = _rows(env, session.id)
     assert [r["role"] for r in rows] == ["session", "tool_call", "denied"]
     assert rows[2]["payload"]["reason"] == "现在别动"
-    # 拒绝没有落到账本:改世界的动作没做
+    # 拒绝不落账本:改世界的动作没做
     assert asyncio.run(env.ledger.latest()) == []
 
 
@@ -648,7 +638,7 @@ def test_the_spec_is_provider_colon_model(monkeypatch):
     monkeypatch.setattr(config.settings, "llm_provider", "gemini")
     monkeypatch.setattr(config.settings, "llm_model", "gemini-2.5-pro")
 
-    # litellm 那套的名字与 republic 不总一样;对不上的在这里换掉
+    # litellm 与 republic 的 provider 名不总一致,对不上的在此换掉
     assert loop_mod.model_spec() == "google:gemini-2.5-pro"
 
 
@@ -669,9 +659,9 @@ def test_client_options_carry_the_key_and_the_endpoint(monkeypatch):
 
 
 def test_the_agent_uses_bubs_model_not_a_translation(monkeypatch):
-    """会话 agent 的模型是 bub 自己的 `BubModel`:一个 provider:model,不是自己摊事件流。
+    """会话 agent 的模型是 bub 的 `BubModel`(provider:model),不是自己摊事件流。
 
-    这一条要真 bub,所以绕开 env 里那个替身,直接按装了 bub 的样子构造。
+    此用例要真 bub,绕开 env 里的替身直接构造。
     """
     try:
         from bub.builtin.model import BubModel  # noqa: F401
@@ -705,7 +695,7 @@ def test_a_missing_key_is_an_error_not_a_persona(env, monkeypatch):
 
     assert "event: error" in resp.text
     assert "LLM_API_KEY" in resp.text
-    # 不是"我说不了话"那种拟人句
+    # 报错文案不拟人
     assert "说不了话" not in resp.text
     rows = _rows(env, opened["id"])
     assert [r["role"] for r in rows][-1] == "error"

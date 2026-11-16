@@ -1,10 +1,10 @@
 // packages/core/api/consoleAgent.ts
 //
-// 控制台助手的接口。用 fetch 而不是 `api.get/post`，因为 SSE 与 PATCH 不在 typed.ts
-// 的四种方法里；路径与响应体仍然照 ../../../contracts/openapi.json 来。
+// 控制台助手的接口。SSE 与 PATCH 不在 typed.ts 的方法里,故用 fetch;
+// 路径与响应体以 ../../../contracts/openapi.json 为准。
 import { api } from './typed'
 
-/** 助手看得见的一个工具。判据与 MCP 密钥那一栏同一条。 */
+/** 助手可见的一个工具;判据与 MCP 密钥那一栏相同。 */
 export interface ConsoleTool {
   name: string
   description: string
@@ -12,7 +12,7 @@ export interface ConsoleTool {
   mutating: boolean
 }
 
-/** 一次对话的形状：谁在用、手上有什么、能做什么、已经改了几次。 */
+/** 一次会话:谁在用、权限与白名单、已用改动次数。 */
 export interface ConsoleSession {
   id: string
   tenant: string
@@ -90,15 +90,14 @@ async function detailOf(res: Response): Promise<string> {
     const body = (await res.json()) as { detail?: unknown }
     if (typeof body.detail === 'string') return body.detail
   } catch {
-    // 不是 JSON 就退回状态码
+    // 非 JSON 响应退回状态码
   }
   return `HTTP ${res.status}`
 }
 
 /**
- * 说一句话，边收事件边回调。
- *
- * SSE 而不是 WebSocket：一问一答，断了重说一句就行。返回的 abort 用来"停"。
+ * 发一句话,边收事件边回调。SSE 而非 WebSocket:一问一答,断线重发即可。
+ * 返回的 abort 用于停止。
  */
 export function streamTurn(
   sessionId: string,
@@ -147,7 +146,7 @@ export function streamTurn(
       else if (kind === 'tool') on.tool?.(String(payload.name ?? ''), String(payload.args ?? ''))
       else if (kind === 'tool_result') {
         on.toolResult?.(JSON.stringify(payload.results ?? []))
-      } else if (kind === 'error') on.error?.(String(payload.message ?? '未知错误:事件流未带 message 字段'))
+      } else if (kind === 'error') on.error?.(String(payload.message ?? '事件流缺少 message 字段'))
       else if (kind === 'done') on.done?.(Number(payload.actions ?? 0))
     }
     for (;;) {

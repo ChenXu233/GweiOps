@@ -1,8 +1,5 @@
 # engine/agent/console_store.py
-"""控制台助手的会话表与对话表。
-
-表随启动 checkfirst 建一次,与账本、事故同一种做法(仓库里没有迁移工具)。
-"""
+"""控制台助手的会话表与对话表,启动时 checkfirst 建表,同账本与事故的做法。"""
 
 from __future__ import annotations
 

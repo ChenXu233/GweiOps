@@ -97,10 +97,8 @@ def _dispose_async_engine():
 
 @pytest.fixture(autouse=True)
 def _fake_bub(monkeypatch):
-    """没装 bub 时补一个最小的替身。
-
-    `engine/agent/console.py` 只从 bub 拿一样东西:一个带 name/handler/description/
-    parameters 的 `Tool`。替身就这么多,免得测试非得装 loop 本身才能跑。
+    """没装 bub 时补一个最小替身:`engine/agent/console.py` 只用到
+    `bub.core.tools.Tool`(name/handler/description/parameters)。
     """
     try:
         import bub.core.tools  # noqa: F401

@@ -311,7 +311,7 @@ export interface paths {
         put?: never;
         /**
          * Open Session
-         * @description 开一个会话。签出去的权限不会超过调用者自己的。
+         * @description 开一个会话;授予的权限不超过调用者自己。
          */
         post: operations["open_session_api_console_session_post"];
         delete?: never;
@@ -337,7 +337,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Session
-         * @description 收窄会话的权限、资源、工具,或者开关"要不要人点"。收窄不需要别人的批准,放宽不会越过这个人。
+         * @description 收窄会话的权限、资源、工具,或开关审批。收窄无需批准,放宽不越过当前身份。
          */
         patch: operations["patch_session_api_console_session__session_id__patch"];
         trace?: never;
@@ -351,7 +351,7 @@ export interface paths {
         };
         /**
          * Messages
-         * @description 这一段对话的落库记录:说了什么、调了什么、结果是拒、超时还是执行了。
+         * @description 该会话的对话记录:消息、调用、结果、拒绝、超时。
          */
         get: operations["messages_api_console_session__session_id__messages_get"];
         put?: never;
@@ -371,7 +371,7 @@ export interface paths {
         };
         /**
          * Pending
-         * @description 正在等人点的那一次。前端轮询它画那张批准卡;没有就是 null。
+         * @description 当前待批的调用;前端轮询绘制批准卡,没有则为 null。
          */
         get: operations["pending_api_console_session__session_id__pending_get"];
         put?: never;
@@ -393,7 +393,7 @@ export interface paths {
         put?: never;
         /**
          * Decide
-         * @description 人点了允许或拒绝。允许之后才轮到出口判它能不能改世界 —— 两关都要过。
+         * @description 记录允许或拒绝;允许后仍需出口闸门判定,两关都要过。
          */
         post: operations["decide_api_console_session__session_id__pending__call_id__post"];
         delete?: never;
@@ -411,7 +411,7 @@ export interface paths {
         };
         /**
          * List Tools
-         * @description 这个会话此刻看得见的工具。与 `/mcp` 的 `tools/list` 同一份事实来源。
+         * @description 该会话当前可见的工具;与 `/mcp` 的 `tools/list` 同源。
          */
         get: operations["list_tools_api_console_session__session_id__tools_get"];
         put?: never;
@@ -433,9 +433,9 @@ export interface paths {
         put?: never;
         /**
          * Turn
-         * @description 说一句,拿回一条事件流(text/event-stream)。
+         * @description 发一句话,返回事件流(text/event-stream)。
          *
-         *     用 SSE 而不是 WebSocket:这是一问一答,断了就重说一句,不需要双向。
+         *     一问一答,用 SSE 即可,无需 WebSocket 的双向通道。
          */
         post: operations["turn_api_console_session__session_id__turn_post"];
         delete?: never;
@@ -453,7 +453,7 @@ export interface paths {
         };
         /**
          * Available Tools
-         * @description 这个身份能给出去的工具全集:开面板时挑的就是它,前端不自己编。
+         * @description 当前身份可授予的工具全集;前端面板从中选取。
          */
         get: operations["available_tools_api_console_tools_get"];
         put?: never;
@@ -1164,7 +1164,7 @@ export interface components {
         };
         /**
          * ConsolePendingDTO
-         * @description 正在等人点的那一次改世界调用。没有就是 null —— 别用空字符串表示"没有"。
+         * @description 待批准的改世界调用;没有时为 null。
          */
         ConsolePendingDTO: {
             /** Pending */
@@ -1174,7 +1174,7 @@ export interface components {
         };
         /**
          * ConsoleSessionDTO
-         * @description 一次对话的形状:谁在用、手上有什么、能做什么、已经改了几次。
+         * @description 一次会话:谁在用、权限与白名单、已用改动次数。
          */
         ConsoleSessionDTO: {
             /**
@@ -1235,7 +1235,7 @@ export interface components {
         };
         /**
          * ConsoleToolDTO
-         * @description 控制台助手看得见的一个工具。判据与密钥那一栏同一条,所以字段也就同一条。
+         * @description 控制台助手可见的一个工具;判据与密钥那一栏相同。
          */
         ConsoleToolDTO: {
             /**
@@ -2067,7 +2067,7 @@ export interface components {
         };
         /**
          * SessionOpenDTO
-         * @description 开一个会话。三样都可以不填:不填就按这个身份能给的全部算。
+         * @description 开会话的请求体;各字段不填时按当前身份可给的全部。
          */
         SessionOpenDTO: {
             /**
