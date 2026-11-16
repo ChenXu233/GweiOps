@@ -67,6 +67,11 @@ async def _latest_or_404(unit_id: str, tenant: str | None = None) -> tuple[objec
     return ledger, rows[-1]
 
 
+def _repo_of(row: dict) -> str:
+    """这一行账作用在哪个仓库上。空 = 与某个仓库无关。"""
+    return str(row.get("repo") or "")
+
+
 def _provider_for(unit: ChangeUnit):
     try:
         provider, _decl = registry.effect_decl(
@@ -136,10 +141,11 @@ async def approve_change(
 
     by 以控制台令牌为准;没有配置令牌时才采信调用方写的那一个。
     """
-    require(request, "changes.approve")
     tenant = tenant_scope(request, tenant)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
+    # 按这一行账落在哪个仓库上判:只被授了 acme/api 的人放不了 acme/web 的单元。
+    require(request, "changes.approve", _repo_of(latest))
     if latest.get("verdict") != BLOCKED:
         raise HTTPException(
             status_code=409,
@@ -169,10 +175,10 @@ async def veto_change(
     tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """不做这次变更。否决也写一行账——它和放行一样是一次决定。"""
-    require(request, "changes.approve")
     tenant = tenant_scope(request, tenant)
     by = by_of(request, by)
     ledger, latest = await _latest_or_404(unit_id, tenant)
+    require(request, "changes.approve", _repo_of(latest))
     if latest.get("verdict") not in (BLOCKED, "pending"):
         raise HTTPException(
             status_code=409,
@@ -199,9 +205,9 @@ async def rollback_change(
     tenant: str | None = None,
 ) -> ChangeDetailDTO:
     """撤销一个单元。已经撤过的、没执行过的、没有句柄的都拒绝。"""
-    require(request, "changes.rollback")
     tenant = tenant_scope(request, tenant)
     ledger, latest = await _latest_or_404(unit_id, tenant)
+    require(request, "changes.rollback", _repo_of(latest))
 
     verdict = latest.get("verdict")
     if verdict == ROLLED_BACK:

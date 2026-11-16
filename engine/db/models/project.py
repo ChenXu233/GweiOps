@@ -35,9 +35,9 @@ class Project(Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
     )
-    # 在这棵树上唯一、且稳定的名字:仓库取来源上的全名(acme/api),项目取人给的那一段。
-    # 它同时是子仓的默认前缀(topic 也由它拼),所以 `-` 留给层级,`.` 留给来源前缀
-    # (github:acme/api、cnb:acme/api)——这两种标识符因此不会撞在一起。
+    # 在这棵树上唯一、且稳定的名字:仓库是 `来源-仓库全名`(/ 也压成 -,见
+    # repo_slug),项目取人给的那一段。分隔符一律 `-`,URL 里不必转义;
+    # 反过来 slug 不可逆,要"来源 + 仓库全名"就读 source / name 两栏。
     slug: Mapped[str] = mapped_column(String(255), nullable=False)
     # 哪个平台的仓库:github / cnb / gitlab …。项目行的这一栏是空串:项目不属于任何平台。
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="github", server_default="github")

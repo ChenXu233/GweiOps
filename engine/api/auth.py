@@ -72,6 +72,9 @@ class Actor:
     # 这是一个只带 read/operate 的静态令牌。默认不是:没有细粒度权限时按 scope 放行
     # 是个陷阱 —— 权限为空的会话会因此看到全部只读工具。
     static: bool = False
+    # 只在这个范围内生效的权限:{"changes.approve": frozenset({"github-acme-api"})}。
+    # 同一个权限在工作区级与仓库级都可能有,所以两者分开记 —— 见 engine/auth/scope.py
+    scoped_permissions: dict[str, frozenset[str]] = field(default_factory=dict)
 
     @property
     def can_write(self) -> bool:
@@ -81,7 +84,12 @@ class Actor:
         return self.scope == "operate"
 
     def has(self, permission: str) -> bool:
+        """工作区级的权限。带范围的权限**不**算在这里:它得指名道姓地说要哪个仓库。"""
         return permission in self.permissions
+
+    def has_scope(self, permission: str) -> bool:
+        """这个权限是不是收了范围。接口据此多接一个 `repo`,在判定处再说一次话。"""
+        return permission in self.scoped_permissions
 
     @property
     def scoped(self) -> bool:
@@ -147,6 +155,7 @@ def _actor_from_identity(identity: Identity) -> Actor:
         scope="operate" if identity.can_write else "read",
         permissions=identity.permissions,
         user_id=identity.user_id,
+        scoped_permissions=identity.scoped_permissions,
     )
 
 
@@ -234,8 +243,14 @@ def actor_of(request: Request) -> Actor | None:
     return getattr(request.state, "actor", None)
 
 
-def require(request: Request, permission: str) -> None:
-    """按权限拦。没配鉴权时不拦——那种部署是单机自用,拦了反而没法用。"""
+def require(request: Request, permission: str, repo: str | None = None) -> None:
+    """按权限拦。没配鉴权时不拦——那种部署是单机自用,拦了反而没法用。
+
+    `repo` 是这道判定的范围:给空 = 整个工作区;给一个仓库 slug = 只在那一个仓库上
+    算数。带范围的授权(`changes.approve` 只授给 `acme/api`)在工作区级**不算**
+    有权限:同一个权限在工作区级与仓库级都可能有,混在一起,"只管这一个仓库"
+    就没有答案了。
+    """
     if not auth_required():
         return
     actor = actor_of(request)
@@ -244,8 +259,18 @@ def require(request: Request, permission: str) -> None:
     # 静态令牌没有细粒度权限,只有 read/operate,由中间件拦;其余的按权限集判
     from engine.auth.keys import is_scoped
 
-    if is_scoped(actor) and not actor.has(permission):
-        raise HTTPException(status_code=403, detail=f"缺少权限 {permission}")
+    if not is_scoped(actor):
+        return
+    if actor.has(permission):
+        return
+    if repo and repo in actor.scoped_permissions.get(permission, frozenset()):
+        return
+    if actor.has_scope(permission) and not repo:
+        raise HTTPException(
+            status_code=403,
+            detail=f"这个身份的 {permission} 只对具体仓库生效,这个操作覆盖整个工作区",
+        )
+    raise HTTPException(status_code=403, detail=f"缺少权限 {permission}")
 
 
 def tenant_scope(request: Request, requested: str | None) -> str | None:

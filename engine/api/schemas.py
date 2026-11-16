@@ -41,7 +41,7 @@ class RepoDTO(BaseModel):
     lastSyncAt: str
     # 这个仓库来自哪个平台(github / cnb / gitlab …):同名仓库在不同平台上不是同一个
     source: str = "github"
-    # 它在这棵树上的名字,也是范围闸里的那一档(来源前缀的 `来源:仓库全名`)
+    # 它在这棵树上的名字,也是范围闸里的那一档(`来源-仓库全名`,`/` 也是 `-`)
     slug: str = ""
     # 所属项目。空串 = 还没归到任何项目
     project: str = ""

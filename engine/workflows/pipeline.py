@@ -80,16 +80,19 @@ async def _analyze_with_cache(payload: dict) -> dict:
 
 
 def repo_slug(source: str, full_name: str) -> str:
-    """仓库在这棵树上的名字:来源前缀 + `来源:` + 仓库全名。
+    """仓库在这棵树上的名字:`来源-仓库全名`,`/` 也压成 `-`。
 
     `acme/api` 在 GitHub 与 CNB 上是两份不同的代码,而 slug 在租户内唯一,
-    所以来源不同就得叫不同的名字。前缀里的 `:` 不是层级 —— 层级是 `-`,
-    两种标识符因此不会撞在一起。
+    所以来源不同就得叫不同的名字:github-acme-api 与 cnb-acme-api。
+
+    分隔符一律用 `-`:URL 里不必转义,人也能照着念。代价是 slug 到"来源 +
+    仓库全名"不可逆 —— 谁要这两个值,库里 `source` / `name` 两栏都在,
+    不从 slug 里猜。
     """
-    name = full_name or ""
+    name = (full_name or "").replace("/", "-")
     if not source:
         return name
-    return f"{source}:{name}"
+    return f"{source}-{name}"
 
 
 def project_slug_of(full_name: str) -> str:
@@ -183,8 +186,7 @@ async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> di
             source = str(payload.get("source_adapter") or "") or "github"
             full_name = payload["repo_full_name"]
             # 仓库的 slug 带上来源前缀:同一个 `acme/api` 在 github 与 cnb 上是两份代码,
-            # 而 slug 在租户内唯一(见 models/project.py)。前缀里的 `:` 不是层级,
-            # 层级用 `-`,两种标识符因此不会撞。
+            # 而 slug 在租户内唯一(见 models/project.py),所以要带上来源前缀。
             slug = repo_slug(source, full_name)
             project = (
                 await session.execute(
@@ -377,6 +379,11 @@ async def _apply_effects_impl(
     parsed = parse_intent(intent)
     tenant = payload.get("tenant_slug", "")
     binding = binding or config.settings.default_binding
+    # 这一轮的效果作用在哪个仓库上。不填的话,"只被授了 acme/api 的人"与
+    # "能放行整个工作区的人"在账本上看不出区别 —— 判权限时没有东西可判。
+    repo = repo_slug(
+        str(payload.get("source_adapter") or ""), payload.get("repo_full_name") or ""
+    )
     ledger = create_ledger()
 
     # 先把每个候选拆成"能做"或"为什么不做";放弃的候选也写进同一轮的 intent
@@ -457,6 +464,7 @@ async def _apply_effects_impl(
             intent=intent_record,
             effect=plan["decl"].to_effect(plan["args"]),
             tenant=tenant,
+            repo=repo,
             binding=binding,
             incident_id=incident_id,
             idempotency_key=f"{idem_base}:effect:{plan['index']}",

@@ -7,12 +7,12 @@
 这一版补上中间那一级:
 
 - 自引用的 `parent_id`:空 = 这一行是项目,非空 = 这一行是某个项目下的仓库
-- `slug`:在这棵树上唯一且稳定的名字。仓库取来源上的全名,项目取人给的那一段。
-  它同时是子仓的默认前缀,所以 `-` 留给层级、`.` 留给来源前缀
-  (github:acme/api / cnb:acme/api),两种标识符不会撞
+- `slug`:在这棵树上唯一且稳定的名字,仓库是 `来源-仓库全名`
+  (github-acme-api / cnb-acme-api,`/` 也压成 `-`),项目取人给的那一段。
+  分隔符一律 `-`,URL 里不用转义;反过来不可逆,要拆开读 source / name
 - 唯一键从 (租户, 来源, 仓库全名) 换成 (租户, slug)
 
-存量行没有父:`parent_id` 留空,`slug` 回填成 "来源:仓库全名"(没有来源时就是
+存量行没有父:`parent_id` 留空,`slug` 回填成 "来源-仓库全名"(没有来源时就是
 仓库全名),每行因此各自是一个项目下的仓库——旧的平铺视图在界面上仍然看得见,
 只是多了一层"这个仓库和谁是一家"可以填。
 """
@@ -45,8 +45,8 @@ def upgrade() -> None:
         """
         UPDATE projects
            SET slug = CASE
-                        WHEN COALESCE(source, '') = '' THEN name
-                        ELSE source || ':' || name
+                        WHEN COALESCE(source, '') = '' THEN replace(name, '/', '-')
+                        ELSE source || '-' || replace(name, '/', '-')
                       END
         """
     )

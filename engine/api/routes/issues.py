@@ -88,6 +88,7 @@ async def _load_issue(wanted: UUID, scope: str | None) -> dict:
                 "created_at": issue.created_at.isoformat() if issue.created_at else "",
             },
             "repo": project.name,
+            "repo_slug": project.slug,
             "repo_id": project.github_id,
             "tenant": slug,
             "sessions": [_session_row(s) for s in sessions],
@@ -178,7 +179,7 @@ async def issue_board(
         if scope:
             stmt = stmt.where(Tenant.slug == scope)
         if repo:
-            # 仓库档:slug 是来源前缀的写法(github:acme/api),与 /api/repos 同一栏
+            # 仓库档:slug 是来源前缀的写法(github-acme-api),与 /api/repos 同一栏
             stmt = stmt.where(Project.slug == repo)
         elif project:
             # 项目档:仓库行的 parent_id 指向项目那一行
@@ -297,7 +298,6 @@ async def continue_issue(
     权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。
     真要细分的话是加一条新权限,不是在这里各自判断。
     """
-    require(request, "changes.approve")
     scope = tenant_scope(request, tenant)
     try:
         wanted = UUID(issue_id)
@@ -308,6 +308,8 @@ async def continue_issue(
     if not instruction:
         raise HTTPException(status_code=422, detail="写一句要改什么再来")
     loaded = await _load_issue(wanted, scope)
+    # 按议题所在的仓库判:只被授了 acme/api 的人,对 acme/web 的议题发起不动。
+    require(request, "changes.approve", loaded["repo_slug"])
     topic = topic_of(loaded["repo"], loaded["issue"]["number"])
     payload = continue_payload(
         issue=loaded["issue"],

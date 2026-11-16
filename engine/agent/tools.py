@@ -170,6 +170,9 @@ async def run_tool(
         intent=intent,
         effect=decl.to_effect(args),
         tenant=tenant,
+        # 效果打在哪个仓库上。agent 的调用多半与某个仓库无关(平台级动作),
+        # 说得出仓库就记下来,判「按仓库分工」时才有东西可判。
+        repo=str(args.get("repo") or ""),
         binding=binding,
         incident_id=incident_id,
         idempotency_key=f"{idem_base}:tool:{index}" if idem_base else "",

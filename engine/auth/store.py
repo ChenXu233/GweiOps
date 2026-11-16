@@ -53,25 +53,34 @@ async def _role_permissions(session: AsyncSession, user_id: uuid.UUID) -> list[l
 
 
 async def identity_of(session: AsyncSession, user: User) -> Identity:
-    """算出一个人的有效权限。子用户与父用户取交集,父被停用则清零。"""
+    """算出一个人的有效权限。子用户与父用户取交集,父被停用则清零。
+
+    返回里有两份权限:工作区级的那份处处算数;带范围的那份只对点名的仓库算数
+    (写法 `changes.approve@github-acme-api`,见 engine/auth/__init__.py)。
+    """
     own_roles = await _role_permissions(session, user.id)
-    permissions = effective_permissions(user.permissions, own_roles)
+    permissions, scoped = effective_permissions(user.permissions, own_roles)
 
     if user.parent_id:
         parent = await session.get(User, user.parent_id)
         if parent is None or not parent.active:
             # 父没了或者被停了,子用户不该继续拿着权限
-            permissions = frozenset()
+            permissions, scoped = frozenset(), {}
         else:
             parent_roles = await _role_permissions(session, parent.id)
-            parent_perms = effective_permissions(parent.permissions, parent_roles)
-            permissions = effective_permissions(user.permissions, own_roles, parent=parent_perms)
+            parent_perms, parent_scoped = effective_permissions(
+                parent.permissions, parent_roles
+            )
+            permissions, scoped = effective_permissions(
+                user.permissions, own_roles, parent=parent_perms, parent_scoped=parent_scoped
+            )
 
     return Identity(
         user_id=str(user.id),
         name=user.display_name or user.email,
         tenant=await _tenant_slug(session, user.tenant_id),
         permissions=permissions,
+        scoped_permissions=scoped,
         parent_id=str(user.parent_id or ""),
     )
 

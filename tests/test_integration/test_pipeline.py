@@ -6,6 +6,7 @@
 门控（例如指向 docker compose 启动的 gwei-postgres-dev）。
 """
 
+from urllib.parse import quote
 import asyncio
 import importlib
 import json
@@ -687,21 +688,26 @@ class TestRepoProjectLayer:
         """同一仓库名在两个来源上是两份代码,slug 因此要带来源前缀。"""
         from engine.workflows.pipeline import project_slug_of, repo_slug
 
-        assert repo_slug("github", "acme/api") == "github:acme/api"
-        assert repo_slug("cnb", "acme/api") == "cnb:acme/api"
+        assert repo_slug("github", "acme/api") == "github-acme-api"
+        assert repo_slug("cnb", "acme/api") == "cnb-acme-api"
         assert repo_slug("github", "acme/api") != repo_slug("cnb", "acme/api")
-        # 没有来源时就是全名,不凭空造一个前缀
-        assert repo_slug("", "acme/api") == "acme/api"
+        # 没有来源时就没有前缀,不凭空造一个
+        assert repo_slug("", "acme/api") == "acme-api"
         # 默认归属的项目是路径第一段
         assert project_slug_of("acme/api") == "acme"
         assert project_slug_of("acme") == "acme"
         assert project_slug_of("") == ""
 
-    def test_source_prefix_cannot_impersonate_a_repo_name(self):
-        """来源叫 acme、仓库叫 api 的写法,不该和 github 上的 acme/api 撞成一行。"""
+    def test_slug_only_uses_url_safe_characters(self):
+        """slug 会出现在查询串里,所以只用 `-` 一个分隔符:`/` 和 `:` 都不留。"""
         from engine.workflows.pipeline import repo_slug
 
-        # 来源叫 acme、仓库叫 api 的写法,与仓库 acme/api 在 github 上,是两行
-        assert repo_slug("acme", "api") == "acme:api"
-        assert repo_slug("github", "acme/api") == "github:acme/api"
-        assert repo_slug("acme", "api") != repo_slug("github", "acme/api")
+        for slug in (repo_slug("github", "acme/api"), repo_slug("", "acme/api")):
+            assert ":" not in slug and "/" not in slug
+            assert slug == quote(slug, safe=""), f"{slug} 进查询串会被转义"
+
+    def test_two_sources_with_same_repo_name_stay_apart(self):
+        """github 上的 acme/api 与 cnb 上的 acme/api 是两份代码,slug 不同。"""
+        from engine.workflows.pipeline import repo_slug
+
+        assert repo_slug("github", "acme/api") != repo_slug("cnb", "acme/api")

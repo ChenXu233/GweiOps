@@ -92,6 +92,10 @@ class ChangeUnit:
         default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
     )
     tenant: str = ""
+    # 这个单元作用在哪一个仓库上(仓库的 slug,见 engine/workflows/pipeline.py 的
+    # repo_slug)。空 = 与某个仓库无关(平台级动作)。「按仓库分工」判的就是它:
+    # 只被授了 acme/api 的人,不该放行 acme/web 上的单元。
+    repo: str = ""
     binding: str = ""
     # 同一次事故里做的变更共用它。空 = 不属于任何一次(人工单发)。
     incident_id: str = ""
@@ -127,6 +131,7 @@ class ChangeUnit:
             created_at=data.get("created_at")
             or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             tenant=data.get("tenant", ""),
+            repo=data.get("repo", ""),
             binding=data.get("binding", ""),
             incident_id=data.get("incident_id", ""),
             idempotency_key=data.get("idempotency_key", ""),

@@ -150,6 +150,21 @@ flowchart LR
 
 `operator` 带 `keys.manage`:运维接一个 agent 不必先找所有者。签出去的权限不能超过运维自己持有的权限。
 
+### 按仓库授权
+
+角色与个人追加里的权限可以带一个范围,写法 `权限@仓库slug`:
+
+```text
+changes.approve                     整个工作区都能放行
+changes.approve@github-acme-api     只在这个仓库上能放行
+```
+
+- 能收窄的只有 `SCOPED_PERMISSIONS` 里的四个(`changes.read` / `execute` / `approve` / `rollback`):它们最终都落在一个仓库上。管人、管密钥、改配置是工作区级的事,写成 `users.manage@…` 会被丢掉,不当工作区级权限用。
+- 带范围的授权**不算**工作区级权限:不点名仓库的判定(`require(request, "changes.approve")`)在只有这份授权的身份上返回 403,并说明"这个权限只对具体仓库生效"。
+- 子用户与父取交集时按仓库逐个算:父没有的仓库留不下来。
+- 落点:放行 / 否决 / 撤销按账本行的 `repo` 判,议题的"再来一轮"按议题所属仓库判。仓库 slug 的写法见[工作区模型](../explanation/workspace-model.md) §3。
+- 成员页(`/team`)勾权限时,能收窄的权限旁边会列出当前工作区的仓库,勾哪几个就只在那几个上生效。
+
 ## 控制台鉴权
 
 `API_TOKENS` 留空 = 不鉴权:`by` 与 `tenant` 由调用方自报,只适合单机自用。每个响应都带 `X-Gwei-Auth: on|off` 标明当前状态。
@@ -322,7 +337,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/issues/{id}/timeline` | 议题时间线:三个状态 + 各轮次的分段证据(见下) |
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/workspaces` | 工作区列表(= 租户):各有几个仓库、来自哪些平台;令牌声明了租户时只返回它自己那一个 |
-| GET | `/api/repos` | 仓库列表;`?workspace=<slug>` 收窄到一个工作区,不给就是令牌那一个(无令牌时是全部)。每行带 `source`、`slug`(来源前缀的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
+| GET | `/api/repos` | 仓库列表;`?workspace=<slug>` 收窄到一个工作区,不给就是令牌那一个(无令牌时是全部)。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名,不用转义就能进查询串)、`project` / `projectName`。项目行不出现在这里 |
 | GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;`?workspace=<slug>` 同上 |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |

@@ -17,7 +17,13 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.auth import ALL_PERMISSIONS, Identity, hash_password
+from engine.auth import (
+    ALL_PERMISSIONS,
+    SCOPED_PERMISSIONS,
+    Identity,
+    hash_password,
+    split_scoped,
+)
 from engine.auth import store as auth_store
 from engine.db import async_session_factory
 from engine.db.models import Role, Tenant, User, UserRole
@@ -35,8 +41,24 @@ async def _tenant_id(session: AsyncSession, slug: str) -> uuid.UUID:
 
 
 def _clean_permissions(raw: list[str] | None) -> list[str]:
-    """只留看得懂的权限,顺序固定,方便前端比对。"""
-    picked = {p for p in (raw or []) if p in ALL_PERMISSIONS}
+    """只留看得懂的权限,顺序固定,方便前端比对。
+
+    带范围的写法(`changes.approve@github-acme-api`)也在这里过一遍:权限名得在
+    目录里,收窄必须落在 `SCOPED_PERMISSIONS` 里,仓库 slug 不能是空串。写错的
+    条目丢掉而不是猜 —— 猜成工作区级会多给。
+    """
+    picked: set[str] = set()
+    for entry in raw or []:
+        text = str(entry or "").strip()
+        permission, sep, scope = text.partition("@")
+        if permission not in ALL_PERMISSIONS:
+            continue
+        if not sep:
+            picked.add(permission)
+            continue
+        if not scope.strip() or permission not in SCOPED_PERMISSIONS:
+            continue
+        picked.add(f"{permission}@{scope.strip()}")
     return sorted(picked)
 
 
@@ -200,12 +222,15 @@ async def list_users(identity: Identity) -> list[dict]:
             )
         ).all()
         by_user: dict[uuid.UUID, list[dict]] = {}
-        extra: dict[uuid.UUID, set[str]] = {}
+        extra: dict[uuid.UUID, dict[str, set[str]]] = {}
         for user_id, role_id, key, name, perms in rows:
             by_user.setdefault(user_id, []).append(
                 {"id": str(role_id), "key": key, "name": name}
             )
-            extra.setdefault(user_id, set()).update(perms or [])
+            # 角色里可能带范围的授权(`changes.approve@github-acme-api`),
+            # 界面要能把"他在这个仓库上能放行"显示出来,所以按仓库归一次。
+            for permission, scopes in split_scoped(perms or [])[1].items():
+                extra.setdefault(user_id, {}).setdefault(permission, set()).update(scopes)
 
         out = []
         for user in users:
@@ -217,6 +242,11 @@ async def list_users(identity: Identity) -> list[dict]:
                     "status": user.status,
                     "is_sub_user": user.is_sub_user,
                     "permissions": sorted(set(user.permissions or [])),
+                    # 这个人额外能管哪几个仓库:{权限: [仓库 slug…]}
+                    "scoped_permissions": {
+                        permission: sorted(scopes)
+                        for permission, scopes in (extra.get(user.id) or {}).items()
+                    },
                     "roles": by_user.get(user.id, []),
                     "created_at": user.created_at.isoformat() if user.created_at else "",
                     "last_login_at": user.last_login_at.isoformat() if user.last_login_at else "",
