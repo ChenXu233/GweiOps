@@ -72,7 +72,7 @@ class Registry:
             raise LookupError(f"nobody declares {capability}")
         return self.provider, DECL
 
-    async def run_capability(self, capability, params):
+    async def run_capability(self, capability, params, **_ctx):
         self.reads.append((capability, params))
         return {"states": [{"service": "web", "running": 1}]}
 
@@ -212,7 +212,7 @@ class StubRegistry:
     def best_capability_provider(self, capability):
         return self.provider
 
-    async def run_capability(self, capability, params):
+    async def run_capability(self, capability, params, **_ctx):
         self.seen = params
         return {"summary": "agent 处理完了", "steps": [], "counts": {}, "exhausted": False}
 

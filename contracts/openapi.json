@@ -1180,7 +1180,7 @@
         "type": "object"
       },
       "PluginDTO": {
-        "description": "一个被发现过的插件。`enabled` 表示它此刻在不在流程里。",
+        "description": "一个被发现过的插件。\n\n启停是两层,DTO 也分两层给:`platform_available` 是部署级(这个部署提供不提供),\n`tenant_enabled` 是租户级(调用者所在租户选没选它),`enabled` = 两者都真。\n一个开关表达不了两件事,所以这里不合并成一个布尔。",
         "properties": {
           "capabilities": {
             "default": [],
@@ -1224,10 +1224,20 @@
             "title": "Pages",
             "type": "array"
           },
+          "platform_available": {
+            "default": true,
+            "title": "Platform Available",
+            "type": "boolean"
+          },
           "reason": {
             "default": "",
             "title": "Reason",
             "type": "string"
+          },
+          "tenant_enabled": {
+            "default": true,
+            "title": "Tenant Enabled",
+            "type": "boolean"
           },
           "type": {
             "title": "Type",
@@ -4440,7 +4450,7 @@
     },
     "/api/plugins": {
       "get": {
-        "description": "发现到的全部清单,含未启用的。",
+        "description": "发现到的全部清单,含未启用的。\n\n两层决定分开给:`platform_available` 是部署级,`tenant_enabled` 是调用者所在\n租户的选择。前端一个开关只能表达一件事,所以这点必须由接口说清楚。",
         "operationId": "list_plugins_api_plugins_get",
         "responses": {
           "200": {
@@ -4567,7 +4577,7 @@
     },
     "/api/plugins/{name}/enable": {
       "post": {
-        "description": "打开一个已发现但没启用的插件。没有清单就 404。",
+        "description": "打开一个插件。\n\n两层:平台没提供它就是 409(租户开不了平台关掉的东西);平台提供了,开的\n是这个租户的选择(`plugin_tenancy`),不写全局。",
         "operationId": "enable_plugin_api_plugins__name__enable_post",
         "parameters": [
           {

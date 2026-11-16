@@ -36,6 +36,9 @@ function demoPlugin(
     author,
     price,
     enabled,
+    // 演示数据里两层一致:平台提供了,租户也没关
+    platform_available: true,
+    tenant_enabled: true,
     reason: reason || (enabled ? '清单默认启用' : '清单声明 default_enabled: false'),
     error: '',
     instances: enabled ? [id] : [],

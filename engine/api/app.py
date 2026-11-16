@@ -61,10 +61,25 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
         logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
 
-    # Startup: 先装回运行期启停决定,再发现与启动(顺序反了决定会在重启后被绕过)
-    from engine.plugin_manager import enablement
+    # Startup: 先装回启停决定,再发现与启动(顺序反了决定会在重启后被绕过)。
+    # 两层各装各的:部署级决定装进 `_decisions`,租户级装进 `_tenancy`;
+    # 真的在跑 = 平台提供了 且 这个租户没关掉它。
+    from engine.plugin_manager import enablement, tenancy
 
     registry.set_decisions(await enablement.load_decisions())
+    try:
+        from engine.shared.settings_store import create_settings_store
+
+        stored = await create_settings_store().load()
+    except Exception:  # noqa: BLE001 - 读不到就当作没有租户决定
+        logger.warning("读不到租户级插件启停决定,这次按平台默认", exc_info=True)
+        stored = {}
+    tenants = {tenant for tenant in stored if tenant} or {
+        config.settings.default_tenant_slug
+    }
+    registry.set_tenancy(
+        {tenant: await tenancy.load_tenancy(tenant) for tenant in sorted(tenants)}
+    )
 
     registry.discover()
 
@@ -124,7 +139,10 @@ async def lifespan(app: FastAPI):
         from engine.db.change_ledger import ensure_schema
 
         await ensure_schema()
-        from engine.agent.console_store import ensure_schema as ensure_console_schema
+        from engine.plugin_manager.tenancy import ensure_schema as ensure_tenancy_schema
+
+        await ensure_tenancy_schema()
+        from engine.agent.console import ensure_schema as ensure_console_schema
         from engine.incidents import ensure_schema as ensure_incident_schema
 
         await ensure_incident_schema()

@@ -844,6 +844,9 @@ export interface paths {
         /**
          * List Plugins
          * @description 发现到的全部清单,含未启用的。
+         *
+         *     两层决定分开给:`platform_available` 是部署级,`tenant_enabled` 是调用者所在
+         *     租户的选择。前端一个开关只能表达一件事,所以这点必须由接口说清楚。
          */
         get: operations["list_plugins_api_plugins_get"];
         put?: never;
@@ -919,7 +922,10 @@ export interface paths {
         put?: never;
         /**
          * Enable Plugin
-         * @description 打开一个已发现但没启用的插件。没有清单就 404。
+         * @description 打开一个插件。
+         *
+         *     两层:平台没提供它就是 409(租户开不了平台关掉的东西);平台提供了,开的
+         *     是这个租户的选择(`plugin_tenancy`),不写全局。
          */
         post: operations["enable_plugin_api_plugins__name__enable_post"];
         delete?: never;
@@ -2117,7 +2123,11 @@ export interface components {
         };
         /**
          * PluginDTO
-         * @description 一个被发现过的插件。`enabled` 表示它此刻在不在流程里。
+         * @description 一个被发现过的插件。
+         *
+         *     启停是两层,DTO 也分两层给:`platform_available` 是部署级(这个部署提供不提供),
+         *     `tenant_enabled` 是租户级(调用者所在租户选没选它),`enabled` = 两者都真。
+         *     一个开关表达不了两件事,所以这里不合并成一个布尔。
          */
         PluginDTO: {
             /**
@@ -2150,10 +2160,20 @@ export interface components {
              */
             pages: components["schemas"]["PluginPageDTO"][];
             /**
+             * Platform Available
+             * @default true
+             */
+            platform_available: boolean;
+            /**
              * Reason
              * @default
              */
             reason: string;
+            /**
+             * Tenant Enabled
+             * @default true
+             */
+            tenant_enabled: boolean;
             /** Type */
             type: string;
             /** Version */

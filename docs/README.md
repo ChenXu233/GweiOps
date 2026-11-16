@@ -17,6 +17,7 @@
 | 改鉴权、成员、一人多工作区 | [身份与授权](explanation/identity-and-authorization.md) → [运行时参考 · 鉴权](reference/runtime.md#鉴权与租户) |
 | 用/改界面右下角的助手 | [运行时参考 · 控制台助手](reference/runtime.md#控制台助手) |
 | 提交 PR 前想知道 CI 会查什么 | [CI 校验](../CI-CHECKS.md) |
+| 把 tag 部署到服务器 / 内网怎么连 | [根 README · 部署 CI](../README.md#部署-cidogfood) |
 | 看接下来做什么 | [工作分解](plan/wbs.md) → [Harness 执行层](explanation/harness-execution-layer.md) |
 
 ## 文档地图

@@ -72,6 +72,7 @@ async def _run_scan_impl(context: dict) -> dict[str, Any] | None:
             "schedule": context.get("schedule_name", ""),
             "tenant": context.get("tenant_slug", ""),
         },
+        tenant=context.get("tenant_slug", ""),
     )
     return signal_from_scan(raw, capability=capability)
 

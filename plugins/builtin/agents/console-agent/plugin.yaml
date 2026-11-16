@@ -1,0 +1,24 @@
+name: console-agent
+version: 1.0.0
+type: agent
+description: 控制台助手 —— 右下角悬浮窗的对话循环,以及它挂的那个槽
+capabilities:
+  - console.chat
+tasks:
+  console.chat: chat
+# 它消费 global.dock 这个槽:关掉插件,浮窗消失。
+#
+# 卡片是声明式的,但助手窗口不是"一张卡片"——它有输入框、批准卡、事件流。
+# 所以这里声明的 `kind: dock` 只表示"这个槽归我",前端按 plugin 名加载对应的
+# 内置窗口组件;真正的内容仍然由核心提供(会话、权限、待批都在核心)。
+ui:
+  widgets:
+    - slot: global.dock
+      kind: dock
+      span: 1
+      title: 控制台助手
+      metrics: []
+class_name: ConsoleAgent
+# 这个插件不读库:会话与审计归核心,插件只负责"给定会话与工具清单,给我一个 agent"
+data:
+  scopes: []

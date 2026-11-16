@@ -20,6 +20,10 @@ export interface Plugin {
   author: 'official' | 'community'
   price: number | null
   enabled: boolean
+  /** 部署级:这个平台/部署提供不提供它 */
+  platform_available: boolean
+  /** 租户级:本租户选没选它。真的在跑 = 两者都为真 */
+  tenant_enabled: boolean
   reason: string
   error: string
   instances: string[]

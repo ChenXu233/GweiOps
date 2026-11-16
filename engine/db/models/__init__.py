@@ -9,6 +9,7 @@ from .vote import ApprovalVote
 from .change_event import ChangeEvent
 from .incident import Incident
 from .plugin_setting import PluginSetting
+from .plugin_tenancy import PluginTenancy
 from .rbac import AuditLog, Role, User, UserRole, UserSession
 from .registration import (
     ExternalIdentity,
@@ -32,6 +33,7 @@ __all__ = [
     "ChangeEvent",
     "Incident",
     "PluginSetting",
+    "PluginTenancy",
     "Role",
     "User",
     "UserRole",
