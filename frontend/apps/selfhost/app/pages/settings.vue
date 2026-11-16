@@ -123,7 +123,7 @@ function addRepoRow() {
 const scopes = ref<Scope[]>([])
 const saving = ref<string | null>(null)
 const scopeErrorText = ref('')
-// 值存下来了,但没推到插件那边(进程外插件靠核心推配置)
+// 值存下来了,但配置推送失败(进程外插件靠核心推配置)
 const pushWarning = ref('')
 const drafts = reactive<Record<string, Record<string, string>>>({})
 const savedScope = ref<string | null>(null)
@@ -138,7 +138,7 @@ function draftValue(scope: string, field: string): string {
   return drafts[scope]?.[field] ?? ''
 }
 
-// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 这种前缀。
+// 接口给的是人话(字段 + 应该怎么填);这里只去掉 "API error: 422" 前缀。
 function friendly(raw: string): string {
   return raw.replace(/^API error:\s*\d{3}\s*/, '').trim()
 }

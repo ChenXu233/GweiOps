@@ -10,8 +10,7 @@
 注册路径。
 
 `scan.todos` 是一次**效果**(不是只读能力):它在目标目录里落一个标记文件,句柄就是
-那个文件的名字,撤销 = 删掉它。这样"进程外插件能不能当效果提供者"这件事在这里是
-可验证的,而不是一句文档。
+标记文件名,撤销 = 删掉它。"进程外插件能不能当效果提供者"由此可验证,而不是一句文档。
 """
 
 from __future__ import annotations
@@ -37,14 +36,14 @@ SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__"}
 
 SOURCES = ("*.py", "*.ts", "*.vue", "*.md", "*.yaml", "*.yml")
 
-# 印记文件名里带句柄:撤销只删这一颗,不碰别人留下的
+# 印记文件名里带句柄:撤销只删本插件落的印记,不碰其他文件
 MARKER_SUFFIX = ".gwei-scan.json"
 
 SCOPE = "demo-remote-scan"
 
 
 def count_todos(root: Path) -> dict:
-    """数一个目录里的待办标记。不碰网络,失败只影响这一次调用。
+    """数一个目录里的待办标记。不碰网络,失败只影响当前调用。
 
     结果里带 `scanned`:0 个命中时,人得能分清"扫过了没有待办"与"什么都没扫到"。
     """
@@ -111,7 +110,7 @@ class DemoPlugin:
         return {"status": "ignored", "event": event}
 
     async def execute_task(self, task: str, params: dict) -> dict:
-        """没写效果四方法时的兜底分发。这个示例另外实现了那四个,所以走不到这里。"""
+        """没写效果四方法时的兜底分发。本示例已实现 execute/undo/window/verify,所以走不到这里。"""
         if task == "scan_todos":
             return count_todos(Path(str(params.get("path") or ".")).expanduser())
         # 未知任务如实抛:远端"成功但什么都没做"比失败更难查

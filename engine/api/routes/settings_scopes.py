@@ -147,7 +147,7 @@ def _explain(exc: ValidationError, scope_name: str, tenant: str) -> str:
 async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> dict:
     require(request, "settings.write")
     if config.get_scope(scope_name) is None:
-        raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
+        raise HTTPException(status_code=404, detail=f"没有配置 scope: {scope_name}")
     values = {str(key): str(value) for key, value in body.values.items()}
     if not values:
         raise HTTPException(status_code=400, detail="没有要写入的值")
@@ -191,7 +191,7 @@ async def put_scope(scope_name: str, body: ScopeValuesDTO, request: Request) -> 
 
 
 async def _push_to_plugins(scope_name: str) -> str:
-    """把改完的值推给声明了这个 scope 的插件。返回失败说明(空 = 都推到了)。
+    """把改完的值推给声明了该 scope 的插件。返回失败说明(空 = 都推到了)。
 
     只推相关的插件:改一项配置不该让所有插件的连接都抖一下。插件没实现
     `configure` 就什么都不做——它自己读得到配置表。
@@ -210,17 +210,17 @@ async def _push_to_plugins(scope_name: str) -> str:
 
 @router.delete("/api/settings/scopes/{scope_name}/{key}")
 async def delete_value(scope_name: str, key: str, request: Request) -> dict:
-    """删掉一个键。删了租户的那一份,读的时候落回公共值——不是落空。"""
+    """删掉一个键。删掉的是租户覆盖值,读的时候落回公共值——不是落空。"""
     require(request, "settings.write")
     if config.get_scope(scope_name) is None:
-        raise HTTPException(status_code=404, detail=f"没有这个配置 scope: {scope_name}")
+        raise HTTPException(status_code=404, detail=f"没有配置 scope: {scope_name}")
     tenant = tenant_scope(request, None) or ""
 
     removed = await create_settings_store().delete(scope_name, key, tenant=tenant)
     if not removed:
         raise HTTPException(
             status_code=404,
-            detail=f"{scope_name} 上没有这个键: {key}"
+            detail=f"{scope_name} 上没有键: {key}"
             + (f"(租户 {tenant})" if tenant else "(公共)"),
         )
     config.forget(scope_name, key, tenant)
@@ -230,6 +230,6 @@ async def delete_value(scope_name: str, key: str, request: Request) -> dict:
         "removed": key,
         "set": sorted(config.stored(scope_name, tenant)),
         "missing": config.validate_scope(scope_name, tenant),
-        # 删掉一个键也要推:远端把"没这个键"与"这个键没改过"分得开,前提是全量下发
+        # 删掉一个键也要推:远端把"键不存在"与"键未改"分得开,前提是全量下发
         "push_error": await _push_to_plugins(scope_name),
     }

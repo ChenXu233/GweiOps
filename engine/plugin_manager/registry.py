@@ -15,7 +15,7 @@
 启停语义:
 - 发现与启用是两步:发现只把清单记进 `available()`,启用的才 import、注册、进索引;
 - 启停可以在运行期做(`enable` / `disable` / `rescan`),不用重启进程:启用是
-  "导入 + 注册 + on_startup",停用是"on_shutdown + 摘掉索引"。停用后这个插件
+  "导入 + 注册 + on_startup",停用是"on_shutdown + 摘掉索引"。停用后该插件
   既不在 `names()` 里,也解析不到它的能力;
 - 决定从哪来:运行期显式决定(`set_decisions`,由控制台写入并持久化)> 
   `PLUGINS_ENABLED` 白名单 > `PLUGINS_DISABLED` > 清单 `default_enabled`;
@@ -98,7 +98,7 @@ class Discovered:
 
 @dataclass
 class PluginState:
-    """一个清单此刻的状态:声明、启用与否、在哪些实例键上活着、为什么是这个状态。
+    """单个清单此刻的状态:声明、启用与否、在哪些实例键上活着、原因。
 
     `error` 存注册成功但 on_startup 抛错的原因(比如密钥没配):实例还在,能力调不通。
     """
@@ -125,7 +125,7 @@ class PluginRegistry:
         self._decisions: dict[str, bool] = {}
         # 清单名 -> on_startup 的失败原因
         self._startup_errors: dict[str, str] = {}
-        # 清单名 -> 配置没推到插件那边的原因。它不属于"起不来":插件在跑,
+        # 清单名 -> 配置推送失败原因。它不属于"起不来":插件在跑,
         # 差别是它手里是旧配置——两种失败混在一起会让人去查错的地方。
         self._config_errors: dict[str, str] = {}
         self._launched = False
@@ -362,7 +362,7 @@ class PluginRegistry:
                 )
 
         # 清单声明的配置先进配置表:直接 register() 进来的实例(进程外代理、
-        # 手工挂的替身)不经过发现流程,少了这一步它们推下去的值永远是空的。
+        # 手工挂的替身)不经过发现流程,跳过登记后推下去的值永远是空的。
         _register_scopes(manifest)
         self._manifests.setdefault(manifest.name, manifest)
         self._instances[instance_key] = instance
@@ -486,7 +486,7 @@ class PluginRegistry:
         """启用一个已发现的插件:导入、注册、启动。已经在跑就什么都不做。"""
         found = self._available.get(name)
         if found is None:
-            raise LookupError(f"没有发现这个插件:{name}")
+            raise LookupError(f"没有发现插件:{name}")
         self._decisions[name] = True
         if name in self._manifests:
             return
@@ -509,7 +509,7 @@ class PluginRegistry:
     async def disable(self, name: str) -> None:
         """停用一个插件:关掉它的实例,再从索引里摘掉。"""
         if name not in self._available:
-            raise LookupError(f"没有发现这个插件:{name}")
+            raise LookupError(f"没有发现插件:{name}")
         self._decisions[name] = False
         await self._disable_now_async(name)
 
@@ -775,7 +775,7 @@ class PluginRegistry:
         self._launched = True
 
     async def _push_config(self, key: str, instance: PluginBase) -> None:
-        """把清单声明的配置交给这个实例。进程外插件只能从这里拿到值。
+        """把清单声明的配置交给该实例。进程外插件只能从这里拿到值。
 
         推失败不让启动失败:插件在跑,差别只是它手里没有配置——那件事要进
         日志与 `states()` 的 error,而不是把整个插件判成起不来。

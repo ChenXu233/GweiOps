@@ -368,7 +368,7 @@ def test_demo_plugin_runs_an_effect_and_takes_its_config(tmp_path, monkeypatch):
         assert done.handle and (work / done.handle).is_file()
         assert done.facts.get("count") == 1
 
-        # 配置真推下去了:印记里写着核心送过来的那个值
+        # 配置真推下去了:印记里写着核心经 Configure 送来的值
         assert "来自核心的配置" in (work / done.handle).read_text(encoding="utf-8")
 
         back = asyncio.run(rollback(done, reg))

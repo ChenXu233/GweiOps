@@ -8,7 +8,7 @@
 
 protoc 生成的 `_grpc.py` 里写的是 `import plugin_pb2`,那是"平铺进 sys.path"的假设。
 桩放在包内,必须改成相对导入,否则 `import engine.plugin_manager.grpc_proto...` 起不来。
-这一步在这里做,不在安装时做。
+桩生成在开发期执行,不在安装时执行。
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def patch_imports(out_dir: Path) -> None:
 
 
 def main(argv: list[str]) -> int:
-    # --check:与仓库里的那份逐字节比对,用来在 CI 里抓"改了 proto 没重生成"
+    # --check:与仓库内已提交的生成物逐字节比对,用来在 CI 里抓"改了 proto 没重生成"
     check = "--check" in argv[1:]
     if check:
         with tempfile.TemporaryDirectory() as tmp:

@@ -59,7 +59,7 @@ export const SettingsApi = {
 }
 
 // 插件/接入层声明的配置项——回显规则由每个字段自己声明,前端不猜。
-// put 的响应里带 push_error:值已经存下了,只是没推到插件那边。两件事要分开说。
+// put 的响应里带 push_error:值已经存下了,但推送失败。存储与推送要分开看。
 export const SettingsScopesApi = {
   list: () => api.get('/api/settings/scopes'),
   put: (scope: string, values: Record<string, string>) =>
@@ -69,7 +69,7 @@ export const SettingsScopesApi = {
     }),
 }
 
-// MCP 接入用的密钥。明文只在签发那一次的响应里,列表永远只有 hint。
+// MCP 接入用的密钥。明文只在签发响应里出现一次,列表永远只有 hint。
 // resources / tools 两份清单来自引擎:签密钥时挑的就是它们,前端不自己编。
 export const ApiKeysApi = {
   list: () => api.get('/api/keys'),

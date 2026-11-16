@@ -233,7 +233,7 @@ class TimelineSegmentDTO(BaseModel):
 
 
 class TimelineBranchDTO(BaseModel):
-    """话题上此刻开着的那个 PR。没有就是没有,不编一条分支出来。"""
+    """话题上此刻打开着的 PR(话题已开 PR 时返回它的分支信息)。没有就是没有,不编造分支。"""
 
     repo: str = ""
     head: str = ""

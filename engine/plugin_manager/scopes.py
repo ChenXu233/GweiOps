@@ -15,9 +15,9 @@
 1. **进配置表**(`register_manifest_scopes`):控制台的设置页因此列得出字段、
    `validate_scope` 说得出缺哪一项。字段名与进程内插件一致——两边要的是同一组事实。
 2. **把值推下去**(`push`):插件的进程不在核心的内存里,`config.get_scope_config()`
-   在它那一侧读不到任何东西,值只能由核心送过去。推的时机是 on_startup 之后、
+   在插件进程里读不到任何东西,值只能由核心送过去。推的时机是 on_startup 之后、
    以及人改完配置之后;一次推一个 scope 的全量值,不做增量——增量会让"删掉一个键"
-   与"这个键没改过"在插件侧长得一样。
+   与"键未改"在插件侧长得一样。
 
 进程内插件不实现 `configure` 就不推:它自己读得到配置表,再送一份只是两份会漂移的事实。
 """
@@ -55,7 +55,7 @@ def register_manifest_scopes(manifest: Manifest) -> list[str]:
 
 
 def scope_values(manifest: Manifest, tenant: str = "") -> list[dict[str, Any]]:
-    """这个插件每个 scope 此刻的值与缺项。缺项说得出"该去填哪个环境变量"。"""
+    """单个插件各 scope 此刻的值与缺项。缺项说得出"该去填哪个环境变量"。"""
     out: list[dict[str, Any]] = []
     for name in sorted(manifest.scopes):
         try:

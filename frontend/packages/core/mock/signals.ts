@@ -7,10 +7,9 @@ import type { Repo } from '../types/repos'
  * 插件清单照抄 plugins/builtin 下真实存在的 manifest,能力名与真实清单一致,
  * 便于对着引擎核对。
  *
- * GitHub 来源只有一个适配器(github-app-adapter)。旧的那份 github-adapter 是
- * 占着"内置 GitHub 适配器"位置却没接上来源解析的残留代码,已删除:同一份清单
- * 声明 webhook.receive 却拿不出 source,`source_adapter("github")` 找不到它,
- * 这种"装上了但接不上"比没有更费解。
+ * GitHub 来源只有一个适配器(github-app-adapter)。旧的 github-adapter 已删除:
+ * 它声明 webhook.receive 却拿不出 source,`source_adapter("github")` 找不到它,
+ * 装上了但接不上比没有更费解。
  *
  * lastSyncAt 用 ISO,与 GET /api/repos 返回的形状一致。
  */

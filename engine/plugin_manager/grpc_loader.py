@@ -22,7 +22,7 @@
 
 失败隔离的边界在这里:
 
-- 对面连不上、超时、抛错,**只影响这一个插件**——异常在代理内被翻译成本插件的失败,
+- 对面连不上、超时、抛错,**只影响本插件**——异常在代理内被翻译成本插件的失败,
   不往调用方的工作流里扔裸 grpc 异常;
 - 核心侧每次调用都有超时(`PLUGINS_GRPC_TIMEOUT_S`,默认 10 秒),一个卡住的远端
   进程不会把整条工作流挂在那里。
@@ -203,7 +203,7 @@ class GrpcPluginProxy(PluginBase):
     async def _phase(self, phase: str, task: str, params: dict, method: str) -> dict:
         """跑一个效果阶段。与能力调用同为 ExecuteTask,靠 metadata 里的 phase 区分。
 
-        阶段声明的解释权在核心(清单里的 effects 块),远端只需要知道"这一步该干
+        阶段声明的解释权在核心(清单里的 effects 块),远端只需要知道"当前阶段该干
         什么"——它不认识效果名,也不该认识。
         """
         from .grpc_proto import plugin_pb2
@@ -248,7 +248,7 @@ class GrpcPluginProxy(PluginBase):
     # -- 配置 -------------------------------------------------------
 
     async def configure(self, scope: str, values: dict, missing: list[str]) -> None:
-        """把核心那边的配置值交给远端的这个进程。
+        """把核心的配置值交给远端插件进程。
 
         远端的 `config.get_scope_config()` 读不到核心的环境变量与库,所以值只能
         从这条 RPC 过来。粗粒度、全量、一 scope 一次:远端不需要知道值是怎么来的。
@@ -264,7 +264,7 @@ class GrpcPluginProxy(PluginBase):
             ),
         )
         if not response.success:
-            # 插件拒收(它自己校验不过):说出来,但这一次推失败不拦住其它 scope
+            # 插件拒收(它自己校验不过):说出来,但单次推送失败不拦住其它 scope
             raise GrpcPluginError(
                 f"{self._name}.configure({scope}) 被拒:{response.message or '(没有说明)'}"
             )
@@ -310,7 +310,7 @@ def _proto_type(kind: PluginType) -> int:
 
 
 def _effect_payload(effect) -> dict:
-    """效果在 wire 上的样子。与账本里存的那份同形,远端读得出参数与验证规则。"""
+    """效果在 wire 上的样子。与 `engine.change_unit.Effect` 同形,远端读得出参数与验证规则。"""
     return {
         "task": effect.task,
         "args": dict(effect.args),
@@ -383,8 +383,8 @@ def register_grpc_plugins(
     """接上 `PLUGINS_GRPC` 里点名、插件目录里没有清单的远端插件,返回数量。
 
     常规形态不经过这里:清单里写 `endpoint` 的插件由发现流程直接建成代理
-    (`PluginRegistry._activate`),和进程内插件走完全同一条路。这个函数只服务
-    "临时接一个不在目录里的插件"——那种接法拿不到声明,也就没有任何能力,
+    (`PluginRegistry._activate`),和进程内插件走完全同一条路。本函数只服务
+    "临时接一个不在插件目录里的远端插件"——该接法拿不到清单声明,也就没有任何能力,
     所以它接上的东西只用来确认"对面在不在"。
     """
     reg = target_registry or default_registry

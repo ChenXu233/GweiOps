@@ -16,7 +16,7 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 
 两段各用各的现成镜像,不现建校验镜像。`engine-tests.sh` 自带 uv 的安装(版本由
 `UV_VERSION` 决定,默认 0.13.8),脚本因此能在干净的 `python:3.12` 里原样跑;
-本地已有 uv 时那段直接跳过。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
+本地已有 uv 时跳过安装。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
 
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
 是否与 `app.openapi()` 一致、再查迁移是不是一条链、再比 gRPC 桩,最后跑 `pytest tests/`。
@@ -53,10 +53,10 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 
 `engine/migrations/versions/` 里每个文件写一个 `revision`,用 `down_revision` 指向上一个。
 `.ci/engine-tests.py` 读这个目录自己走一遍,判据是 `upgrade` 从根走到头会怎样:头必须唯一,
-每个 `down_revision` 都得指得到,`revision` 不能重。两个头升级不知走哪条,父版本拼错的那条
+每个 `down_revision` 都得指得到,`revision` 不能重。两个头升级不知走哪条,父版本拼错的分支
 永远升不上去。
 
-这一步读源码的顶层赋值,不 import 迁移文件、也不调 alembic CLI。不调 `alembic heads` 的理由在输出格式:
+校验读源码的顶层赋值,不 import 迁移文件、也不调 alembic CLI。不调 `alembic heads` 的理由在输出格式:
 默认打印 `009 (head)`,没有 `Rev:` 前缀(`--verbose` 才有),按 `Rev:` 过滤只会数出 0 个头,
 于是仓库什么状态都判失败。
 
@@ -107,7 +107,7 @@ docker run --rm -v "$PWD":/workspace -w /workspace node:22 \
   bash -c 'corepack enable && corepack prepare pnpm@10.15.0 --activate && bash .ci/web-checks.sh'
 ```
 
-`engine-tests.sh` 自己装 uv,pnpm 由上面那段 corepack 备好——缺的工具都在命令里,
+`engine-tests.sh` 自己装 uv,pnpm 由前面的 corepack 步骤备好——缺的工具都在命令里,
 不用另记一步。
 
 不现建校验镜像,是因为 `docker.build` 的 context 里只有 Dockerfile 本身:`COPY engine/...`
@@ -124,4 +124,4 @@ docker run --rm -v "$PWD":/workspace -w /workspace node:22 \
 ## `.ci/Dockerfile` 这条路径不再使用
 
 校验镜像已删,`.ci/Dockerfile`、`.ci/Dockerfile.dockerignore` 与仓库根的 `.dockerignore` 一并移除:
-它们只服务那个走不通的 `docker.build`。历史与原因见 `git log -- .ci/`,不在本文重述。
+它们只服务 CI 里跑不通的 `docker.build` 目标。历史与原因见 `git log -- .ci/`,不在本文重述。

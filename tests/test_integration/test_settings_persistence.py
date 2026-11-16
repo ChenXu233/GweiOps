@@ -404,8 +404,8 @@ def test_plugin_config_reads_the_tenant_the_console_writes_to():
 def _swap_registry(monkeypatch, reg) -> None:
     """换掉生产 registry 单例。
 
-    `engine.plugin_manager.registry` 这个名字被包属性遮住了(包 `__init__` 导出了
-    同名单例),所以只能从 sys.modules 拿到那个真模块。
+    `engine.plugin_manager.registry` 被包属性遮住了(包 `__init__` 导出了
+    同名单例),所以只能从 sys.modules 拿到原模块。
     """
     import sys
 
@@ -457,7 +457,7 @@ def test_putting_a_value_pushes_it_to_the_plugin(client, monkeypatch):
 
 
 def test_deleting_a_value_also_pushes(client, monkeypatch):
-    """删一个键也要推:远端要能分清"没这个键"与"这个键没改过"。"""
+    """删一个键也要推:远端要能分清"键不存在"与"键未改"。"""
     from engine.plugin_manager.manifest import Manifest, ScopeDecl
     from engine.plugin_manager.registry import PluginRegistry
 
@@ -514,7 +514,7 @@ def test_a_push_failure_is_reported_but_does_not_undo_the_write(client, monkeypa
         async def execute_task(self, task, params): return {}
 
         async def configure(self, scope, values, missing):
-            raise ValueError("我不认这个 scope")
+            raise ValueError("我不认该 scope")
 
     reg = PluginRegistry()
     reg.register(
@@ -534,6 +534,6 @@ def test_a_push_failure_is_reported_but_does_not_undo_the_write(client, monkeypa
         "/api/settings/scopes/demo-bot", json={"values": {"base_url": "https://y"}}
     ).json()
     assert body["set"] == ["base_url"]
-    assert "我不认这个 scope" in body["push_error"]
+    assert "我不认该 scope" in body["push_error"]
     # 存下来的值仍然读得到:推失败不等于写失败
     assert config.get_scope_config("demo-bot")["base_url"] == "https://y"

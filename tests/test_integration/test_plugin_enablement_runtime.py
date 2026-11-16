@@ -137,7 +137,7 @@ def test_decisions_survive_restart(tmp_path, monkeypatch):
 
 
 def test_runtime_decision_beats_env_whitelist(tmp_path, monkeypatch):
-    """人在控制台上点过的开关压过部署时写的那行环境变量。"""
+    """控制台写入的启停决定(plugin-enablement scope)压过部署环境变量。"""
     monkeypatch.setenv("PLUGINS_ENABLED", "demo-env")
     _write_plugin(tmp_path, "demo-env")
     reg = PluginRegistry()
@@ -146,7 +146,7 @@ def test_runtime_decision_beats_env_whitelist(tmp_path, monkeypatch):
 
 
 def test_whitelist_typo_is_reported(tmp_path, monkeypatch, caplog):
-    """白名单写错名字时点名告警,不让它长得像"这个部署确实一个插件都不装"。"""
+    """白名单写错名字时点名告警,不让日志长得像"部署确实一个插件都不装"。"""
     monkeypatch.setenv("PLUGINS_ENABLED", "demo-typo")
     _write_plugin(tmp_path, "demo-typo-target")
     reg = PluginRegistry()
@@ -223,7 +223,7 @@ def test_plugin_declarations_have_one_source(builtin_registry):
     """清单是唯一声明源:插件类里不该再有一个 info() 回答同样的问题。
 
     这条不是风格检查,是"同一事实只有一处"的可判形态:一旦有人把声明写回代码,
-    两份就会在下次改清单时漂移,而漂移的那份没人会去看。
+    两份就会在下次改清单时漂移,漂移副本没人会去看。
     """
     for manifest in builtin_registry.manifests():
         instance = builtin_registry.get(manifest.name)

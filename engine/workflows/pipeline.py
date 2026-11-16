@@ -48,11 +48,11 @@ async def _analyze_via_sensor(payload: dict) -> dict:
     try:
         sensor = get_sensor()
     except LookupError as e:
-        logger.warning("感知这一步没有提供者:%s", e)
+        logger.warning("感知步骤没有提供者:%s", e)
         return {
             "status": "unavailable",
             "labels": [],
-            "reply": f"没有启用感知插件,这一步没有做:{e}",
+            "reply": f"没有启用感知插件,感知未执行:{e}",
             "llm_analysis": "",
             "llm_tokens": 0,
         }
@@ -170,10 +170,10 @@ async def _generate_patches_impl(payload: dict) -> list[dict]:
             {"title": payload["title"], "body": payload["body"], "file_path": ""},
         )
     except LookupError as e:
-        logger.warning("没有补丁生成的提供者,这一场不产出补丁:%s", e)
+        logger.warning("没有补丁生成的提供者,本次不产出补丁:%s", e)
         return []
     except Exception as e:  # noqa: BLE001 - 插件自己的失败不记成成功
-        logger.warning("patch.generate 调用失败,这一场不产出补丁:%s", e)
+        logger.warning("patch.generate 调用失败,本次不产出补丁:%s", e)
         return []
     return list(result.get("patches", []))
 
@@ -351,7 +351,7 @@ async def _apply_effects_impl(
     applied: list[dict] = []
     for plan in plans:
         if "result" in plan:
-            # 没落成单元的候选仍然记一笔:这一场的报告要完整。
+            # 没落成单元的候选仍然记一笔:事故报告要完整。
             applied.append(plan["result"])
             continue
 
@@ -373,7 +373,7 @@ async def _apply_effects_impl(
             }
         )
 
-    # 单元都带着 intent;一个单元都没落下时(候选全被放弃),它是这一轮唯一的
+    # 单元都带着 intent;一个单元都没落下时(候选全被放弃),它是本轮唯一的
     # 记录——调用方把它写进事故,时间线才说得出"本打算做什么、为什么都没做"。
     return {"summary": parsed.summary, "applied": applied, "intent": intent_record}
 
@@ -450,9 +450,9 @@ async def _handle_incident_impl(payload: dict) -> dict | None:
 
 
 async def _thread_for(payload: dict) -> dict | None:
-    """这个话题上接着要改的那个 PR。
+    """该话题上接着要改的 PR。
 
-    先看账本:同一个话题上开出来、此刻还开着的 PR 就是它。账本没有、而这次评论
+    先看账本:同一个话题上开出来、此刻还开着的 PR 就是它。账本没有、而当前评论
     落在 PR 上,再问一次 GitHub —— 人自己开的 PR 也要能接着改。
     """
     topic = str(payload.get("topic") or "")
@@ -488,11 +488,10 @@ async def _thread_for(payload: dict) -> dict | None:
 async def _prepare_workspace_impl(payload: dict) -> dict:
     """开工前把代码放进工作区:从哪拉、基线是哪条分支。
 
-    凭据在这一步用掉一次,之后容器里就只有文件了。拉不到就如实返回,让工作流
+    凭据在取快照时用掉一次,之后容器里就只有文件了。拉不到就如实返回,让工作流
     带着原因收尾——空工作区里跑一个 agent,只会得到一份看着像真的报告。
 
-    代码由**这条投递的来源适配器**给:CNB 的议题进来,工作区里就该是 CNB 那份
-    仓库,而不是拿 GitHub App 去拉一个同名仓库。
+    代码由**投递的来源适配器**给:CNB 的议题进来,工作区里就该是 CNB 仓库,而不是拿 GitHub App 去拉一个同名仓库。
     """
     repo = payload.get("repo_full_name") or ""
     if not repo:
@@ -545,7 +544,7 @@ async def _run_harness_impl(payload: dict) -> dict | None:
             logger.warning("workspace not prepared for %s: %s", incident_id, exc)
             return {
                 "source": "harness",
-                "summary": f"工作区拿不到代码,这一场没开工:{type(exc).__name__}: {exc}",
+                "summary": f"工作区拿不到代码,事故未开工:{type(exc).__name__}: {exc}",
                 "steps": [],
                 "counts": {},
                 "exhausted": False,
@@ -556,7 +555,7 @@ async def _run_harness_impl(payload: dict) -> dict | None:
     except Exception as exc:  # noqa: BLE001 - 配错了要说出来,不是悄悄回落到别处跑
         return {
             "source": "harness",
-            "summary": f"沙箱没配好,这一场没开工:{type(exc).__name__}: {exc}",
+            "summary": f"沙箱没配好,事故未开工:{type(exc).__name__}: {exc}",
             "steps": [],
             "counts": {},
             "exhausted": False,
@@ -593,16 +592,16 @@ async def _run_harness_impl(payload: dict) -> dict | None:
     if result.stderr:
         logger.info("harness %s: %s", incident_id, result.stderr[-400:])
     report = dict(result.report or {})
-    # 这一场跑在哪:一个编号、一个能点开的地址。人问"它在哪干的活"要有答案。
+    # 事故跑在哪:一个编号、一个能点开的地址。人问"它在哪干的活"要有答案。
     if result.entry is not None:
         report["sandbox"] = result.entry.to_dict()
-    # 这一轮改了什么是工作区的事实:平台自己数,不靠 harness 自报(自报的没法核)。
+    # 本轮改了什么是工作区的事实:平台自己数,不靠 harness 自报(自报的没法核)。
     report["diff"] = await _round_diff(incident_id, payload)
     return report
 
 
 async def _round_diff(incident_id: str, payload: dict) -> list[dict]:
-    """这一轮改了哪些文件、各多少行。算不出来就是空表——不编一份交给界面。"""
+    """本轮改了哪些文件、各多少行。算不出来就是空表——不编造数据交给界面。"""
     if not payload.get("repo_full_name"):
         return []
     from engine.harness import workspace as ws
@@ -613,7 +612,7 @@ async def _round_diff(incident_id: str, payload: dict) -> list[dict]:
             ws.repo_of(root, incident_id), ws.workspace_of(root, incident_id)
         )
     except Exception:  # noqa: BLE001 - 数不出改动返回空
-        logger.warning("算不出这一轮的 diff(%s)", incident_id, exc_info=True)
+        logger.warning("算不出本轮的 diff(%s)", incident_id, exc_info=True)
         return []
 
 
@@ -664,7 +663,7 @@ def declarative_report(intent: dict, applied: dict) -> dict:
     return {
         "source": "declarative",
         "summary": str(intent.get("summary") or ""),
-        # 这一轮本打算做什么:一个单元都没落下时,轮次上只有它说得清经过。
+        # 本轮本打算做什么:一个单元都没落下时,轮次上只有它说得清经过。
         "intent": dict(applied.get("intent") or intent),
         "steps": [
             {
@@ -693,7 +692,7 @@ async def alert_triage_workflow(payload: dict) -> dict:
     信号本身不携带动作。能做什么由 intent 提供者决定;没有提供者时
     effects 为空,工作流正常结束——不假装做了什么。
     """
-    # 开始就写一行:事故开着没收口,说明那一场卡住了——这本身就是信息。
+    # 开始就写一行:事故开着没收口,说明执行卡住了——这本身就是信息。
     await open_incident_step(payload)
 
     harnessed = await run_harness_step(payload)
@@ -754,11 +753,11 @@ def _reply_body(payload: dict, report: dict) -> str:
     """在话题上回一句话。
 
     有人在这里点了名,平台上做了事,那就要有人看见——只在控制台里留一行不算回话:
-    GitHub 上那条评论的人不会打开控制台。
+    在 GitHub 上发评论的人不会打开控制台。
     """
     summary = str(report.get("summary") or "").strip()
     lines = summary.splitlines()
-    first = lines[0].strip() if lines else "这一场没有留下结论"
+    first = lines[0].strip() if lines else "本次事故没有留下结论"
 
     parts = [f"处理完了:{first}", ""]
     detail = "\n".join(line for line in lines[1:4] if line.strip()).strip()
@@ -769,7 +768,7 @@ def _reply_body(payload: dict, report: dict) -> str:
     if counts:
         parts.append("变更:" + "、".join(f"{name} {value}" for name, value in counts.items()))
     if report.get("exhausted"):
-        parts.append("这一场没跑完(超时或额度用尽),需要人接手。")
+        parts.append("本次事故没跑完(超时或额度用尽),需要人接手。")
 
     parts += [
         "",
@@ -807,7 +806,7 @@ async def read_pull(payload: dict, repo: str, number: int) -> dict[str, Any] | N
 
 
 async def _already_commented(tenant: str, incident_id: str) -> bool:
-    """这一场里 agent 自己回过话了吗。回过就不再补一句——同一个话题上两条机器人。"""
+    """本次事故里 agent 自己回过话了吗。回过就不再补一句——同一个话题上两条机器人。"""
     try:
         rows = await create_ledger().latest(tenant=tenant, limit=50)
     except Exception:  # noqa: BLE001 - 账本读不到就按没回过处理,回话比沉默好
@@ -837,7 +836,7 @@ async def _reply_on_topic_impl(
 
     intent = {
         "version": 1,
-        "summary": "回一句这一场的结果",
+        "summary": "回一句本次事故的结果",
         "evidence": [{"kind": "issue", "ref": f"{repo}#{number}"}],
         "effects": [
             {
@@ -871,10 +870,10 @@ async def reply_on_topic_step(payload: dict, report: dict, binding: str | None =
 async def _run_agent_impl(payload: dict) -> dict:
     """有人点名要改动:落库 → 开事故 → 交给 harness → 收口 → 回一句话。
 
-    落库是为了这一条需求在控制台里查得到;不跑感知分析——要给 agent 的是原始
+    落库是为了该议题在控制台里查得到;不跑感知分析——要给 agent 的是原始
     标题与正文,再让另一个模型先把它"分析"一遍只是多一次可能出错的翻译。
 
-    最后一步是回话:不回,那条 @gwei 的人在 GitHub 上什么也看不到,只会以为它没理人。
+    最后一步是回话:不回,发 @gwei 评论的人在 GitHub 上什么也看不到,只会以为它没理人。
     """
     await persist_triage_step(payload, {}, "FIX_REQUESTED")
     await open_incident_step(payload)

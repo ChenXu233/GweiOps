@@ -180,7 +180,7 @@ export const mockChanges: ChangeRow[] = [
  * 议题时间线的演示数据。
  *
  * 形状与后端 `GET /api/issues/{id}/timeline` 完全一致:三段状态、轮次、分段、证据。
- * 用它能在没有引擎的情况下看界面——包括"等你放行"这一段的动作。
+ * 用它能在没有引擎的情况下看界面——包括"等你放行"流程里的动作。
  */
 export const mockIssueTimeline: IssueTimeline = {
   id: '#42',
@@ -261,7 +261,7 @@ export const mockIssueTimeline: IssueTimeline = {
             not_executed: [
               {
                 capability: 'issue.label',
-                reason: '没有提供者声明这个能力: 这个租户上没装打标签的插件',
+                reason: '没有提供者声明 sensor.label: 该租户上没装打标签的插件',
               },
             ],
           },
@@ -345,7 +345,7 @@ export const mockIssueTimeline: IssueTimeline = {
           },
           evidence: [
             {
-              label: '账本这一行',
+              label: '当前账本行',
               kind: 'json',
               content: {
                 id: 'cu_demo_comment',
@@ -484,7 +484,7 @@ export const mockIssueTimeline: IssueTimeline = {
           },
           evidence: [
             {
-              label: '账本这一行',
+              label: '当前账本行',
               kind: 'json',
               content: {
                 id: 'cu_demo_blocked',

@@ -206,7 +206,7 @@ def test_proxy_wraps_connection_failure():
 
 
 def test_proxy_timeout_isolated(remote_plugin):
-    """远端慢到超时:这次调用失败,但不挂住核心。"""
+    """远端慢到超时:当前调用失败,但不挂住核心。"""
     target, service = remote_plugin
     service.delay_s = 1.0
 
@@ -330,12 +330,12 @@ def test_register_grpc_plugins_only_takes_unlisted_names():
     provider = reg.best_capability_provider("scan.dependencies")
     assert isinstance(provider, GrpcPluginProxy)
     assert provider._target == "127.0.0.1:9"
-    # 临时接入的那个确实在,但没有任何能力
+    # 临时接入的插件确实在,但没有任何能力
     assert reg.get("adhoc") is not None
 
 
 # ---------------------------------------------------------------------------
-# 端到端:仓库里那个示例插件真跑一遍
+# 端到端:仓库里的 deploy/grpc-plugin-demo 示例插件真跑一遍
 # ---------------------------------------------------------------------------
 
 
@@ -362,7 +362,7 @@ def test_demo_plugin_end_to_end(tmp_path):
     )
     try:
         _wait_port(port)
-        # 清单拷进临时插件根,endpoint 换成这次起的端口
+        # 清单拷进临时插件根,endpoint 换成测试起的端口
         plug = tmp_path / "demo-remote-scan"
         plug.mkdir()
         (plug / "plugin.yaml").write_text(

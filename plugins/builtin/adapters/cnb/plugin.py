@@ -1,10 +1,10 @@
 # plugins/builtin/adapters/cnb/plugin.py
 """CNB(cnb.cool)适配器 —— 托管源之一。
 
-CNB 的事件形状(`PullRequestEvent` / 评论投递)留在这一层,核心只收到归一化的
+CNB 的事件形状(`PullRequestEvent` / 评论投递)留在 cnb-adapter 内,核心只收到归一化的
 `kind`。回评、开 PR、取快照也在这里:核心不认识 CNB 的地址,也不认识它的令牌。
 
-托管源与 NPC 管道的分界写在 `engine/ingest/source.py`:这一层只管"投递怎么说、
+托管源与 NPC 管道的分界写在 `engine/ingest/source.py`:cnb-adapter 只管"投递怎么说、
 代码从哪来、话往哪回",谁在沙箱里干活是 harness 的事。
 """
 
@@ -24,7 +24,7 @@ from .config import CNBConfig
 
 SOURCE = "cnb"
 
-# CNB 上人叫平台用的名字。NPC 角色在 CNB 上叫 `@<角色名>`,不是 GitHub 那个 `@gwei`。
+# CNB 上人叫平台用的名字。NPC 角色在 CNB 上叫 `@<角色名>`,GitHub 上才是 `@gwei`。
 DEFAULT_MENTIONS = ("@gwei", "@codebuddy")
 
 TASKS = {"comment.create": "create_comment", "pr.open": "open_pull"}
@@ -99,7 +99,7 @@ class CNBAdapter(PluginBase):
     # -- 工作区:代码从哪来 -----------------------------------------
 
     async def workspace_source(self, repo: str) -> WorkspaceSource:
-        """CNB 的仓库快照。基线是仓库默认分支 —— 这一场要改的是主干。"""
+        """CNB 的仓库快照。基线是仓库默认分支 —— 事故要改的是主干。"""
         client = self._client()
         branch = await client.default_branch(repo)
         if not branch:
@@ -151,7 +151,7 @@ class CNBAdapter(PluginBase):
     async def _open_pull(self, client: CNBClient, args: Dict[str, Any]) -> Dict[str, Any]:
         """分支 → 提交 → 合并请求。
 
-        CNB 的一条内容改动由 `cnb` 流水线里的 git 提交,平台这一步只负责"把分支
+        CNB 的一条内容改动由 `cnb` 流水线里的 git 提交,平台只负责"把分支
         变成可审的合并请求"。缺参数、没配令牌都是"什么都没发生",记可重试的 failed。
         """
         missing = [name for name in ("repo", "head") if not str(args.get(name) or "").strip()]

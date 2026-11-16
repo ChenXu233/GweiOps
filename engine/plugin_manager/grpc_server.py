@@ -1,7 +1,7 @@
 # engine/plugin_manager/grpc_server.py
 """给进程外插件作者用的服务端骨架 —— 只实现业务方法,协议细节在这里。
 
-不写这个包的话,每个插件都要自己:定义 servicer、把 JSON 编解码写在每个 RPC 里、
+没有这个包的话,每个插件都要自己:定义 servicer、把 JSON 编解码写在每个 RPC 里、
 把返回值塞进对应的 protobuf 消息。那些都是机械劳动,而且每写一遍就多一处不一致。
 
 用法:
@@ -33,7 +33,7 @@
 `params` 里带着 `phase` / `effect` / `handle`,自己分派即可。
 
 **失败语义**:抛 `EffectNotApplied` 表示"确定没碰到下游",核心把单元记成可重试的
-failed;抛别的异常记成 unknown。这个区分只有插件知道自己那一层发生了什么。
+failed;抛别的异常记成 unknown。是否碰到下游只有插件自己知道。
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ def build_servicer(plugin: Any):
             return plugin_pb2.HealthResponse(healthy=healthy, message="ok")
 
         def Configure(self, request, context):
-            """核心把某个 scope 的值推下来。插件把它记在自己那边就行。"""
+            """核心把某个 scope 的值推下来,插件自行保存。"""
             handler = getattr(plugin, "configure", None)
             if handler is None:
                 return plugin_pb2.ConfigureResponse(

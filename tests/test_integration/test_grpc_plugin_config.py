@@ -30,7 +30,7 @@ class ConfigurablePlugin:
     def __init__(self, *, reject: str = "") -> None:
         self.received: dict[str, dict[str, str]] = {}
         self.missing: dict[str, list[str]] = {}
-        self.reject = reject  # 非空 = 收到这个 scope 就拒
+        self.reject = reject  # 非空 = 收到该 scope 就拒
 
     async def on_startup(self) -> None:
         pass
@@ -53,7 +53,7 @@ class ConfigurablePlugin:
 
     async def configure(self, scope: str, values: dict, missing: list[str]) -> None:
         if self.reject == scope:
-            raise ValueError("这个 scope 我不认")
+            raise ValueError("我不认该 scope")
         self.received[scope] = dict(values)
         self.missing[scope] = list(missing)
 
@@ -171,12 +171,12 @@ def test_discovery_registers_the_declared_scope(tmp_path, monkeypatch, clean_sco
     reg = PluginRegistry()
     assert reg.discover(builtin_dir=tmp_path) == 1
     assert config.get_scope("adapter-acme") is not None
-    # 没填就没填:缺项要如实报出来,并且报的是人去补的那个环境变量名
+    # 没填就没填:缺项要如实报出来,并且报出要补的环境变量名
     assert config.validate_scope("adapter-acme") == ["ACME_TOKEN"]
 
 
 def test_a_scope_registered_in_code_is_not_overwritten(tmp_path, monkeypatch, clean_scopes):
-    """进程内插件在代码里注册过同名 scope:清单里那份粗声明不该盖掉它。"""
+    """进程内插件在代码里注册过同名 scope:代码声明优先于清单粗声明。"""
     monkeypatch.delenv("PLUGINS_ENABLED", raising=False)
     monkeypatch.delenv("PLUGINS_DISABLED", raising=False)
     config.register_scope("adapter-acme", "CODE_", required=["token"])
@@ -283,7 +283,7 @@ def test_a_plugin_that_refuses_config_is_reported_not_swallowed(
     # 插件在跑,差别只是它手里是旧配置——所以不能记成"启动失败"
     assert state.enabled is True
     assert "配置没推下去" in state.error
-    assert "这个 scope 我不认" in state.error
+    assert "我不认该 scope" in state.error
 
 
 def test_a_plugin_without_configure_is_left_alone(remote, monkeypatch, clean_scopes):
@@ -301,7 +301,7 @@ def test_a_plugin_without_configure_is_left_alone(remote, monkeypatch, clean_sco
     manifest = _manifest()
     reg = PluginRegistry()
     reg.register(manifest, Plain())
-    # 不炸就行:返回值是"这次推的失败说明",没有 configure 就没有失败
+    # 不炸就行:返回值是"推送失败说明",没有 configure 就没有失败
     assert asyncio.run(reg.push_config("adapter-acme")) == {}
 
 

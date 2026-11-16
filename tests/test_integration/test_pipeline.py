@@ -458,9 +458,9 @@ class TestWorkflowEndToEnd:
                 assert effects[0]["capability"] == "comment.create"
                 assert effects[0]["verdict"] == "blocked"
                 sensor.handle_event.assert_awaited_once()
-                # 回评就是上面那个 comment.create 单元:triage 不单独调
-                # reply_on_topic_step,所以这里只认单元结论,不去断言一个不会被
-                # 调用的步骤。接真库跑门控用例时,那条断言永远是 0 次。
+                # 回评就是上面的 comment.create 单元:triage 不单独调
+                # reply_on_topic_step,所以这里只认单元结论,不断言该步骤。
+                # 接真库跑门控用例时,mock_reply.assert_awaited_once() 永远失败。
         finally:
             DBOS.destroy(destroy_registry=True)
 
@@ -502,7 +502,7 @@ def _comment_payload(**extra) -> dict:
 
 
 async def _ready_workspace(_payload) -> dict:
-    """拉好代码的样子:这一层只关心"准备好了没有",拉取本身另有测试。"""
+    """拉好代码后的状态:此处只关心"准备好了没有",拉取本身另有测试。"""
     return {"repo": "ChenXu233/GweiOps", "branch": "master", "commit": "sha-base"}
 
 
@@ -572,7 +572,7 @@ class TestAgentPath:
         monkeypatch.setattr(config.settings, "harness_workspace_root", str(tmp_path))
 
         class NoCredentials:
-            """配了来源、但拿不到凭据的适配器:快照这一步就该失败。"""
+            """配了来源、但拿不到凭据的适配器:取快照步骤就该失败。"""
 
             source = "github"
 

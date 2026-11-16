@@ -48,7 +48,7 @@ class SensorAgent(PluginBase):
             return {"is_complete": report.is_complete, "missing": report.missing_fields}
         if task == "detect_duplicates":
             # 判重要有对照物。调用方不给就是不查,而不是拿空列表算出"不重复"
-            # ——那个答案看着像结论,其实是没做。
+            # ——返回的 status 看着像结论,其实是没做。
             existing = params.get("existing_issues") or []
             if not existing:
                 return {"status": "skipped", "message": "没有可对比的议题,这次没判重"}

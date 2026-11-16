@@ -102,7 +102,7 @@ class PluginServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def Configure(self, request, context):
-        """配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件这一面，
+        """配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件，
         所以配置是"推"下来的，插件不反向索取。
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)

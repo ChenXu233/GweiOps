@@ -12,7 +12,7 @@ service PluginService {
     rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
     rpc HealthCheck(HealthRequest) returns (HealthResponse);
 
-    // 配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件这一面，
+    // 配置下发：核心把某个 scope 的当前值推给插件。连接方向只有核心 → 插件，
     // 所以配置是"推"下来的，插件不反向索取。
     rpc Configure(ConfigureRequest) returns (ConfigureResponse);
 
@@ -100,7 +100,7 @@ message HealthResponse {
 // ============================================================
 
 // 一次下发一个 scope 的全部值：插件按 scope 拿，不做增量合并——增量会让
-// "删掉一个键"和"这个键没改过"在插件侧长得一样。
+// "删掉一个键"和"键未改"在插件侧长得一样。
 message ConfigureRequest {
     string scope = 1;                 // scope 名，如 "adapter-acme"
     map<string, string> config = 2;   // 此刻的值
@@ -170,6 +170,6 @@ message TaskResponse {
     string error = 3;
     // 失败的性质。"not_applied" = 远端确定没碰到下游，核心据此把单元记成
     // failed（可以照原样重试）；其它值或不填 = 说不清，一律按 unknown 处理。
-    // 这个区分只有远端知道，核心不替它猜。
+    // 是否碰到下游只有远端知道，核心不替它猜。
     string error_kind = 4;
 }

@@ -8,10 +8,10 @@ type: action
 description: 进程外扫描插件示例,演示 gRPC 接入形状(数一个目录里的待办标记)
 default_enabled: false
 
-# 核心按这个地址连它;编排里可用 PLUGINS_GRPC=name=host:port 覆盖
+# 核心按 endpoint 连本插件;编排里可用 PLUGINS_GRPC=name=host:port 覆盖
 endpoint: 127.0.0.1:50055
 
-# 这个实例服务哪个下游目标。进程外插件没有 Python 实例属性可读,声明只能落在这里。
+# 本实例服务哪个下游目标。进程外插件没有 Python 实例属性可读,声明只能落在这里。
 binding: local
 
 capabilities:
