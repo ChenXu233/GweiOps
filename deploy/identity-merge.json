@@ -1,0 +1,4 @@
+{
+  "$comment": "一人多工作区的迁移审计结论。判据见 scripts/identity_audit.py 与 docs/explanation/identity-and-authorization.md §5.2。每条只能是 merged(同一个人)或 kept(不是同一个人,邮箱必须已改掉一个)。",
+  "decisions": {}
+}
