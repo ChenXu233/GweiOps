@@ -7,14 +7,15 @@ import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 defineProps<{ rail?: boolean }>()
 
-const { items, current, select } = useWorkspaces()
+const { items, current, select, hrefFor } = useWorkspaces()
 const open = ref(false)
 
 async function pick(slug: string) {
   select(slug)
   open.value = false
   // 换了工作区就是换了数据:留在原页面等于看一个不属于这个工作区的列表。
-  await navigateTo('/issues')
+  // 路径里带上那一段 —— 链接因此自带"这是哪一道账"。
+  await navigateTo(hrefFor('/issues', slug))
 }
 
 onClickOutsideOrEsc()

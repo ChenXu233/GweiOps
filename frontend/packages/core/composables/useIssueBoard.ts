@@ -12,7 +12,6 @@ import type { IssueBoard } from '../types/issues'
  */
 export function useIssueBoard() {
   const useMock = useRuntimeConfig().public.useMock === true
-  const { picked } = useWorkspaces()
   const { project, repo } = useScope()
   const data = ref<IssueBoard | null>(null)
   const loading = ref(true)
@@ -27,7 +26,7 @@ export function useIssueBoard() {
       } else {
         data.value = await IssuesApi.board({
           limit: 200,
-          tenant: picked.value ?? undefined,
+          // 工作区在路径里(typed.ts 的 scopePath 补),查询串不再说一次
           project: project.value || undefined,
           repo: repo.value || undefined,
         })
@@ -41,7 +40,7 @@ export function useIssueBoard() {
 
   // 换档 / 换工作区就是换一页数据:留着上一档的列表先画出来,会让人以为新范围
   // 里也有那些。`immediate`,首屏那次也走这里,不再另起一个挂载钩子。
-  watch([picked, project, repo], () => {
+  watch([project, repo], () => {
     data.value = null
     if (import.meta.client) refresh()
   }, { immediate: true })

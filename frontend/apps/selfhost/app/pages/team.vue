@@ -1,5 +1,10 @@
 <script setup lang="ts">
 // 成员与角色。角色是数据:能建、能改权限、能删(预设除外)。
+//
+// 工作区在路径里,所以这里的每个调用都过 `scopePath`:它读的是选择器里那一个,
+// 不是自己拼一次查询串 —— 一份东西两个写法的下场是两边说不到一起。
+import { scopePath } from '@gwei/core/api/typed'
+
 const { user: me, can } = useAuth()
 
 interface Permission { key: string, description: string }
@@ -47,11 +52,11 @@ async function loadAll() {
   error.value = ''
   try {
     const [p, r, u, repoList, projectList] = await Promise.all([
-      $fetch<{ permissions: Permission[] }>('/api/permissions'),
-      $fetch<{ roles: Role[] }>('/api/roles'),
-      $fetch<{ users: Member[] }>('/api/users'),
-      $fetch<{ items: { slug: string, name: string }[] }>('/api/repos'),
-      $fetch<{ items: { slug: string, name: string, repos: number }[] }>('/api/projects'),
+      $fetch<{ permissions: Permission[] }>(scopePath('/api/permissions')),
+      $fetch<{ roles: Role[] }>(scopePath('/api/roles')),
+      $fetch<{ users: Member[] }>(scopePath('/api/users')),
+      $fetch<{ items: { slug: string, name: string }[] }>(scopePath('/api/repos')),
+      $fetch<{ items: { slug: string, name: string, repos: number }[] }>(scopePath('/api/projects')),
     ])
     permissions.value = p.permissions
     roles.value = r.roles
@@ -59,7 +64,7 @@ async function loadAll() {
     repos.value = repoList.items
     projects.value = projectList.items
     if (can('audit.read')) {
-      audit.value = (await $fetch<{ entries: AuditEntry[] }>('/api/audit')).entries
+      audit.value = (await $fetch<{ entries: AuditEntry[] }>(scopePath('/api/audit'))).entries
     }
   } catch (e) {
     const err = e as { data?: { detail?: string } }
@@ -85,7 +90,7 @@ async function submitInvite() {
   inviteBusy.value = true
   inviteError.value = ''
   try {
-    await $fetch('/api/users', {
+    await $fetch(scopePath('/api/users'), {
       method: 'POST',
       body: {
         email: invite.email,
@@ -149,7 +154,7 @@ async function saveRole() {
   roleBusy.value = true
   roleError.value = ''
   try {
-    await $fetch(`/api/roles/${editing.value.id}`, {
+    await $fetch(scopePath(`/api/roles/${editing.value.id}`), {
       method: 'PUT',
       body: { name: draft.name, description: draft.description, permissions: collectedPermissions() },
     })
@@ -169,7 +174,7 @@ const newRole = reactive({ key: '', name: '', description: '' })
 async function createRole() {
   roleError.value = ''
   try {
-    await $fetch('/api/roles', {
+    await $fetch(scopePath('/api/roles'), {
       method: 'POST',
       body: { ...newRole, permissions: [] },
     })
@@ -204,7 +209,7 @@ function toggleMemberRole(id: string) {
 async function saveMemberRoles() {
   if (!memberForRoles.value) return
   try {
-    await $fetch(`/api/users/${memberForRoles.value.id}`, {
+    await $fetch(scopePath(`/api/users/${memberForRoles.value.id}`), {
       method: 'PUT',
       body: { role_ids: memberRoleIds.value },
     })
@@ -218,7 +223,7 @@ async function saveMemberRoles() {
 
 async function toggleStatus(m: Member) {
   try {
-    await $fetch(`/api/users/${m.id}`, {
+    await $fetch(scopePath(`/api/users/${m.id}`), {
       method: 'PUT',
       body: { status: m.status === 'active' ? 'disabled' : 'active' },
     })
@@ -232,7 +237,7 @@ async function toggleStatus(m: Member) {
 async function removeMember(m: Member) {
   if (!window.confirm(`删掉 ${m.display_name || m.email}?这个动作不可撤销。`)) return
   try {
-    await $fetch(`/api/users/${m.id}`, { method: 'DELETE' })
+    await $fetch(scopePath(`/api/users/${m.id}`), { method: 'DELETE' })
     await loadAll()
   } catch (e) {
     const err = e as { data?: { detail?: string } }

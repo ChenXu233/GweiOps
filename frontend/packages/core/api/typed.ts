@@ -47,6 +47,23 @@ export interface PostOptions<P extends string> extends CallOptions<P> {
 
 const BASE = ''
 
+// 工作区写在路径里,不是查询串也不是请求头。所以每个调用点都要说清"这一条落在
+// 哪个工作区上" —— 页面上它来自 `useWorkspaces()`,别再让每处自己拼一次。
+let workspaceScope: () => string = () => ''
+
+/** 设一次"当前在哪个工作区"。返回空串 = 不带工作区段(老接口、机器调用)。 */
+export function setWorkspaceScope(read: () => string): void {
+  workspaceScope = read
+}
+
+/** `/api/issues` → `/api/workspaces/acme/issues`。已经带了就别套第二层。 */
+export function scopePath(path: string): string {
+  const slug = workspaceScope()
+  if (!slug || !path.startsWith('/api/')) return path
+  if (path.startsWith('/api/workspaces')) return path
+  return `/api/workspaces/${encodeURIComponent(slug)}${path.slice(4)}`
+}
+
 function fillPath(template: string, params?: Record<string, string | number>): string {
   if (!params) return template
   return template.replace(/\{(\w+)\}/g, (_, key: string) => {
@@ -96,7 +113,7 @@ export const api = {
     path: P,
     options?: CallOptions<P>,
   ): Promise<ResponseOf<P, 'delete'>> {
-    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    const url = withQuery(scopePath(fillPath(path, options?.path as never)), options?.query)
     return send<ResponseOf<P, 'delete'>>(url, { method: 'DELETE', signal: options?.signal })
   },
 
@@ -109,7 +126,7 @@ export const api = {
     path: P,
     options?: PostOptions<P>,
   ): Promise<ResponseOf<P, 'post'>> {
-    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    const url = withQuery(scopePath(fillPath(path, options?.path as never)), options?.query)
     return send<ResponseOf<P, 'post'>>(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,7 +139,7 @@ export const api = {
     path: P,
     options?: PostOptions<P>,
   ): Promise<ResponseOf<P, 'put'>> {
-    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    const url = withQuery(scopePath(fillPath(path, options?.path as never)), options?.query)
     return send<ResponseOf<P, 'put'>>(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

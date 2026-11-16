@@ -9,7 +9,7 @@ import type { Project, Repo } from '../types/repos'
 
 export function useRepos() {
   const useMock = useRuntimeConfig().public.useMock === true
-  const { picked } = useWorkspaces()
+  // 工作区由调用层补进路径(typed.ts 的 scopePath),这里不带参数
   const repos = ref<Repo[]>([])
   const projects = ref<Project[]>([])
   const loading = ref(true)
@@ -24,8 +24,8 @@ export function useRepos() {
         projects.value = mockProjects
       } else {
         const [r, p] = await Promise.all([
-          ReposApi.list(picked.value ?? undefined),
-          ProjectsApi.list(picked.value ?? undefined),
+          ReposApi.list(),
+          ProjectsApi.list(),
         ])
         repos.value = r
         projects.value = p.items ?? []

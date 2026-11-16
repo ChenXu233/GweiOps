@@ -28,7 +28,7 @@ function toPlugin(m: PluginManifestDTO): Plugin {
 export function useRepoList() {
   const useMock = useRuntimeConfig().public.useMock === true
   // 仓库列表属于一个工作区:同一个仓库名在两个工作区里是两份数据。
-  const { picked } = useWorkspaces()
+  // 工作区由调用层补进路径(typed.ts 的 scopePath),这里不带参数。
   const repos = ref<Repo[]>([])
   const plugins = ref<Plugin[]>([])
   const loading = ref(true)
@@ -43,7 +43,7 @@ export function useRepoList() {
         plugins.value = mockPlugins
       } else {
         const [r, manifests] = await Promise.all([
-          ReposApi.list(picked.value ?? undefined),
+          ReposApi.list(),
           PluginsApi.manifests(),
         ])
         repos.value = r
