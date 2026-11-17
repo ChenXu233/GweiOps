@@ -166,10 +166,17 @@ master:
             set -euo pipefail
             TAG="${tag_name:-$CNB_BRANCH}"
             # 部署方向反过来:目标机每分钟自己去看 :stable。这里只挪指针,不碰目标机。
+            # 走 pull/tag/push 而不是 buildx imagetools:后者在目标 tag 已存在时的行为
+            # 随 registry 而异,同一个 tag 重复点部署会直接报错。这条路径不依赖 buildx,
+            # 重复执行也只是把同一个 digest 再写一遍。
             promote() {
-              docker buildx imagetools create -t "${IMAGE}:stable${2:-}" "${IMAGE}:${TAG}${2:-}" \
-                || { docker pull "${IMAGE}:${TAG}${2:-}"; docker tag "${IMAGE}:${TAG}${2:-}" "${IMAGE}:stable${2:-}"; docker push "${IMAGE}:stable${2:-}"; }
+              SRC="${IMAGE}:${TAG}$1"
+              DST="${IMAGE}:stable$1"
+              docker pull -q "$SRC" >/dev/null
+              docker tag "$SRC" "$DST"
+              docker push -q "$DST" >/dev/null
+              echo "  $DST <= $SRC"
             }
-            promote engine ""
-            promote web "-web"
-            echo "stable -> ${TAG} 与 ${TAG}-web;目标机一分钟内自取"
+            promote ""
+            promote "-web"
+            echo "stable -> ${TAG};目标机一分钟内自取"
