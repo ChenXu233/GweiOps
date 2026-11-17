@@ -16,10 +16,13 @@ export default defineNuxtConfig({
     '@fontsource/jetbrains-mono/latin-500.css',
   ],
 
-  // 核心 layer 的组件不放前缀,直接 <AppIcon> / <PluginWidget>
+  // 核心 layer 的组件不放前缀,直接 <AppIcon> / <PluginWidget>。
+  // components 的 path 以 srcDir(= app/)为基准解析,所以核心层要往上走三级:
+  // app/ -> selfhost/ -> apps/ -> frontend/,再到 packages/core/components。
+  // 少写一级会静默扫不到目录,组件不注册、模板里只剩字面标签——图标消失就是这么来的。
   components: [
     { path: '~/components', pathPrefix: false },
-    { path: '../../packages/core/components', pathPrefix: false },
+    { path: '../../../packages/core/components', pathPrefix: false },
   ],
 
   devtools: { enabled: false },
