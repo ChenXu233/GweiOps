@@ -84,7 +84,7 @@ async function submit() {
   try {
     const result = await ReposApi.connect(pickedSource.value, fullName.value)
     formNote.value = result.created
-      ? `已接入 ${result.name}。第一次投递到达时它才会开始管议题。`
+      ? `已接入 ${result.name}。${syncNote(result.issue_sync)}`
       : `${result.name} 早就在这个工作区里了,这次没有改动。`
     fullName.value = ''
     await refresh()
@@ -92,6 +92,35 @@ async function submit() {
     formError.value = e instanceof Error ? e.message : String(e)
   } finally {
     busy.value = false
+  }
+}
+
+/** 读一次已有议题的结果说成人话。列不出来就说列不出来,不把它说成"没有议题"。 */
+function syncNote(sync?: { listed?: boolean; added?: number; seen?: number; truncated?: boolean; reason?: string }) {
+  if (!sync) return ''
+  if (!sync.listed) {
+    return sync.reason
+      ? `它已有的议题没读到:${sync.reason}。投递到了照样会进来。`
+      : '这个来源列不出它已有的议题,投递到了才会进来。'
+  }
+  const head = sync.added
+    ? `读到 ${sync.seen ?? 0} 条已有议题,补进来 ${sync.added} 条。`
+    : `读到 ${sync.seen ?? 0} 条已有议题,都是平台的旧识。`
+  return sync.truncated ? `${head}读得太多,只取了前面一部分。` : head
+}
+
+const pulling = ref('')
+async function pullIssues(repo: { slug: string; source: string; name: string }) {
+  pulling.value = repo.slug
+  formError.value = ''
+  try {
+    const result = await ReposApi.pullIssues(repo.source, repo.name)
+    formNote.value = `${repo.name}:${syncNote(result) || '读完了。'}`
+    await refresh()
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    pulling.value = ''
   }
 }
 
@@ -137,7 +166,7 @@ onMounted(loadSources)
       <div class="flex flex-wrap items-baseline gap-2">
         <h2 class="text-[13px] font-semibold">接入一个仓库</h2>
         <span class="text-[11.5px] text-ink-faint">
-          接入之前，这个仓库的投递不会被处理：拉代码、跑模型都从第一次投递开始
+          接入那一刻会读一次它已有的议题；之后拉代码、跑模型都从真实的议题投递开始
         </span>
       </div>
 
@@ -224,9 +253,17 @@ onMounted(loadSources)
             </div>
 
             <div class="mt-3 flex items-center gap-2">
-              <span class="font-mono text-[11.5px] text-ink-faint">同步于 {{ repo.lastSyncAt }}</span>
+              <span class="font-mono text-[11.5px] text-ink-faint">最近动静 {{ repo.lastSyncAt }}</span>
               <button
-                class="ml-auto text-[11.5px] text-ink-soft hover:text-coral"
+                class="ml-auto text-[11.5px] text-ink-soft hover:text-ink disabled:opacity-50"
+                type="button"
+                :disabled="pulling === repo.slug || removing === repo.slug"
+                @click.prevent="pullIssues(repo)"
+              >
+                {{ pulling === repo.slug ? '读取中…' : '读已有议题' }}
+              </button>
+              <button
+                class="text-[11.5px] text-ink-soft hover:text-coral"
                 type="button"
                 :disabled="removing === repo.slug"
                 @click.prevent="disconnect(repo)"

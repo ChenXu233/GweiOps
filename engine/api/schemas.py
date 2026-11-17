@@ -59,13 +59,32 @@ class RepoSourceDTO(BaseModel):
     label: str = ""
 
 
+class RepoSyncDTO(BaseModel):
+    """读一次仓库已有议题的结果。
+
+    `listed=False` 是"这个来源列不出来",不是失败:适配器没声明 `list_issues`、
+    或者本次读取被来源拒了,原因在 `reason` 里。别把它读成"这个仓库没有议题"。
+    """
+
+    listed: bool = False
+    added: int = 0
+    seen: int = 0
+    truncated: bool = False
+    reason: str = ""
+
+
 class RepoConnectDTO(BaseModel):
-    """接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。"""
+    """接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。
+
+    `issue_sync` 是接进来那一刻顺带读的那一次:已经发生的议题补进板子,不等下一次
+    投递。它是读,不是替人跑一次工作流。
+    """
 
     slug: str
     source: str
     name: str
     created: bool = False
+    issue_sync: RepoSyncDTO = RepoSyncDTO()
 
 
 class ProjectDTO(BaseModel):

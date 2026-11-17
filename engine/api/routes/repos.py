@@ -12,6 +12,12 @@
 | `PUT /api/repos/{source}/{owner}/{name}` | 接入 | 是:同一个再接一次不改任何东西 |
 | `DELETE /api/repos/{source}/{owner}/{name}` | 解除接入 | 是:本来没接就是 false |
 | `PUT /api/repos/{source}/{owner}/{name}/project` | 挂到另一个项目 | 是 |
+| `POST /api/repos/{source}/{owner}/{name}/issues` | 再读一次仓库已有的议题 | 是 |
+
+接入那一刻会主动读一次这个仓库已有的议题(`sync_issues`):"这一道账从此刻起管
+这份代码"如果只对以后的投递成立,人接完看到的是一张空板子,而出问题的那条议题
+通常早在接之前就开了。这是**读**,不是替人跑一次:补进来的是议题事实,不产生评论、
+不跑模型 —— 判据是接入答复里的 `issueSync.added`,不是"起了几个工作流"。
 
 仓库全名在两段和两段以上(`/api/repos/gitlab/group/sub/repo`):GitLab 的子组也是
 合法的所有者,按段数卡死会让它接不进来。
@@ -26,7 +32,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from engine.api.auth import by_of, require, workspace_access
-from engine.api.schemas import RepoConnectDTO, RepoSourceDTO
+from engine.api.schemas import RepoConnectDTO, RepoSourceDTO, RepoSyncDTO
 from engine.auth import audit
 
 router = APIRouter()
@@ -75,11 +81,15 @@ async def connect_repo(
 ) -> RepoConnectDTO:
     """接入一个仓库。
 
-    接入只是"这一道账开始管这份代码":投递从这一步起才会被处理。它**不拉代码、
-    不建议题、不跑工作流** —— 第一次投递才是那件事。
+    接入的意思是"这一道账从现在起管这份代码",所以它当场读一次这个仓库已有的
+    议题,把已经发生的事补进来 —— 否则人接完看到的是一张空板子,而出问题的那条
+    议题通常早在接之前就开了。
+
+    这一下是**读**:补进来的是议题事实,不拉代码、不跑模型、不回评。判据在答复
+    里 —— `issue_sync.added` 是补进来的条数,不是"起了几个工作流"。
     """
     from engine.db import async_session_factory
-    from engine.projects.connect import ConnectError, connect, known_sources
+    from engine.projects.connect import ConnectError, connect, known_sources, sync_issues
 
     tenant, tenant_id = await _tenant(request, writing=True)
     if source.lower() not in known_sources():
@@ -88,9 +98,13 @@ async def connect_repo(
             detail=f"没有 {source} 的适配器:能接的来源是 {', '.join(known_sources()) or '无'}",
         )
     full_name = f"{owner}/{name}"
+    source = source.lower()
     async with async_session_factory() as session:
         try:
             row, created = await connect(session, tenant_id, source, full_name)
+            # 接进来之后立刻读一次已经发生的事:接之前就在的议题如果不补,板子上
+            # 就只剩"接之后才开的"那些,人分不清是没议题还是没读到。
+            synced = await sync_issues(session, tenant_id, row, source, full_name)
             await session.commit()
         except ConnectError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -98,12 +112,40 @@ async def connect_repo(
         "repo.connect",
         identity=by_of(request, ""),
         target=f"{source}/{full_name}",
-        detail={"created": created, "tenant": tenant},
+        detail={"created": created, "tenant": tenant, **synced},
         ip=request.client.host if request.client else "",
     )
     return RepoConnectDTO(
-        slug=row.slug, source=row.source, name=row.name, created=created
+        slug=row.slug,
+        source=row.source,
+        name=row.name,
+        created=created,
+        issue_sync=RepoSyncDTO(**synced),
     )
+
+
+@router.post("/api/repos/{source}/{owner}/{name}/issues")
+async def pull_repo_issues(source: str, owner: str, name: str, request: Request) -> RepoSyncDTO:
+    """再读一次这个仓库已有的议题。
+
+    接入那一刻已经读过一次;这条路径是给人补的 —— 读的时候上游正好不通、或者
+    接入之后仓库上又开了几十条。它与接入时读的是同一个函数,不会读成两份。
+    """
+    from engine.db import async_session_factory
+    from engine.projects.connect import pull_issues
+
+    tenant, tenant_id = await _tenant(request, writing=True)
+    async with async_session_factory() as session:
+        result = await pull_issues(session, tenant_id, source.lower(), f"{owner}/{name}")
+        await session.commit()
+    await audit.record(
+        "repo.issues.pull",
+        identity=by_of(request, ""),
+        target=f"{source}/{owner}/{name}",
+        detail={"tenant": tenant, **result},
+        ip=request.client.host if request.client else "",
+    )
+    return RepoSyncDTO(**result)
 
 
 @router.delete("/api/repos/{source}/{owner}/{name}")

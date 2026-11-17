@@ -29,6 +29,7 @@
 - 周期巡检走 DBOS 自己的调度器,不在 `gwei-agents` 队列上:入队的定时执行不带分区键,调度与幂等由系统库里的 `sched-<调度名>-<点火时刻>` 保证。发现与校验规则见[插件系统](plugin-system.md#周期巡检)。
 - 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。没有一家专用入口,也没有"默认来源"——没装适配器就是 503。
 - **投递只喂已接入的仓库**:仓库是人在仓库页接入的(`PUT /api/repos/{source}/{owner}/{name}`),投递到达时先判「这个仓库接入了没有」。没接入返回 `unconnected` 并说清去哪接,不起工作流——一次公网可达的 webhook 不该能让引擎替陌生人拉代码、跑模型。规则与判据见[工作区模型](../explanation/workspace-model.md#21-仓库怎么进工作区)。
+- **接进来时读一次已有议题**:「这道账从此管这份代码」如果只对以后的投递成立,人接完看到的是空板子,而出问题的那条议题通常早在接之前就开了。所以接入会调适配器的 `list_issues` 把已有的议题补进来(身份是仓库 + 议题号,与投递那条路径同一个键),再让每一条回到 `issue_triage_workflow`。这一下是**读**:补进来的是议题事实,判据是答复里的 `issue_sync.added`,不是「起了几个工作流」。来源不实现 `list_issues` 时 `listed=false` 并给出原因——那不等于「没有议题」。
 - 信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 回评往哪回、工作区里的代码从哪来,都按投递自身的 `source_adapter` 解析:CNB 的议题进来就回 CNB、拉 CNB 的仓库。载荷缺来源直接报错,不拿 GitHub 顶上。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
@@ -438,7 +439,8 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/workspaces` | **我进得去**的工作区(= 租户):各有几个仓库、来自哪些平台。人按成员关系算,机器返回令牌那一个 |
 | GET | `/api/repos` | 仓库列表:当前工作区里的仓库。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
 | GET | `/api/repos/sources` | 这个部署能接哪些来源 —— 由声明了 `webhook.receive` 的适配器答,核心没有写死的平台表。需 `settings.read` |
-| PUT | `/api/repos/{source}/{owner}/{name}` | 接入一个仓库,幂等。仓库全名按路径段给(GitLab 子组是 `group/sub/repo`)。需 `settings.write` |
+| PUT | `/api/repos/{source}/{owner}/{name}` | 接入一个仓库,幂等。仓库全名按路径段给(GitLab 子组是 `group/sub/repo`)。接进来时当场读一次它已有的议题(见下),答复里的 `issue_sync` 是这一次的结果。需 `settings.write` |
+| POST | `/api/repos/{source}/{owner}/{name}/issues` | 再读一次这个仓库已有的议题,与接入时是同一个函数。需 `settings.write` |
 | DELETE | `/api/repos/{source}/{owner}/{name}` | 解除接入:投递不再认它,议题与账本行留着。需 `settings.write` |
 | PUT | `/api/repos/{source}/{owner}/{name}/project` | 把已接入的仓库挂到另一个项目(空串 = 回到按全名第一段的默认归属),写完刷新发布快照。需 `settings.write` |
 | GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;每行带 `visibility` |

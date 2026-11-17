@@ -61,6 +61,11 @@ export const ReposApi = {
     api.delete('/api/repos/{source}/{owner}/{name}', {
       path: { source, ...splitFullName(fullName) },
     }),
+  // 再读一次这个仓库已有的议题。接入那一刻读过一次,这条是给人补的
+  pullIssues: (source: string, fullName: string) =>
+    api.post('/api/repos/{source}/{owner}/{name}/issues', {
+      path: { source, ...splitFullName(fullName) },
+    }),
   attach: (source: string, fullName: string, project: string) =>
     api.put('/api/repos/{source}/{owner}/{name}/project', {
       path: { source, ...splitFullName(fullName) },

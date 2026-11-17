@@ -183,8 +183,122 @@ async def disconnect(session: AsyncSession, tenant_id: uuid.UUID, source: str, f
     return True
 
 
+# 一次接入最多读几页。一页一条请求,读到几千条那是"这个仓库一开始就不该整段
+# 灌进来",不该让人等在那里 —— 停在哪里要如实说出来,不能装作读完了。
+MAX_SYNC_PAGES = 12
+
+
+async def sync_issues(
+    session: AsyncSession, tenant_id: uuid.UUID, project, source: str, full_name: str
+) -> dict:
+    """读一次这个仓库已有的议题,把没见过的补进来。幂等,不跑模型、不回评。
+
+    身份是 (仓库, 议题号) —— 与投递那条路径上 `_find_issue` 用的是同一个键
+    (见 `engine/workflows/pipeline.py`):两条路径各写一套判"见过没有",迟早
+    会把同一条议题落成两行。
+
+    `listed=False` 是"这个来源列不出来",不是失败:适配器没声明 `list_issues`
+    就如实说,人不该被一个编出来的 0 骗过去。
+    """
+    from engine.db.models import Issue
+    from engine.ingest.source import list_issues_of, source_adapter
+
+    try:
+        adapter = source_adapter(source)
+    except LookupError as exc:
+        return {
+            "listed": False,
+            "added": 0,
+            "seen": 0,
+            "truncated": False,
+            "reason": str(exc),
+        }
+
+    known = set(
+        (
+            await session.execute(select(Issue.number).where(Issue.project_id == project.id))
+        ).scalars()
+    )
+    added = seen = 0
+    cursor = ""
+    truncated = False
+    for page_index in range(MAX_SYNC_PAGES):
+        try:
+            page = await list_issues_of(adapter, full_name, cursor)
+        except LookupError as exc:
+            return {
+                "listed": False,
+                "added": added,
+                "seen": seen,
+                "truncated": truncated,
+                "reason": str(exc),
+            }
+        except Exception as exc:  # noqa: BLE001 - 来源拒了这一次读取:如实说,不假装读完
+            logger.info("读 %s 的议题失败:%s", full_name, exc)
+            return {
+                "listed": added > 0,
+                "added": added,
+                "seen": seen,
+                "truncated": truncated,
+                "reason": f"{type(exc).__name__}: {exc}",
+            }
+        for ref in page.issues:
+            seen += 1
+            if ref.number in known:
+                continue
+            known.add(ref.number)
+            session.add(
+                Issue(
+                    github_id=0,
+                    project_id=project.id,
+                    number=int(ref.number),
+                    title=ref.title,
+                    body=ref.body,
+                    labels=[],
+                    status="OPEN",
+                )
+            )
+            added += 1
+        cursor = page.cursor
+        if not cursor:
+            break
+        if page_index == MAX_SYNC_PAGES - 1:
+            truncated = True
+    if added:
+        await session.flush()
+    return {
+        "listed": True,
+        "added": added,
+        "seen": seen,
+        "truncated": truncated,
+        "reason": "",
+    }
+
+
+async def pull_issues(
+    session: AsyncSession, tenant_id: uuid.UUID, source: str, full_name: str
+) -> dict:
+    """按 (来源, 全名) 找到已接入的那一行,读一次它的议题。
+
+    接口层用它:HTTP 请求里把已接入的每一条都补上就够,不需要再为每条起工作流。
+    """
+    row = await resolve(session, tenant_id, source, full_name)
+    if row is None:
+        return {
+            "listed": False,
+            "added": 0,
+            "seen": 0,
+            "truncated": False,
+            "reason": f"这个工作区还没接入 {source} 的 {full_name}",
+        }
+    return await sync_issues(session, tenant_id, row, source, full_name)
+
+
 __all__ = [
     "ConnectError",
+    "MAX_SYNC_PAGES",
+    "pull_issues",
+    "sync_issues",
     "attach",
     "connect",
     "disconnect",

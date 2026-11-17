@@ -1209,8 +1209,12 @@ export interface paths {
          * Connect Repo
          * @description 接入一个仓库。
          *
-         *     接入只是"这一道账开始管这份代码":投递从这一步起才会被处理。它**不拉代码、
-         *     不建议题、不跑工作流** —— 第一次投递才是那件事。
+         *     接入的意思是"这一道账从现在起管这份代码",所以它当场读一次这个仓库已有的
+         *     议题,把已经发生的事补进来 —— 否则人接完看到的是一张空板子,而出问题的那条
+         *     议题通常早在接之前就开了。
+         *
+         *     这一下是**读**:补进来的是议题事实,不拉代码、不跑模型、不回评。判据在答复
+         *     里 —— `issue_sync.added` 是补进来的条数,不是"起了几个工作流"。
          */
         put: operations["connect_repo_api_repos__source___owner___name__put"];
         post?: never;
@@ -1219,6 +1223,29 @@ export interface paths {
          * @description 解除接入。议题与账本行留着:账是发生过的事,不跟着绑定一起消失。
          */
         delete: operations["disconnect_repo_api_repos__source___owner___name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pull Repo Issues
+         * @description 再读一次这个仓库已有的议题。
+         *
+         *     接入那一刻已经读过一次;这条路径是给人补的 —— 读的时候上游正好不通、或者
+         *     接入之后仓库上又开了几十条。它与接入时读的是同一个函数,不会读成两份。
+         */
+        post: operations["pull_repo_issues_api_repos__source___owner___name__issues_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2619,6 +2646,9 @@ export interface components {
         /**
          * RepoConnectDTO
          * @description 接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。
+         *
+         *     `issue_sync` 是接进来那一刻顺带读的那一次:已经发生的议题补进板子,不等下一次
+         *     投递。它是读,不是替人跑一次工作流。
          */
         RepoConnectDTO: {
             /**
@@ -2626,6 +2656,16 @@ export interface components {
              * @default false
              */
             created: boolean;
+            /**
+             * @default {
+             *       "added": 0,
+             *       "listed": false,
+             *       "reason": "",
+             *       "seen": 0,
+             *       "truncated": false
+             *     }
+             */
+            issue_sync: components["schemas"]["RepoSyncDTO"];
             /** Name */
             name: string;
             /** Slug */
@@ -2685,6 +2725,40 @@ export interface components {
             label: string;
             /** Source */
             source: string;
+        };
+        /**
+         * RepoSyncDTO
+         * @description 读一次仓库已有议题的结果。
+         *
+         *     `listed=False` 是"这个来源列不出来",不是失败:适配器没声明 `list_issues`、
+         *     或者本次读取被来源拒了,原因在 `reason` 里。别把它读成"这个仓库没有议题"。
+         */
+        RepoSyncDTO: {
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /**
+             * Listed
+             * @default false
+             */
+            listed: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Seen
+             * @default 0
+             */
+            seen: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** ResetCompleteDTO */
         ResetCompleteDTO: {
@@ -5144,6 +5218,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pull_repo_issues_api_repos__source___owner___name__issues_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSyncDTO"];
                 };
             };
             /** @description Validation Error */

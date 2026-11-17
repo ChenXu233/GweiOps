@@ -127,7 +127,7 @@ async def onboarding_status(
             "title": "接进一个仓库",
             "done": repos > 0,
             "detail": f"{repos} 个仓库",
-            "next": "" if repos else "来源接通之后,给它一个投递(或点一次「同步」),仓库会自己冒出来",
+            "next": "" if repos else "来源接通之后,去「仓库」页把仓库接进来 —— 接的那一刻会读一次它已有的议题",
         },
         {
             "key": "first-workflow",
@@ -136,7 +136,7 @@ async def onboarding_status(
             "detail": f"{issues} 条议题 / {changes} 条账",
             "next": ""
             if (changes > 0 or issues > 0)
-            else "仓库进来之后,让来源发第一条议题进来;它会在议题板上出现",
+            else "仓库接进来之后,它已有的议题会被读一次并排进议题板;新议题随投递进来",
         },
     ]
     return {
