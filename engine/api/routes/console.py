@@ -123,6 +123,8 @@ async def list_repos(request: Request) -> list[RepoDTO]:
             stmt = stmt.join(Tenant, Project.tenant_id == Tenant.id).where(Tenant.slug == scope)
         rows = (await session.execute(stmt)).all()
         parents = await _project_names(session, [project.parent_id for project, _, _ in rows])
+        # 项目可见性:受限项目连同它下面的仓库一起不列给不是成员的人
+        restricted = await _restricted_projects(session, scope)
 
     return [
         RepoDTO(
@@ -139,7 +141,30 @@ async def list_repos(request: Request) -> list[RepoDTO]:
             projectName=(parents.get(project.parent_id) or ("", ""))[1],
         )
         for project, issue_count, last_activity in rows
+        if (parents.get(project.parent_id) or ("", ""))[0] not in restricted
     ]
+
+
+async def _restricted_projects(session, tenant_slug: str | None) -> set[str]:
+    """这个工作区里标了 restricted 的项目 slug。
+
+    可见性只回答"列不列出来",不替代 `require`:它不是权限判定,是一个项目自己
+    声明的样子。工作区成员之间照样按角色判 —— 一个项目标了 restricted,同一个
+    工作区里的人还是看得见,它是给"这个项目不要出现在外人眼前"那类判断用的。
+    """
+    if not tenant_slug:
+        return set()
+    from engine.db.models import ProjectSetting
+
+    rows = (
+        await session.execute(
+            select(Project.slug)
+            .join(ProjectSetting, ProjectSetting.project_id == Project.id)
+            .join(Tenant, Tenant.id == Project.tenant_id)
+            .where(Tenant.slug == tenant_slug, ProjectSetting.visibility == "restricted")
+        )
+    ).all()
+    return {row[0] for row in rows}
 
 
 async def _project_names(session, ids) -> dict:
@@ -196,12 +221,16 @@ async def list_projects(request: Request) -> ProjectListDTO:
             ).all():
                 issues_of[project_id] = int(count)
 
+    restricted = await _restricted_projects(session, scope)
+
     # 一个项目有几条议题,问的是它下面所有仓库的合计。
     by_parent: dict = {}
     for child_id, count in issues_of.items():
         parent_id = child_to_parent.get(child_id)
         if parent_id is not None:
             by_parent[parent_id] = by_parent.get(parent_id, 0) + count
+
+    settings = await _project_settings(session, scope, [p.slug for p in parents])
 
     return ProjectListDTO(
         items=[
@@ -211,10 +240,26 @@ async def list_projects(request: Request) -> ProjectListDTO:
                 name=p.name,
                 repos=repos_of.get(p.id, 0),
                 issues=by_parent.get(p.id, 0),
+                visibility=settings[p.slug].visibility
+                if p.slug in settings
+                else "workspace",
             )
             for p in parents
         ]
     )
+
+
+async def _project_settings(session, tenant_slug: str | None, slugs: list[str]):
+    """这批项目的项目级值(slug → ProjectSettings)。一次批量取,不按行各查。"""
+    if not tenant_slug or not slugs:
+        return {}
+    from engine.db.models import Tenant as _Tenant
+    from engine.projects import project_settings
+
+    tenant_id = await session.scalar(select(_Tenant.id).where(_Tenant.slug == tenant_slug))
+    if tenant_id is None:
+        return {}
+    return await project_settings(session, tenant_id, slugs)
 
 
 @router.get("/api/settings")

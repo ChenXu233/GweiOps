@@ -61,6 +61,9 @@ class ProjectDTO(BaseModel):
     name: str
     repos: int = 0
     issues: int = 0
+    # workspace 谁看得见谁看见;restricted 的项目连同它下面的仓库不列给外人。
+    # 它管"列不列出来",不替代权限判定 —— 见 docs/reference/runtime.md
+    visibility: str = "workspace"
 
 
 class ProjectListDTO(BaseModel):

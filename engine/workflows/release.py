@@ -97,28 +97,70 @@ def _json_layer(tenant: str, key: str) -> dict[str, str]:
     return {str(k): "" if v is None else str(v) for k, v in data.items()}
 
 
-def resolve_release_config(tenant_slug: str = "", repo_full_name: str = "") -> dict:
-    """按「出厂 → 部署环境 → 租户默认 → 仓库行」逐键合并出这个仓库的发布配置。
+def resolve_release_config(
+    tenant_slug: str = "",
+    repo_full_name: str = "",
+    project_slug: str = "",
+) -> dict:
+    """按「出厂 → 部署环境 → 租户默认 → 项目默认 → 仓库行」逐键合并。
 
     高层覆盖低层;空串不算覆盖(留着低层的值),想让某键真正为空请显式写。
+
+    项目这一层是"一个项目下几个仓库共享同一套发布策略"的地方:三个仓库原来是
+    各自抄一份,改一次要改三处,而那些副本迟早有一份没跟上。它落在
+    `project_settings.defaults`(`engine/projects`),不是 `plugin_settings` ——
+    后者的键是 (租户, scope, key),只说得出"整个工作区怎么配"。
+
+    `project_slug` 空时跳过这一层:调用方没告诉我们是哪个项目,就不去猜。
     """
     tenant_row = _json_layer(tenant_slug, "*") if tenant_slug else {}
+    project_row = _project_layer(tenant_slug, project_slug) if project_slug else {}
     repo_row = _json_layer(tenant_slug, repo_full_name) if repo_full_name else {}
     env = _env_layer()
 
     merged = dict(FACTORY_DEFAULTS)
-    for layer in (env, tenant_row, repo_row):
+    for layer in (env, tenant_row, project_row, repo_row):
         merged.update({k: v for k, v in layer.items() if str(v).strip() != ""})
     return merged
 
 
+def _project_layer(tenant_slug: str, project_slug: str) -> dict[str, str]:
+    """项目默认:库里那一行的 `defaults`。没有那一行就是空字典。
+
+    解析是同步函数(工作流步骤里到处在调),这里不 await —— 所以项目默认值同时
+    落在 `config` 的内存快照里(写入时由接口推一份),读的时候直接拿。库是权威,
+    内存只是它的一份拷贝:接口写完立刻刷新,重启时由启动流程重新装载。
+    """
+    raw = config.project_defaults(tenant_slug).get(project_slug) or {}
+    return {str(k): "" if v is None else str(v) for k, v in raw.items()}
+
+
 def release_config(payload: dict | None = None) -> dict:
-    """发布参数。缺项就是缺项,不拿默认值凑一个看似能用的部署。"""
+    """发布参数。缺项就是缺项,不拿默认值凑一个看似能用的部署。
+
+    项目那一层要找一次:载荷里只有仓库全名(`acme/api`),项目要从仓库身份反查。
+    `project_slug` 已经在载荷里时直接用,不查库。
+    """
     payload = payload or {}
-    return resolve_release_config(
-        tenant_slug=str(payload.get("tenant_slug") or ""),
-        repo_full_name=str(payload.get("repo_full_name") or ""),
+    tenant = str(payload.get("tenant_slug") or "")
+    repo_full_name = str(payload.get("repo_full_name") or "")
+    project = str(payload.get("project_slug") or "") or _project_of_repo(
+        tenant, str(payload.get("repo_slug") or "")
     )
+    return resolve_release_config(
+        tenant_slug=tenant, repo_full_name=repo_full_name, project_slug=project
+    )
+
+
+def _project_of_repo(tenant_slug: str, repo_slug: str) -> str:
+    """仓库 slug → 它所属项目的 slug。查内存快照,不查库(解析是同步的)。
+
+    快照里没有就返回空串:项目那一层跳过,行为和这一版之前一致 —— 少读一层
+    只是少一点便利,不会把发布发到别处去。
+    """
+    if not tenant_slug or not repo_slug:
+        return ""
+    return config.repo_project(tenant_slug).get(repo_slug, "")
 
 
 def missing_release_config(values: dict) -> list[str]:

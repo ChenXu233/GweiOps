@@ -24,6 +24,8 @@ from engine.api.routes.console_agent import router as console_agent_router
 from engine.api.routes.rbac import router as rbac_router
 from engine.api.routes.release_settings import router as release_settings_router
 from engine.api.routes.settings_scopes import router as settings_scopes_router
+from engine.api.routes.invitations import router as invitations_router
+from engine.api.routes.project_settings import router as project_settings_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
 from engine.shared.config import config
@@ -60,6 +62,15 @@ async def lifespan(app: FastAPI):
         logger.info("Stored settings loaded: %d scope(s)", len(config.all_stored()))
     except Exception:  # noqa: BLE001 - 读不到就只用环境变量,不因此起不来
         logger.warning("读不到存储的配置,这次只用环境变量", exc_info=True)
+
+    # 项目这一级的值(可见性 / 默认发布参数 / 凭据索引):发布解析是同步的,
+    # 它读的是这里装进去的那份快照。库仍然是权威 —— 接口写完会再刷一次。
+    try:
+        from engine.projects import reload_project_snapshot
+
+        await reload_project_snapshot()
+    except Exception:  # noqa: BLE001 - 表还没建好时按"没有项目"处理
+        logger.warning("读不到项目级的值,这次按工作区默认", exc_info=True)
 
     # Startup: 先装回启停决定,再发现与启动(顺序反了决定会在重启后被绕过)。
     # 两层各装各的:部署级决定装进 `_decisions`,租户级装进 `_tenancy`;
@@ -207,6 +218,8 @@ app.include_router(issues_router)
 app.include_router(settings_scopes_router)
 app.include_router(release_settings_router)
 app.include_router(rbac_router)
+app.include_router(invitations_router)
+app.include_router(project_settings_router)
 app.include_router(webhook_router)
 app.include_router(mcp_router)
 app.include_router(api_keys_router)

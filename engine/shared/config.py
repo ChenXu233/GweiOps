@@ -70,6 +70,8 @@ class ConfigManager:
         self._settings: Optional[Settings] = None
         # 存进业务库的那一份。启动时加载一次,写入时原地更新,所以取值仍然是同步的。
         self._stored: dict[str, dict[str, str]] = {}
+        self._project_defaults: dict[str, dict[str, dict[str, str]]] = {}
+        self._repo_project: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Scope 注册
@@ -323,6 +325,41 @@ class ConfigManager:
             scopes.pop(scope_name, None)
         if not scopes:
             self._stored.pop(tenant or "", None)
+
+    # ------------------------------------------------------------------
+    # 项目级的值:发布解析是同步的,这里放它要读的两份索引
+    # ------------------------------------------------------------------
+
+    def apply_projects(
+        self,
+        *,
+        defaults: dict[str, dict[str, dict[str, str]]] | None = None,
+        repo_project: dict[str, dict[str, str]] | None = None,
+    ) -> None:
+        """装上项目这一级的快照:{租户: {项目 slug: {发布键: 值}}} 与
+        {租户: {仓库 slug: 项目 slug}}。
+
+        两份都由 `engine.projects.reload` 从库里读一次;接口写完调它,进程启动时
+        也调一次。发布解析是同步函数(工作流步骤里到处在调),读不了库,所以它
+        读的是这份拷贝。**库是权威**:拷贝只是它此刻的样子。
+        """
+        if defaults is not None:
+            self._project_defaults = {
+                tenant: {slug: dict(values) for slug, values in rows.items()}
+                for tenant, rows in defaults.items()
+            }
+        if repo_project is not None:
+            self._repo_project = {
+                tenant: dict(rows) for tenant, rows in repo_project.items()
+            }
+
+    def project_defaults(self, tenant: str = "") -> dict[str, dict[str, str]]:
+        """某个租户里每个项目的默认发布参数。"""
+        return {slug: dict(values) for slug, values in self._project_defaults.get(tenant or "", {}).items()}
+
+    def repo_project(self, tenant: str = "") -> dict[str, str]:
+        """某个租户里仓库 slug → 项目 slug。"""
+        return dict(self._repo_project.get(tenant or "", {}))
 
     def all_stored(self) -> dict[str, dict[str, dict[str, str]]]:
         return {
