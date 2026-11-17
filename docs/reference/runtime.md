@@ -37,7 +37,7 @@
 
 审核发生在来源侧:人看 PR/MR、合并。平台不替人点合并,只认来源适配器归一化出的 `kind="merge"`。GitHub 的 `pull_request`、GitLab 的 `merge_request`、CNB 的 `PullRequestEvent` 都在各自适配器里翻译,核心不认这些字段名。
 
-- 每个仓库的发布配置按「出厂默认 → 部署环境变量 → 租户默认 → 仓库行」四层逐键合并,高层覆盖低层,空值不算覆盖。前两层是全局一份,后两层存在 plugin_settings(`scope="release"`):租户默认的 key 是 `*`,仓库行的 key 是 `owner/repo`,value 是一个 JSON 对象,形如:
+- 每个仓库的发布配置按「出厂默认 → 部署环境变量 → 租户默认 → 项目默认 → 仓库行」逐键合并,高层覆盖低层,空值不算覆盖。前两层是全局一份,第三、五层存在 plugin_settings(`scope="release"`):租户默认的 key 是 `*`,仓库行的 key 是 `owner/repo`,value 是一个 JSON 对象,形如:
 
   ```json
   {"mode": "compose", "binding": "prod-cluster", "project_dir": "/srv/api", "service": "api", "image_template": "ghcr.io/{repo}:{sha}", "base_branch": "main"}
@@ -51,7 +51,8 @@
 - 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进第一类路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
 - 验证读服务当前镜像:容器在跑、镜像与目标一致才算成;不一致走回滚。
 - 发布效果打到的下游是 `binding` 参数(出厂默认 `local`,按层覆盖),与部署默认的 `DEFAULT_BINDING` 分别配置。配置写法与层次语义见上。
-- 租户默认与仓库行在控制台的「设置 → 发布配置」页面读写(`GET/PUT/DELETE /api/settings/release` 及其子路径);页面展示四层合并后的生效值兜底,留空不产生覆盖。也可以 API/SQL 直写 plugin_settings。
+- 租户默认与仓库行在控制台的「设置 → 发布配置」页面读写(`GET/PUT/DELETE /api/settings/release` 及其子路径);页面展示合并后的生效值兜底,留空不产生覆盖。也可以 API/SQL 直写 plugin_settings。
+- **项目默认**是第四层,落在 `project_settings.defaults`(`PUT /api/projects/{slug}/settings`):一个项目下几个仓库共享同一套发布策略,不必每行抄一遍。位置在租户默认之后、仓库行之前,所以仓库行仍然能例外。解析是同步函数(工作流步骤里到处在调),读的是 `config` 里的一份快照,由写入接口与启动流程各刷一次。载荷里只有仓库全名时,项目 slug 从快照反查(`repo_slug → project_slug`)。
 - 一次发布就是一个单元、一步切换;分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
 - 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
 - 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB 的适配器是预留位(`default_enabled: false`),打开后走同一条链路。
@@ -193,6 +194,7 @@ changes.approve@github-acme-api     只在这一个仓库上能放行
 - 子用户与父取交集时按范围逐个算:父没有的范围留不下来。
 - 落点:放行 / 否决 / 撤销按账本行的 `repo` 判(项目档由它反查所属项目),议题的"再来一轮"按议题所属仓库判。仓库 slug 的写法见[工作区模型](../explanation/workspace-model.md) §3。
 - 成员页(`/team`)勾权限时,能收窄的权限旁边会先列当前工作区的项目、再列仓库,勾哪几个就只在那几个上生效。
+- **成员这一栏也走同一套**:`memberships.permissions` 里同样可以写 `权限@范围`,上限按"我手上这个权限覆盖不覆盖这一步"判 —— 有工作区级那份就能给任何范围,只有 `changes.approve@github-acme-api` 的人给不出项目档,更给不出整个工作区。
 
 ## 控制台鉴权
 
@@ -219,6 +221,30 @@ changes.approve@github-acme-api     只在这一个仓库上能放行
 `user_id` 这个列名保留下来,值是**成员关系的 id**:会话、审计、"谁点的头"问的一直是"这个工作区里的哪个人"。改密码只在 `POST /api/auth/password`(它属于人);成员接口带密码直接拒绝。
 
 `GET /api/me` 回答一个人 + 他在每个工作区里的角色,顶层那几个字段只对**这次请求落在的那个工作区**算数。形状与判据见[身份与授权](../explanation/identity-and-authorization.md) §5。
+
+### 邀请与认领
+
+"把人拉进来"有两条路,分工只有一句话:**谁定密码**。管理员替他定临时密码走 `POST /api/users`;他自己定就走邀请。
+
+| 接口 | 判据 |
+| --- | --- |
+| `GET /api/workspaces/{slug}/invitations` | 这个工作区发出去的邀请,用过的、撤销的、过期的一起列,状态各自说清。要 `users.read` |
+| `POST /api/workspaces/{slug}/invitations` | 发一条。响应里的 `token` 只出现这一次,拼成 `/invite?token=…` 交给对方。要 `users.manage` |
+| `DELETE /api/workspaces/{slug}/invitations/{id}` | 撤销一条还没接的。已经接过 / 过期 / 已撤销的当场拒绝并说清 |
+| `GET /api/invitations/{token}` | 这条链接现在什么情况。**不要登录**:链接里那枚令牌就是凭据 |
+| `POST /api/invitations/{token}` | 接它。接完顺手发一个会话,少一步登录 |
+
+`invitations` 一行只装**工作区**与**被邀请的邮箱**,不装密码。令牌只存哈希(`token_hash`,列上有唯一索引,不是主键)。
+
+几条判据:
+
+- **接的时候认邮箱,不认链接发给谁**:部署里已经有这个人 → 认领:只加一条成员关系,他的密码一个字都不动;没有 → 他现场设一次密码(`password` 少于 8 位拒绝),那一刻才建这个人。
+- **只能用一次**:`accepted_at` 留着,再点得到"这条邀请已经用过了",不是一个 404。`state` 取 `pending` / `accepted` / `revoked` / `expired` 之一,`note` 给出能照着办的下一步。
+- **同一个邮箱只留一条没接的**:再发一条,前一条当场作废 —— 同时有效的邀请越多,撞上来的机会越多。
+- **已经在这个工作区里的人不发**:发了他也接不了。
+- **角色在发的时候定死**:`invitation.role_ids` 在接的那一刻展开成 `user_roles`。个人追加那一栏留空 —— 要额外给什么,是管理员在成员页上再改一次的事。
+- 发邀请的人是所有者时新成员是同级,否则挂在他下面(`parent_id`)—— 与 `POST /api/users` 同一条规则。
+- 接的两条口豁免鉴权(`engine/api/auth.py` 的 `INVITE_PATH`),但豁免只覆盖那一个 token 路径:列表与发邀请仍然要登录。
 
 ## 注册与账号核验
 
@@ -405,7 +431,10 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/workspaces` | **我进得去**的工作区(= 租户):各有几个仓库、来自哪些平台。人按成员关系算,机器返回令牌那一个 |
 | GET | `/api/repos` | 仓库列表:当前工作区里的仓库。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
-| GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题 |
+| GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;每行带 `visibility` |
+| GET | `/api/projects/{slug}/settings` | 一个项目的可见性、默认发布参数、项目级凭据(只回答"设了没有",值不回显)。需 `settings.read` |
+| PUT | `/api/projects/{slug}/settings` | 改可见性与默认发布参数。需 `settings.write`;写完整份,不担心字段级 diff |
+| PUT | `/api/projects/{slug}/credentials/{key}` | 写一条项目级凭据:值进密钥仓库(`scope=project:<slug>`),库里只留键与说明。空值等于删 |
 | GET | `/api/settings` | 设置(脱敏) |
 | GET | `/api/me` | 我是谁 + 我在每个工作区里的角色。顶层 `permissions` 只对这次请求落在的那个工作区算数 |
 | GET | `/api/auth/me` | 同一个形状,老入口 |
@@ -415,6 +444,11 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | POST | `/api/auth/password/reset` | 申请重置邮件(有没有账号回同一句话) |
 | POST | `/api/auth/password/reset/complete` | 用链接令牌或验证码设新密码 |
 | GET | `/api/auth/oidc/authorize`、`/api/auth/oidc/callback` | OIDC 授权码流程 |
+| GET | `/api/invitations` | 这个工作区发出去的邀请与各自状态,需 `users.read` |
+| POST | `/api/invitations` | 发一条邀请,响应里的 `token` 只出现一次,需 `users.manage` |
+| DELETE | `/api/invitations/{invite_id}` | 撤销一条还没接的邀请 |
+| GET | `/api/invitations/{token}` | 这条邀请现在什么情况。**不要求登录**(链接本身就是凭据) |
+| POST | `/api/invitations/{token}` | 接邀请:邮箱已经有人就认领他,没有就现场设密码;接完顺手发会话 |
 | GET | `/api/quota` | 租户各资源在窗口内的用量与上限 |
 | GET | `/api/quota/parse` | 把 `2000/30d` 拆开看看 |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
