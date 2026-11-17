@@ -29,7 +29,9 @@ class GitLabConfig:
     SCOPE_PREFIX = "GITLAB_"
 
     def __init__(self) -> None:
-        config.register_model_scope(self.SCOPE_NAME, GitLabSettings, prefix=self.SCOPE_PREFIX)
+        config.register_model_scope(
+            self.SCOPE_NAME, GitLabSettings, prefix=self.SCOPE_PREFIX, owner="gitlab-adapter"
+        )
         raw = config.get_scope_config(self.SCOPE_NAME, config.settings.default_tenant_slug)
         self._settings = GitLabSettings(**{k: v for k, v in raw.items() if v != ""})
 

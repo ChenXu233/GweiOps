@@ -44,6 +44,8 @@ cp .env.prod.example .env.prod
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
+配置分两处:`config.yaml`(模板 `config.yaml.example`)放这台机器长期的值,`.env` 留给敏感值与部署侧覆盖;同一个键环境变量 > config.yaml > .env。运行期参数(注册策略、核验通道、OIDC、配额等)在控制台「设置」页改,改完即生效。
+
 ### 手动安装
 
 ```bash

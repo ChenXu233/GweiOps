@@ -23,6 +23,11 @@ import urllib.request
 from email.message import EmailMessage
 
 from engine.shared.config import config
+from engine.shared.system_scopes import register_system_scopes
+
+# 通道的值走 email / sms 两个 scope(库覆盖 → Settings → 环境);读取方自己保证
+# scope 已注册,单测不经 app 启动也能拿到同一套优先级
+register_system_scopes()
 
 logger = logging.getLogger(__name__)
 
@@ -63,29 +68,29 @@ def _body(
 
 
 def _smtp(to: str, code: str, purpose: str, ttl: int, **kw) -> None:
-    s = config.settings
-    if not s.smtp_host:
-        raise ChannelError("邮箱核验要配 SMTP_HOST(以及 SMTP_USER / SMTP_PASSWORD / EMAIL_FROM)")
+    s = config.get_scope_config("email")
+    if not s.get("smtp_host"):
+        raise ChannelError("邮箱核验要配 smtp_host(设置页的 email scope,以及 smtp_user / smtp_password / email_from)")
     message = EmailMessage()
     message["Subject"] = _subject(purpose)
-    message["From"] = s.email_from or s.smtp_user
+    message["From"] = s.get("email_from") or s.get("smtp_user")
     message["To"] = to
     message.set_content(_body(code, purpose, ttl, **kw))
-    with smtplib.SMTP(s.smtp_host, int(s.smtp_port or 587), timeout=15) as client:
-        if s.smtp_starttls:
+    with smtplib.SMTP(s.get("smtp_host"), int(s.get("smtp_port") or 587), timeout=15) as client:
+        if s.get("smtp_starttls", True):
             client.starttls()
-        if s.smtp_user:
-            client.login(s.smtp_user, s.smtp_password)
+        if s.get("smtp_user"):
+            client.login(s.get("smtp_user"), s.get("smtp_password"))
         client.send_message(message)
 
 
 def _resend(to: str, code: str, purpose: str, ttl: int, **kw) -> None:
-    s = config.settings
-    if not s.resend_api_key or not s.email_from:
-        raise ChannelError("Resend 要配 RESEND_API_KEY 与 EMAIL_FROM")
+    s = config.get_scope_config("email")
+    if not s.get("resend_api_key") or not s.get("email_from"):
+        raise ChannelError("Resend 要配 resend_api_key 与 email_from(设置页的 email scope)")
     payload = json.dumps(
         {
-            "from": s.email_from,
+            "from": s.get("email_from"),
             "to": [to],
             "subject": _subject(purpose),
             "text": _body(code, purpose, ttl, **kw),
@@ -95,7 +100,7 @@ def _resend(to: str, code: str, purpose: str, ttl: int, **kw) -> None:
         "https://api.resend.com/emails",
         data=payload,
         headers={
-            "Authorization": f"Bearer {s.resend_api_key}",
+            "Authorization": f"Bearer {s.get('resend_api_key')}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -128,13 +133,14 @@ def _email_console(to: str, code: str, purpose: str, ttl: int, **kw) -> None:
 
 
 def _email_webhook(to: str, code: str, purpose: str, ttl: int, **kw) -> None:
-    url = config.settings.sms_webhook_url
+    s = config.get_scope_config("email")
+    url = s.get("sms_webhook_url")
     if not url:
-        raise ChannelError("EMAIL_PROVIDER=webhook 要配 SMS_WEBHOOK_URL")
+        raise ChannelError("邮箱走 webhook 要配 sms_webhook_url(设置页的 email scope)")
     _post(
         url,
         {"channel": "email", "to": to, "code": code, "purpose": purpose, "expires_in": ttl},
-        config.settings.sms_webhook_token,
+        s.get("sms_webhook_token"),
     )
 
 
@@ -158,13 +164,13 @@ def _sms_console(to: str, code: str, purpose: str, ttl: int) -> None:
 
 
 def _sms_webhook(to: str, code: str, purpose: str, ttl: int) -> None:
-    s = config.settings
-    if not s.sms_webhook_url:
-        raise ChannelError("SMS_PROVIDER=webhook 要配 SMS_WEBHOOK_URL(接你自己的短信服务)")
+    s = config.get_scope_config("sms")
+    if not s.get("sms_webhook_url"):
+        raise ChannelError("短信走 webhook 要配 sms_webhook_url(设置页的 sms scope)")
     _post(
-        s.sms_webhook_url,
+        s.get("sms_webhook_url"),
         {"channel": "sms", "to": to, "code": code, "purpose": purpose, "expires_in": ttl},
-        s.sms_webhook_token,
+        s.get("sms_webhook_token"),
     )
 
 
@@ -186,19 +192,19 @@ async def deliver_email(
     lead: str = "",
 ) -> None:
     """link_name 非空表示"code 里装的是一条链接" —— 重置密码走的就是这条。"""
-    provider = (config.settings.email_provider or "console").strip().lower()
+    provider = (config.get_scope_config("email").get("email_provider") or "console").strip().lower()
     sender = EMAIL_SENDERS.get(provider)
     if sender is None:
-        raise ChannelError(f"EMAIL_PROVIDER 只能是 {'/'.join(EMAIL_SENDERS)},收到 {provider!r}")
+        raise ChannelError(f"email_provider 只能是 {'/'.join(EMAIL_SENDERS)}(设置页的 email scope),收到 {provider!r}")
     # smtplib 与 urllib 都是阻塞的:放进线程,别卡住事件循环
     await asyncio.to_thread(sender, to, code, purpose, ttl_minutes, link_name=link_name, lead=lead)
 
 
 async def deliver_sms(to: str, code: str, purpose: str, ttl_minutes: int) -> None:
-    provider = (config.settings.sms_provider or "webhook").strip().lower()
+    provider = (config.get_scope_config("sms").get("sms_provider") or "webhook").strip().lower()
     sender = SMS_SENDERS.get(provider)
     if sender is None:
-        raise ChannelError(f"SMS_PROVIDER 只能是 {'/'.join(SMS_SENDERS)},收到 {provider!r}")
+        raise ChannelError(f"sms_provider 只能是 {'/'.join(SMS_SENDERS)}(设置页的 sms scope),收到 {provider!r}")
     await asyncio.to_thread(sender, to, code, purpose, ttl_minutes)
 
 

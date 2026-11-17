@@ -24,7 +24,10 @@ class AlertmanagerConfig:
 
     def __init__(self) -> None:
         config.register_model_scope(
-            self.SCOPE_NAME, AlertmanagerSettings, prefix=self.SCOPE_PREFIX
+            self.SCOPE_NAME,
+            AlertmanagerSettings,
+            prefix=self.SCOPE_PREFIX,
+            owner="alertmanager-adapter",
         )
         raw = config.get_scope_config(self.SCOPE_NAME, config.settings.default_tenant_slug)
         self._settings = AlertmanagerSettings(**{k: v for k, v in raw.items() if v != ""})

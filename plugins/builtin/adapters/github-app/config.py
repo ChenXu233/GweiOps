@@ -52,7 +52,9 @@ class GitHubAppConfig:
     SCOPE_PREFIX = "GITHUB_APP_"
 
     def __init__(self):
-        config.register_model_scope(self.SCOPE_NAME, GitHubAppSettings, prefix=self.SCOPE_PREFIX)
+        config.register_model_scope(
+            self.SCOPE_NAME, GitHubAppSettings, prefix=self.SCOPE_PREFIX, owner="github-app-adapter"
+        )
         # 这个适配器是共享的(tenant 为空,一套 App 服务所有租户),配置只有一份。
         # 控制台把值写在调用方租户上(通常是 default),所以这里按默认租户读;
         # 读不到再落回公共值与 .env。不这样读,页面上填的东西插件永远看不见。

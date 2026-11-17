@@ -144,11 +144,14 @@ def test_list_includes_disabled_plugins_with_reason():
     client = _client()
     rows = {p["name"]: p for p in client.get("/api/plugins").json()}
 
-    # 清单里 default_enabled: false 的 cnb/gitlab/alertmanager 适配器必须出现,且 enabled 为假
-    for name in ("cnb-adapter", "gitlab-adapter", "alertmanager-adapter"):
+    # 清单里 default_enabled: false 的 cnb/gitlab 适配器必须出现,且 enabled 为假
+    for name in ("cnb-adapter", "gitlab-adapter"):
         assert name in rows, f"{name} 在清单里,却没在列表里——页面上就没法把它打开"
         assert rows[name]["enabled"] is False
         assert "default_enabled" in rows[name]["reason"]
+
+    # alertmanager 曾是 default_enabled: false,部署失败上报要它默认在场后改成了 true
+    assert rows["alertmanager-adapter"]["enabled"] is True
 
     assert rows["sensor-agent"]["enabled"] is True
     assert rows["sensor-agent"]["instances"] == ["sensor-agent"]

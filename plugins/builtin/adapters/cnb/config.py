@@ -39,7 +39,9 @@ class CNBConfig:
     SCOPE_PREFIX = "CNB_"
 
     def __init__(self) -> None:
-        config.register_model_scope(self.SCOPE_NAME, CNBSettings, prefix=self.SCOPE_PREFIX)
+        config.register_model_scope(
+            self.SCOPE_NAME, CNBSettings, prefix=self.SCOPE_PREFIX, owner="cnb-adapter"
+        )
         raw = config.get_scope_config(self.SCOPE_NAME, config.settings.default_tenant_slug)
         self._settings = CNBSettings(**{k: v for k, v in raw.items() if v != ""})
 

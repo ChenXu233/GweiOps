@@ -22,6 +22,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from engine.shared.config import config
+from engine.shared.system_scopes import register_system_scopes
+
+# 读取方自己保证 scope 已注册(单测不经 app 启动);幂等
+register_system_scopes()
 
 UNIT_HOURS = {"h": 1, "d": 24, "w": 24 * 7}
 
@@ -86,12 +90,11 @@ def limits_for(tenant: str = "") -> dict[str, Limit]:
     键名照配额表的写法:`ISSUES=2000/30d,AGENT_RUNS=100/5h`。
     """
     merged = dict(DEFAULT_LIMITS)
-    # stored 已经把公共那份打底、租户那份覆盖,取一次就够
-    for layer in (config.stored("quota", tenant),):
-        for key, value in layer.items():
-            if value is None:
-                continue
-            merged[key.strip().lower()] = value
+    # scope 值已按"库覆盖 → Settings → 环境"合并好公共与租户两层,取一次就够
+    for key, value in config.get_scope_config("quota", tenant).items():
+        if value is None:
+            continue
+        merged[str(key).strip().lower()] = str(value)
     return {name: parse_limit(name, raw) for name, raw in merged.items()}
 
 

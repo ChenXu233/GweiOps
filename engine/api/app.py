@@ -31,6 +31,11 @@ from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
 from engine.shared.config import config
 import engine.workflows.pipeline as pipeline  # noqa: F401 — 导入即注册 DBOS 工作流/步骤
+from engine.shared.system_scopes import register_system_scopes
+
+# 系统域 scope(注册策略、核验通道、OIDC、配额):注册策略与配额的读取方按
+# scope 取值,先注册它们再进 lifespan,库里那份覆盖才读得到
+register_system_scopes()
 
 logger = logging.getLogger(__name__)
 

@@ -13,12 +13,16 @@ interface ScopeField {
   description: string
   /** 值带换行(私钥):用多行输入,单行输入会在粘贴时把换行吃掉 */
   multiline: boolean
+  /** 没填时生效的出厂默认:回显它,留空的人知道自己会得到什么 */
+  defaultValue?: string
 }
 interface Scope {
   name: string
   prefix: string
   fields: ScopeField[]
   missing: string[]
+  /** system = 平台自身;其余是声明它的插件名 */
+  owner?: string
 }
 
 const { data, loading, error } = useSettings()
@@ -228,6 +232,9 @@ function quotaPercent(item: QuotaItem): number {
 
 // 接入层配置:字段、必填、回显规则都由引擎声明,这里不预设任何密钥名。
 const scopes = ref<Scope[]>([])
+// 系统配置与插件配置分开摆:混在一列里,人分不清"这台机器的参数"和"某个插件要的凭据"。
+const systemScopes = computed(() => scopes.value.filter((s: Scope) => s.owner === 'system'))
+const pluginScopes = computed(() => scopes.value.filter((s: Scope) => s.owner !== 'system'))
 const saving = ref<string | null>(null)
 const scopeErrorText = ref('')
 // 值存下来了,但配置推送失败(进程外插件靠核心推配置)
@@ -586,7 +593,7 @@ const sections = computed(() => {
             注册默认关闭,自部署与 SaaS 都按这个开关走。现在生效的方式:
             <span class="font-mono">{{ regPolicy?.methods.join(', ') || '—' }}</span>
             <span v-if="regPolicy?.oidc.available">,统一身份已配好</span>。
-            核验通道(邮件 / 短信)在下方「接入与密钥」的 email / sms 里填;没配通道时注册会如实拒绝,
+            核验通道(邮件 / 短信)在下方「系统配置」的 email / sms 里填;没配通道时注册会如实拒绝,
             不会静默跳过核验。
           </p>
         </div>
@@ -666,16 +673,20 @@ const sections = computed(() => {
         </div>
       </section>
 
-      <!-- 接入与密钥:哪些字段、能不能回显,由引擎的声明决定 -->
+      <!-- 系统配置:平台自身的运行参数,owner=system,运行期改完即生效 -->
       <section class="panel overflow-hidden">
         <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
           <AppIcon name="shield-check" :size="14" class="text-ink-faint" />
-          <h2 class="text-[13px] font-semibold">接入与密钥</h2>
-          <span class="eyebrow ml-auto">INTEGRATIONS</span>
+          <h2 class="text-[13px] font-semibold">系统配置</h2>
+          <span class="eyebrow ml-auto">SYSTEM</span>
         </div>
+        <p class="px-5 pt-3 text-[11.5px] text-ink-faint">
+          注册策略、核验通道、单点登录、模型与配额都在这里;改完立即生效,不用重启。
+          数据库地址这类进程起来之前就要有的参数不在此列——它们只能走环境变量或 config.yaml。
+        </p>
 
         <div
-          v-for="s in scopes"
+          v-for="s in systemScopes"
           :key="s.name"
           class="border-b border-line/60 px-5 py-4 last:border-0"
         >
@@ -724,7 +735,101 @@ const sections = computed(() => {
                 <span
                   class="rounded px-1 py-px"
                   :class="f.set ? 'bg-well text-ink-soft' : 'text-ink-faint/70'"
-                >{{ f.set ? '已设置' : '未设置' }}</span>
+                >{{ f.set ? '已设置' : (f.defaultValue ? `默认 ${f.defaultValue}` : '未设置') }}</span>
+              </span>
+              <span
+                v-if="f.set && f.expose !== 'never' && f.value"
+                class="mt-1 block truncate text-[11px] text-ink-faint"
+              >当前：{{ f.value }}</span>
+              <span
+                v-else-if="!f.set && f.defaultValue && f.expose !== 'never'"
+                class="mt-1 block truncate text-[11px] text-ink-faint"
+              >默认生效：{{ f.defaultValue }}</span>
+            </label>
+          </div>
+
+          <div class="mt-3 flex items-center gap-2">
+            <button
+              class="btn-solid h-8 px-3 text-[12px]"
+              :disabled="saving === s.name || !canWriteSettings"
+              @click="onSave(s.name)"
+            >
+              {{ saving === s.name ? '保存中…' : '保存' }}
+            </button>
+            <span v-if="savedScope === s.name" class="text-[11.5px] text-ink-faint">已保存</span>
+          </div>
+        </div>
+
+        <div
+          v-if="scopeErrorText"
+          class="mx-5 my-3 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral"
+        >
+          {{ scopeErrorText }}
+        </div>
+
+        <div v-if="!systemScopes.length" class="px-5 py-6 text-[12.5px] text-ink-faint">
+          平台没有声明任何系统配置。
+        </div>
+      </section>
+
+      <!-- 插件配置:每个插件自己的凭据与参数,与系统配置分开 -->
+      <section v-if="pluginScopes.length" class="panel overflow-hidden">
+        <div class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+          <AppIcon name="plugins" :size="14" class="text-ink-faint" />
+          <h2 class="text-[13px] font-semibold">插件配置</h2>
+          <span class="eyebrow ml-auto">PLUGINS</span>
+        </div>
+
+        <div
+          v-for="s in pluginScopes"
+          :key="s.name"
+          class="border-b border-line/60 px-5 py-4 last:border-0"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-[12.5px] font-medium">{{ s.name }}</span>
+            <span class="text-[11px] text-ink-faint">来自 {{ s.owner }}</span>
+            <span v-if="s.prefix" class="chip">{{ s.prefix }}</span>
+            <span v-if="s.missing.length" class="ml-auto text-[11.5px] text-ink-faint">
+              缺 {{ s.missing.join('、') }}
+            </span>
+          </div>
+
+          <div class="mt-3 grid gap-2 sm:grid-cols-2">
+            <label
+              v-for="f in s.fields"
+              :key="f.name"
+              class="block"
+              :class="f.multiline ? 'sm:col-span-2' : ''"
+            >
+              <span class="mb-1 flex items-center gap-1.5 text-[11.5px] text-ink-soft">
+                {{ f.description || f.name }}
+                <span v-if="f.required" class="text-coral">*</span>
+              </span>
+              <textarea
+                v-if="f.multiline"
+                :value="draftValue(s.name, f.name)"
+                @input="setDraft(s.name, f.name, ($event.target as HTMLTextAreaElement).value)"
+                :placeholder="f.set ? '已设置，留空不修改' : '未设置'"
+                rows="6"
+                class="w-full resize-y rounded-card border border-line bg-well px-3 py-2 font-mono text-[11.5px] leading-relaxed outline-none focus:border-line-strong"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <input
+                v-else
+                :value="draftValue(s.name, f.name)"
+                @input="setDraft(s.name, f.name, ($event.target as HTMLInputElement).value)"
+                :type="f.expose === 'never' ? 'password' : 'text'"
+                :placeholder="f.set ? '已设置，留空不修改' : '未设置'"
+                class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong"
+                autocomplete="off"
+              >
+              <span class="mt-1 flex items-center gap-2 font-mono text-[10.5px] text-ink-faint">
+                <span>{{ f.name }}</span>
+                <span
+                  class="rounded px-1 py-px"
+                  :class="f.set ? 'bg-well text-ink-soft' : 'text-ink-faint/70'"
+                >{{ f.set ? '已设置' : (f.defaultValue ? `默认 ${f.defaultValue}` : '未设置') }}</span>
               </span>
               <span
                 v-if="f.set && f.expose !== 'never' && f.value"
@@ -751,16 +856,11 @@ const sections = computed(() => {
         >
           已存下,但没推给插件:{{ pushWarning }}
         </div>
-
         <div
           v-if="scopeErrorText"
           class="mx-5 my-3 rounded-card border border-coral/30 bg-coral/5 px-3 py-2 text-[12px] text-coral"
         >
           {{ scopeErrorText }}
-        </div>
-
-        <div v-if="!scopes.length" class="px-5 py-6 text-[12.5px] text-ink-faint">
-          还没有接入层声明任何配置项。
         </div>
       </section>
 

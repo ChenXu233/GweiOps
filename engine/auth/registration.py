@@ -23,6 +23,10 @@ import time
 from dataclasses import dataclass, field
 
 from engine.shared.config import config
+from engine.shared.system_scopes import register_system_scopes
+
+# 读取方不假设 app 已经启动过:scope 没在就补注册,幂等
+register_system_scopes()
 
 METHODS = ("email", "phone", "oidc")
 
@@ -87,8 +91,8 @@ def _methods(raw, *, oidc_ready: bool) -> tuple[str, ...]:
 
 
 def oidc_configured() -> bool:
-    s = config.settings
-    return bool(s.oidc_issuer and s.oidc_client_id and s.oidc_client_secret)
+    s = config.get_scope_config("oidc")
+    return bool(s.get("oidc_issuer") and s.get("oidc_client_id") and s.get("oidc_client_secret"))
 
 
 def policy_for(tenant: str = "") -> Policy:
@@ -96,12 +100,19 @@ def policy_for(tenant: str = "") -> Policy:
 
     逐键而不是整份:租户只想改"默认角色",不该被迫把核验方式也抄一遍。
     """
+    # 生效值取自 registration / oidc 两个 scope:库覆盖、Settings、环境与 .env
+    # 已按同一套优先级合并好,这里不再自己拼第二遍。
+    scope = config.get_scope_config("registration", tenant)
     s = config.settings
+    # 这四个只能靠环境变量(部署期决定,运行期改不了):trust_invited / tenant /
+    # signup_role 定"这台实例的注册怎么落地",test_code 只给自部署联调用。
     raw = {
-        "registration_enabled": s.registration_enabled,
-        "registration_methods": s.registration_methods,
-        "registration_requires_verification": s.registration_requires_verification,
-        "registration_default_role": s.registration_default_role,
+        "registration_enabled": scope.get("registration_enabled") or s.registration_enabled,
+        "registration_methods": scope.get("registration_methods") or s.registration_methods,
+        "registration_requires_verification": scope.get("registration_requires_verification")
+        if scope.get("registration_requires_verification") is not None
+        else s.registration_requires_verification,
+        "registration_default_role": scope.get("registration_default_role") or s.registration_default_role,
         "registration_trust_invited": s.registration_trust_invited,
         "registration_tenant": s.registration_tenant,
         "registration_signup_role": s.registration_signup_role,
@@ -114,11 +125,14 @@ def policy_for(tenant: str = "") -> Policy:
     stored = config.stored("registration", tenant)
     merged = {**raw, **{k: v for k, v in stored.items() if k in raw and v != ""}}
 
+    oidc_scope = config.get_scope_config("oidc", tenant)
     oidc = {
         "configured": oidc_configured(),
-        "label": s.oidc_button_label,
-        "auto_create": bool(s.oidc_auto_create),
-        "default_role": s.oidc_default_role or str(merged["registration_default_role"]),
+        "label": str(oidc_scope.get("oidc_button_label") or s.oidc_button_label),
+        "auto_create": bool(oidc_scope.get("oidc_auto_create", s.oidc_auto_create)),
+        "default_role": str(
+            oidc_scope.get("oidc_default_role") or merged["registration_default_role"]
+        ),
     }
     return Policy(
         enabled=_flag(merged["registration_enabled"]),

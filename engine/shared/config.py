@@ -4,11 +4,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
+import yaml
 from dotenv import dotenv_values
 from pydantic import ValidationError
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 
 EXPOSE_MODES = ("never", "masked", "always")
@@ -30,6 +31,8 @@ class FieldSpec:
     description: str = ""
     # 值可能很长且带换行(私钥、证书):页面要给多行输入,单行输入会把换行吃掉。
     multiline: bool = False
+    # 没填时生效的出厂默认:页面回显它,人知道留空会怎样,而不是对着"未设置"猜。
+    default_value: str = ""
 
     def __post_init__(self) -> None:
         if self.expose not in EXPOSE_MODES:
@@ -47,6 +50,12 @@ def mask_value(value: str) -> str:
     return f"{value[:4]}…{value[-4:]}"
 
 
+def _default_repr(info: Any) -> str:
+    """模型字段的出厂默认,字符串化;动态默认(工厂)给不出就空着。"""
+    default = info.get_default(call_default_factory=True)
+    return "" if default is None else str(default)
+
+
 @dataclass
 class ScopeDefinition:
     """定义一个配置 scope，用于按功能域分发配置。"""
@@ -60,6 +69,8 @@ class ScopeDefinition:
     fields: dict[str, FieldSpec] = field(default_factory=dict)
     # 给了模型就在写入时做形状校验:存进去之前拦住,而不是等运行期炸
     model: Optional[type] = None
+    # 谁声明了这块:system(平台自身)或插件名。设置页按它分组,不把两拨混在一起。
+    owner: str = "system"
 
 
 class ConfigManager:
@@ -72,6 +83,8 @@ class ConfigManager:
         self._stored: dict[str, dict[str, str]] = {}
         self._project_defaults: dict[str, dict[str, dict[str, str]]] = {}
         self._repo_project: dict[str, dict[str, str]] = {}
+        # .env 解析结果缓存，按文件路径各存一份；reload() 时整体失效
+        self._dotenv_cache: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Scope 注册
@@ -86,6 +99,7 @@ class ConfigManager:
         *,
         expose: dict[str, str] | None = None,
         read_scope: dict[str, str] | None = None,
+        owner: str = "system",
     ) -> None:
         """注册一个配置 scope。重复注册同名 scope 会被覆盖。
 
@@ -115,10 +129,11 @@ class ConfigManager:
             required_keys=required or [],
             optional_keys=optional or [],
             fields=specs,
+            owner=owner,
         )
 
     def register_model_scope(
-        self, name: str, model: type, prefix: str = ""
+        self, name: str, model: type, prefix: str = "", owner: str = "system"
     ) -> None:
         """用 pydantic 模型声明配置:字段、必填、回显规则全写在模型里。
 
@@ -144,6 +159,7 @@ class ConfigManager:
                 read_scope=extra.get("read_scope", "read"),
                 description=info.description or "",
                 multiline=bool(extra.get("multiline", False)),
+                default_value="" if info.is_required() else _default_repr(info),
             )
             (required if info.is_required() else optional).append(field_name)
 
@@ -154,6 +170,7 @@ class ConfigManager:
             optional_keys=optional,
             fields=specs,
             model=model,
+            owner=owner,
         )
 
     def field_specs(self, scope_name: str, tenant: str = "") -> list[FieldSpec]:
@@ -205,6 +222,7 @@ class ConfigManager:
 
     def reload(self) -> "Settings":
         """强制重新加载 Settings（用于测试或热更新）。"""
+        self._dotenv_cache = None
         self._settings = Settings()
         return self._settings
 
@@ -215,40 +233,9 @@ class ConfigManager:
     def get_scope_config(self, scope_name: str, tenant: str = "") -> dict[str, Any]:
         """返回某个 scope 对应的配置字典。
 
-        预置的 scope 映射：
-        - "github"   -> GitHub App 相关配置
-        - "llm"      -> LLM 相关配置
-        - "database" -> 数据库 / 缓存相关配置
-        - "core"     -> 应用核心配置
+        每个 scope 都要经过 register_scope / register_model_scope 注册;按 prefix
+        取值,库里那份覆盖在前。
         """
-        presets: dict[str, Callable[["Settings"], dict[str, Any]]] = {
-            "github": lambda s: {
-                "app_id": s.github_app_app_id,
-                "private_key": s.github_app_private_key,
-                "webhook_secret": s.github_app_webhook_secret,
-                "installation_id": s.github_app_installation_id,
-            },
-            "llm": lambda s: {
-                "provider": s.llm_provider,
-                "api_key": s.llm_api_key,
-                "model": s.llm_model,
-            },
-            "database": lambda s: {
-                "url": s.database_url,
-                "redis_url": s.redis_url,
-            },
-            "core": lambda s: {
-                "app_name": s.app_name,
-                "debug": s.debug,
-                "deployment_mode": s.deployment_mode,
-            },
-        }
-
-        # 优先使用预置映射
-        if scope_name in presets:
-            return presets[scope_name](self.settings)
-
-        # 否则查找自定义 scope，按 prefix 取值
         scope = self._scopes.get(scope_name)
         if scope is not None:
             # 库里存的全部键都算数:有的 scope(比如 harness-env)本来就不预设字段名
@@ -290,12 +277,18 @@ class ConfigManager:
         """
         raw = self.settings.model_config.get("env_file") or ".env"
         path = Path(raw) if isinstance(raw, str) else Path(".env")
+        cached = self._dotenv_cache.get(str(path))
+        if cached is not None:
+            return cached
         if not path.exists():
-            return {}
-        try:
-            return {k: v for k, v in dotenv_values(path).items() if v is not None}
-        except Exception:  # noqa: BLE001 - 读不到就是没有,不因此起不来
-            return {}
+            parsed: dict[str, str] = {}
+        else:
+            try:
+                parsed = {k: v for k, v in dotenv_values(path).items() if v is not None}
+            except Exception:  # noqa: BLE001 - 读不到就是没有,不因此起不来
+                parsed = {}
+        self._dotenv_cache[str(path)] = parsed
+        return parsed
 
     def apply_stored(self, stored: dict[str, dict[str, dict[str, str]]]) -> None:
         """装上从库里读出来的那一份覆盖:{租户: {scope: {键: 值}}}。"""
@@ -400,33 +393,11 @@ class ConfigManager:
             缺失的配置项列表，如 ``["GITHUB_APP_APP_ID", "GITHUB_APP_PRIVATE_KEY"]``。
             如果没有缺失，返回空列表 ``[]``。
         """
-        # 预置 scope
-        presets_required: dict[str, list[str]] = {
-            "github": [
-                "github_app_app_id",
-                "github_app_private_key",
-                "github_app_webhook_secret",
-                "github_app_installation_id",
-            ],
-            "llm": ["llm_api_key"],
-            "database": ["database_url", "redis_url"],
-            "core": ["app_name"],
-        }
-
-        if scope_name in presets_required:
-            s = self.settings
-            missing: list[str] = []
-            for key in presets_required[scope_name]:
-                val = getattr(s, key, None)
-                if val is None or val == "":
-                    missing.append(key.upper())
-            return missing
-
         scope = self._scopes.get(scope_name)
         if scope is None:
             raise KeyError(f"Unknown scope: {scope_name!r}")
 
-        missing = []
+        missing: list[str] = []
         for field_name in scope.required_keys:
             if self._scope_value(scope, field_name, tenant) in (None, ""):
                 # 返回环境变量风格的名称（大写），人照着它去补
@@ -435,8 +406,36 @@ class ConfigManager:
         return missing
 
 
+class _YamlFileSource(PydanticBaseSettingsSource):
+    """config.yaml 这一层。不存在或读不出来 = 没有这一层,不因此起不来。"""
+
+    def __init__(self, settings_cls: type, path: str) -> None:
+        super().__init__(settings_cls)
+        self._data: dict[str, Any] = {}
+        try:
+            loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                self._data = loaded
+        except Exception:  # noqa: BLE001 - yaml 坏了不该挡住启动,让它回落到环境变量
+            pass
+
+    def _supports_nested(self) -> bool:
+        return False
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        return self._data.get(field_name), field_name, False
+
+    def __call__(self) -> Mapping[str, Any]:
+        return {k: v for k, v in self._data.items() if k in self.settings_cls.model_fields}
+
+
 class Settings(BaseSettings):
-    """统一配置管理器。自动从 .env 读取所有配置，并按 scope 分发。"""
+    """统一配置管理器。读 .env / config.yaml，并按 scope 分发。
+
+    同一个键的优先级:进程环境变量 → config.yaml → .env → 字段默认值。
+    config.yaml 放"这台机器长期的值",.env 只留给部署侧的临时覆盖与敏感值;
+    都没配时字段默认值兜底,启动不炸。
+    """
 
     # ---- 应用配置 ----
     app_name: str = "gwei"
@@ -555,6 +554,24 @@ class Settings(BaseSettings):
     autonomous_capabilities: str = ""
     change_ledger_backend: str = "db"  # db(业务库)| file(演示与离线调试)
     change_ledger_path: str = "var/change-ledger.jsonl"  # file 后端的落盘位置
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        path = os.environ.get("GWEI_CONFIG_FILE") or "config.yaml"
+        return (
+            init_settings,
+            env_settings,
+            _YamlFileSource(settings_cls, path),
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     # .env 可能包含部署侧附加变量（如 prod 密码），容忍未知键避免启动崩溃
     model_config = {

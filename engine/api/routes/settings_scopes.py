@@ -99,6 +99,7 @@ async def list_scopes(request: Request) -> list[ScopeDTO]:
                 prefix=scope.prefix,
                 fields=fields,
                 missing=config.validate_scope(scope.name, tenant),
+                owner=scope.owner,
             )
         )
     return out

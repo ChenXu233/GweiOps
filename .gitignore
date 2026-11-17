@@ -79,3 +79,6 @@ out/
 
 # 外挂插件目录(部署时放外部插件,不进仓库)
 plugins-extra/
+
+# 统一配置文件(模板 config.yaml.example 进库,实体不进)
+config.yaml

@@ -12,6 +12,10 @@ from __future__ import annotations
 from typing import Any
 
 from engine.shared.config import config
+from engine.shared.system_scopes import register_system_scopes
+
+# LLM 凭据走 llm scope;读取方保证 scope 已注册(不经 app 启动的测试路径)
+register_system_scopes()
 
 try:  # 未装 bub 时此 import 失败,由调用方报错
     from bub.builtin.model import BubModel
@@ -41,18 +45,21 @@ NOT_INSTALLED = "模型不可用:bub 未安装(缺少依赖 bub>=0.6.1),控制�
 
 def model_spec(model: str = "", provider: str = "") -> str:
     """`provider:model` 规格;模型串自带 provider 时以其为准(如 `openai/vllm`)。"""
-    name = (model or config.settings.llm_model or "").strip()
+    name = (model or config.get_scope_config("llm").get("llm_model") or "").strip()
     if "/" in name and not name.startswith("/"):
         head, _, tail = name.partition("/")
         return f"{_provider(head)}:{tail}"
-    return f"{_provider(provider or config.settings.llm_provider)}:{name}"
+    return f"{_provider(provider or config.get_scope_config('llm').get('llm_provider'))}:{name}"
 
 
 def client_options(spec: str) -> dict[str, Any]:
     """该 provider 的凭据与端点,由 bub 交给 model 实现。"""
     _, _, name = spec.partition(":")
-    options: dict[str, Any] = {"api_key": config.settings.llm_api_key or None, "model": name}
-    base_url = (config.settings.llm_base_url or "").strip()
+    options: dict[str, Any] = {
+        "api_key": config.get_scope_config("llm").get("llm_api_key") or None,
+        "model": name,
+    }
+    base_url = (config.get_scope_config("llm").get("llm_base_url") or "").strip()
     if base_url:
         options["base_url"] = base_url
     return options
@@ -64,7 +71,7 @@ def _provider(raw: str) -> str:
 
 
 def missing_key() -> bool:
-    return not (config.settings.llm_api_key or "").strip()
+    return not (config.get_scope_config("llm").get("llm_api_key") or "").strip()
 
 
 def build_agent(*, session: Any, registry: Any, actor: Any = None) -> Any:

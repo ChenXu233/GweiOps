@@ -1,0 +1,21 @@
+# Gwei 统一配置文件模板
+# 使用方式:
+#   1. 复制为 config.yaml:cp config.yaml.example config.yaml
+#   2. 填这台机器长期的值;换行私钥等敏感值留在 .env
+# 优先级:进程环境变量 → config.yaml → .env → 代码里的默认值
+# 键名与 .env 一致(小写也可);文件不存在就是没有这一层,不因此起不来
+
+app_name: gwei
+debug: false
+
+# 数据库与缓存(进程起来之前就要有,只能在这里或环境变量)
+database_url: postgresql+asyncpg://gwei:gwei@localhost:5432/gwei
+redis_url: redis://localhost:6379/0
+
+# 运行期可在设置页改的(注册策略 / 核验通道 / OIDC / LLM / 配额)只在
+# 页面没填过时才轮到这里 —— 填过的值存库,优先级高于本文件
+# llm_model: gpt-4o
+# llm_base_url: https://your-vllm.example.com/v1
+
+# harness: 一条命令把一次事故交给外部 agent;留空用进程内 operator
+# harness_command: dsh --profile headless "{task}"

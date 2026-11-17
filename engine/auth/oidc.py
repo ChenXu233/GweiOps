@@ -43,14 +43,17 @@ class OidcConfig:
 
     @classmethod
     def from_settings(cls, redirect_uri: str) -> "OidcConfig":
-        s = config.settings
-        if not (s.oidc_issuer and s.oidc_client_id and s.oidc_client_secret):
-            raise OidcError("没配 OIDC(OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET)")
+        from engine.shared.system_scopes import register_system_scopes
+
+        register_system_scopes()
+        s = config.get_scope_config("oidc")
+        if not (s.get("oidc_issuer") and s.get("oidc_client_id") and s.get("oidc_client_secret")):
+            raise OidcError("没配 OIDC:去设置页的 oidc scope 填 issuer / client_id / client_secret")
         return cls(
-            issuer=s.oidc_issuer.rstrip("/"),
-            client_id=s.oidc_client_id,
-            client_secret=s.oidc_client_secret,
-            scopes=s.oidc_scopes or "openid email profile",
+            issuer=str(s.get("oidc_issuer")).rstrip("/"),
+            client_id=str(s.get("oidc_client_id")),
+            client_secret=str(s.get("oidc_client_secret")),
+            scopes=str(s.get("oidc_scopes") or "openid email profile"),
             redirect_uri=redirect_uri,
         )
 

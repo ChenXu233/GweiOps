@@ -49,6 +49,7 @@ def register_manifest_scopes(manifest: Manifest) -> list[str]:
             prefix=decl.prefix,
             required=list(decl.required),
             optional=list(decl.optional),
+            owner=manifest.name,
         )
         added.append(name)
     return added

@@ -5,6 +5,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 from engine.shared.config import config
+from engine.shared.system_scopes import register_system_scopes
+
+register_system_scopes()
 from engine.shared.metrics import metrics
 
 try:
@@ -35,11 +38,11 @@ class LLMService:
     """LLM 调用封装。支持重试和指数退避。"""
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
-        settings = config.settings
-        self.api_key = api_key or settings.llm_api_key
-        self.model = model or settings.llm_model
-        self.provider = settings.llm_provider
-        self.api_base = settings.llm_base_url or None
+        settings = config.get_scope_config("llm")
+        self.api_key = api_key or settings.get("llm_api_key")
+        self.model = model or settings.get("llm_model")
+        self.provider = settings.get("llm_provider")
+        self.api_base = settings.get("llm_base_url") or None
 
         # 是否启用真实调用
         self.enabled = HAS_LITELLM and bool(self.api_key)

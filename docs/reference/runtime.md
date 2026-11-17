@@ -250,7 +250,7 @@ changes.approve@github-acme-api     只在这一个仓库上能放行
 
 ## 注册与账号核验
 
-企业账号与自部署用**同一个开关**:注册默认关闭(`REGISTRATION_ENABLED=false`),已经跑起来的实例不会因为升级开始接受陌生人。租户可以在设置页逐键覆盖,生效值是"全局配置 + 公共覆盖 + 租户覆盖"。
+企业账号与自部署用**同一个开关**:注册默认关闭(`REGISTRATION_ENABLED=false`),已经跑起来的实例不会因为升级开始接受陌生人。租户可以在设置页的 `registration` scope 逐键覆盖,生效值是"全局配置 + 公共覆盖 + 租户覆盖"(合并见 `policy_for`)。
 
 开关与方式:
 
@@ -347,7 +347,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 - **工作区里有代码**:载荷带仓库时,平台用 App 安装令牌取一份快照——走 API 的 tarball 端点(`api.github.com`),不走 `git clone`:`github.com` 在有些网络里连不上,API 通常还行,而且这条路不在命令行里带凭据。快照解开后在 `.repos/<incident_id>` 里变成一个本地提交,再把文件铺进工作区并放开到其他用户可写(引擎与 harness 镜像的 uid 不同)。容器看到的没有 `.git`:提交、分支、PR 由平台做,容器里没有可用的 git 凭据。拉不到代码时本次事故不开工,报告直接写原因。
 - 交进去:工作区里的 `task.md`(信号、仓库与基线分支、出口地址**与认证方式**、报告路径),以及环境变量 `GWEI_EXIT_URL`、`GWEI_TOKEN`、`GWEI_INCIDENT_ID`、`GWEI_REPORT`、`GWEI_TENANT`、`GWEI_BINDING`。
-- **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式进入引擎进程的环境变量,并额外写成沙箱里的 `.harness-env`(0600,不进工作区改动)。`docker run` 只转发被点名的变量,所以命令里要么逐个 `-e NAME`,要么 `--env-file {workspace}/.harness-env` 一次带进去 —— 用后者,新加的键才不用改命令。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 接入与密钥」写的就是 `harness-env` scope,密钥永不回显。
+- **凭据由平台注入**:存进 `harness-env` scope 的每个键(`PUT /api/settings/scopes/harness-env`)都以大写形式进入引擎进程的环境变量,并额外写成沙箱里的 `.harness-env`(0600,不进工作区改动)。`docker run` 只转发被点名的变量,所以命令里要么逐个 `-e NAME`,要么 `--env-file {workspace}/.harness-env` 一次带进去 —— 用后者,新加的键才不用改命令。已知键(`deepseek_api_key`、`deepseek_base_url`、`model`)在模型里声明了类型与形状,写错在写入时就是 422;控制台「设置 → 插件配置」写的就是 `harness-env` scope,密钥永不回显。
 - 收回来:沙箱里的 `report.json`(`summary` / `steps` / `counts` / `exhausted`),写进[事故](#事故)报告。没交报告也算有报告——退出码与最后几行输出带回去;超时的标 `exhausted`。
 - **改了什么由平台数**:工作区对着基线比一遍,结果写进报告里的 `diff`;沙箱自报的改动不进 PR。
 - 报告里带 `sandbox`:`{provider, id, url}` 指明本次事故的沙箱。`cnb` 给的是构建号与构建页地址;`local` 给的是进程号。
@@ -388,7 +388,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 限量按「主体 × 资源 × 窗口」记账,现在落地的只有租户这一层。
 
 - 写法:`数量/窗口`,`2000/30d`、`500/5h`、`10/2w`。空值 = 不限;写错(缺斜杠、数量不是整数、单位不认识)当场报错,不悄悄当成不限。
-- 三层覆盖:平台默认(`engine/quota/__init__.py` 的 `DEFAULT_LIMITS`)→ 公共配置 scope `quota` → 租户配置 scope `quota`。
+- 三层覆盖:平台默认(`engine/quota/__init__.py` 的 `DEFAULT_LIMITS`)→ 公共配置 scope `quota` → 租户配置 scope `quota`;设置页读写的就是这个 scope。
 - 用量是**落账**不是计数器:`quota_usage` 每笔一行,判定按窗口求和。计数器迟早会和事实对不上,配额是最不该"差一点"的地方。
 - 判定口径见 `engine/quota/store.py` 的 `check`:超了抛 `QuotaExceeded`,消息里带资源、已用、上限与窗口。
 - 页面:`GET /api/quota` 读用量,设置页读写限量,`/api/settings` 的 `issueQuota` 也取真实值。
@@ -406,6 +406,16 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 - `engine/llm/client.py` 经 LiteLLM 调用;重试 3 次,指数退避。
 - 指标:`gwei_llm_calls_total{model}`、`gwei_llm_tokens_total{model}`、`gwei_llm_call_duration_seconds{model}`。
 - AgentSession 的 state 记录 `llm_tokens`,作为计费聚合源。
+
+## 配置
+
+配置有两个入口,分层与优先级只有一套。
+
+**文件与环境**:`Settings`(`engine/shared/config.py`)按「进程环境变量 → `config.yaml` → `.env` → 字段默认值」合并,同一个键高层覆盖低层。`config.yaml` 放这台机器长期的值(`GWEI_CONFIG_FILE` 可换路径);`.env` 只留给部署侧的临时覆盖与敏感值;文件不存在或读不出来就是没有那一层,不因此起不来。
+
+**运行期**:除少数进程起来之前就要有的键(`database_url`、`app_name` 这类),平台自身的运行参数都注册成系统域 scope(`engine/shared/system_scopes.py`):`registration`(注册策略)、`email` / `sms`(核验通道)、`oidc`(单点登录)、`llm`(模型凭据)、`quota`(限量)。读取方(注册策略、通道投递、OIDC、配额判定)统一走 `config.get_scope_config()`,「库覆盖 → Settings → 环境 → .env」在那一层合并好,页面上改完立即生效,不用重启。四个部署期才能定的注册键(`registration_trust_invited` / `registration_tenant` / `registration_signup_role` / `registration_test_code`)不进 scope:它们决定"这台实例的注册怎么落地",运行期改了救不了已经按旧规则落地的数据。
+
+设置页按 `owner` 把 scope 分成「系统配置」与「插件配置」两块摆;每个字段带出厂默认回显,留空的人知道自己会得到什么。回显规则不变:`expose` 是字段自己的事,没声明的默认不出去。
 
 ## 部署模式
 
@@ -463,7 +473,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | POST | `/api/invitations/{token}` | 接邀请:邮箱已经有人就认领他,没有就现场设密码;接完顺手发会话 |
 | GET | `/api/quota` | 租户各资源在窗口内的用量与上限 |
 | GET | `/api/quota/parse` | 把 `2000/30d` 拆开看看 |
-| GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
+| GET | `/api/settings/scopes` | 系统域与插件声明的配置项:要填什么、填了没有、缺什么、出厂默认;`owner` 分系统与插件两组。值只按字段自己的 `expose` 回显 |
 | PUT | `/api/settings/scopes/{scope}` | 写一组配置值,存业务库、推给声明该 scope 的插件并立即生效;`push_error` 说推失败的原因(值仍然存下了) |
 | DELETE | `/api/settings/scopes/{scope}/{key}` | 删掉一个键并重推;删的是调用方租户的覆盖值,读的时候落回公共值 |
 | GET | `/api/plugins`、`/api/plugins/widgets` | 插件清单(含未启用的,带 `enabled` / `platform_available` / `tenant_enabled` / `reason`)/ 两层都成立的插件的插槽声明 |

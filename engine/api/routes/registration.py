@@ -19,6 +19,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from engine.api.auth import workspace_access
 from engine.api.routes.auth import _cookie_secure, _set_session_cookie, me_dto
 from engine.auth import SESSION_COOKIE
 from engine.auth import audit
@@ -257,10 +258,12 @@ async def request_reset(payload: ResetRequestDTO, request: Request) -> dict:
 def _frontend_base(request: Request) -> str:
     """邮件链接与 OIDC 回跳都要落到**前端**上,不是引擎。
 
-    配了 REGISTRATION_PUBLIC_BASE_URL 就用它(生产必然如此:外网地址与容器内
-    地址不是一回事);没配时按这一次请求的 Host 推,推不出来就明说该配什么。
+    配了 registration scope 的 registration_public_base_url 就用它(生产必然
+    如此:外网地址与容器内地址不是一回事);没配时按这一次请求的 Host 推,
+    推不出来就明说该配什么。
     """
-    base = (config.settings.registration_public_base_url or "").rstrip("/")
+    scope = config.get_scope_config("registration", workspace_access(request) or "")
+    base = str(scope.get("registration_public_base_url") or "").rstrip("/")
     if base:
         return base
     forwarded = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
