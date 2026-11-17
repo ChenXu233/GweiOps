@@ -100,8 +100,24 @@ upsert() {
   fi
 }
 
-ENGINE_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}"
-WEB_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}-web"
+# 按 digest 钉死,不按 tag:tag 会移动,一旦这次拉到的镜像起不来,
+# 回滚点里记的若是同一个 tag,回滚就是再拉一遍那个坏镜像。
+resolve_digest() {
+  docker manifest inspect -v "$1" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);x=d[0] if isinstance(d,list) else d;print((x.get('Descriptor') or {}).get('digest',''))" 2>/dev/null || true
+}
+
+ENGINE_TAG="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}"
+WEB_TAG="${CNB_REGISTRY}/${REPO_SLUG}:${TAG}-web"
+D_ENGINE="$(resolve_digest "$ENGINE_TAG")"
+D_WEB="$(resolve_digest "$WEB_TAG")"
+if [ -n "$D_ENGINE" ] && [ -n "$D_WEB" ]; then
+  ENGINE_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}@${D_ENGINE}"
+  WEB_IMAGE="${CNB_REGISTRY}/${REPO_SLUG}@${D_WEB}"
+else
+  # 读不到 digest 就退回 tag:那种情况下宁可部署,也不要因为探测失败而停摆
+  ENGINE_IMAGE="$ENGINE_TAG"
+  WEB_IMAGE="$WEB_TAG"
+fi
 upsert GWEI_ENGINE_IMAGE "$ENGINE_IMAGE"
 upsert GWEI_WEB_IMAGE "$WEB_IMAGE"
 # 让本次 compose 用到刚写入的镜像(而不是 .env.prod 里的旧值)。

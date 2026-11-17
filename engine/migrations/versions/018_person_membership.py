@@ -181,6 +181,16 @@ def upgrade() -> None:
     # 审计里的 actor_id 一直是裸 uuid(006 没给它建外键),值是 users.id,也就是
     # 现在的 memberships.user_id —— 这里不用改。补上外键则是把"这个人被移出去了"
     # 这件事处理掉:留着 id 而人不在,审计就是一条查不到人的记录。
+    # 加外键之前先清掉指向"已经不在这份名单里的人"的行。历史审计里会有这种人:
+    # 用户被删掉、或者这一版之前就存在的实验账号。不清就加外键,升级过的库一律
+    # 卡在 ForeignKeyViolationError,而迁移是启动路径上的第一步——整个引擎起不来。
+    op.execute(
+        """
+        UPDATE audit_log a SET actor_id = NULL
+         WHERE a.actor_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = a.actor_id)
+        """
+    )
     op.create_foreign_key(
         "fk_audit_log_actor", "audit_log", "memberships", ["actor_id"], ["user_id"], ondelete="SET NULL"
     )
