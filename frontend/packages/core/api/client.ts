@@ -44,8 +44,38 @@ export const WorkspacesApi = {
 
 // 仓库与项目都只属于一个工作区,而工作区在路径里(typed.ts 的 scopePath 补),
 // 所以这两个调用点不带参数:位置就是身份,不是筛选项。
+//
+// 仓库是**接入**进来的,不由投递自己长出来:接什么、接哪家的、什么时候不再管,
+// 都是人在仓库页做的三个动作。仓库全名带斜杠,这里按路径段拆开传
+// (`acme/api` → owner=acme, name=api),GitLab 的子组照样能接。
 export const ReposApi = {
   list: () => api.get('/api/repos'),
+  // 这个部署能接哪些来源 —— 由装着的适配器答,前端不维护一张平台表
+  sources: () => api.get('/api/repos/sources'),
+  connect: (source: string, fullName: string) =>
+    api.put('/api/repos/{source}/{owner}/{name}', {
+      path: { source, ...splitFullName(fullName) },
+    }),
+  // 解除接入。议题与账本行留着:账是发生过的事
+  disconnect: (source: string, fullName: string) =>
+    api.delete('/api/repos/{source}/{owner}/{name}', {
+      path: { source, ...splitFullName(fullName) },
+    }),
+  attach: (source: string, fullName: string, project: string) =>
+    api.put('/api/repos/{source}/{owner}/{name}/project', {
+      path: { source, ...splitFullName(fullName) },
+      body: { project },
+    }),
+}
+
+/** `acme/api` → { owner: 'acme', name: 'api' };子组 `group/sub/repo` 也照这样拆。 */
+export function splitFullName(fullName: string): { owner: string; name: string } {
+  const parts = fullName.trim().split('/').filter(Boolean)
+  if (parts.length < 2) {
+    throw new Error(`仓库全名要写成 \`所有者/名字\`${fullName ? `:${fullName}` : ''}`)
+  }
+  const name = parts[parts.length - 1] ?? ''
+  return { owner: parts.slice(0, -1).join('/'), name }
 }
 
 // 项目 = 仓库上面那一级。范围闸的中间档,也是项目级配置与凭据将来要落的地方。

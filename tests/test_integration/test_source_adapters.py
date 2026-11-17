@@ -153,6 +153,10 @@ class TestReplyGoesBackToTheSameSource:
             reply_binding({"repo_full_name": "acme/api"})
 
 
+async def _always_connected(payload: dict) -> bool:
+    return True
+
+
 class TestCommentTriggerAtTheEntry:
     def _client(self, monkeypatch, adapter):
         from fastapi import FastAPI
@@ -172,6 +176,8 @@ class TestCommentTriggerAtTheEntry:
         monkeypatch.setattr(webhook_mod, "source_adapter", lambda name: adapter)
         monkeypatch.setattr(webhook_mod, "dedup_once", dedup)
         monkeypatch.setattr(webhook_mod, "_enqueue_workflow", enqueue)
+        # 触发词是否认得出来,与"仓库接入了没有"是两件事,这里只测前者
+        monkeypatch.setattr(webhook_mod, "_connects_here", _always_connected)
 
         app = FastAPI()
         app.include_router(webhook_mod.router)

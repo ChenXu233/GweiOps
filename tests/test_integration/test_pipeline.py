@@ -367,6 +367,9 @@ def _make_fake_session_factory():
             return False
 
         execute = AsyncMock(return_value=_FakeResult(None))
+        # `scalar` 是同一件事的短语形态(取一个值,不是一行):
+        # 工作区/仓库这类"查到了就往下走"的判定用的是它。
+        scalar = AsyncMock(return_value=None)
         flush = AsyncMock()
         commit = AsyncMock()
         rollback = AsyncMock()
@@ -425,6 +428,9 @@ class TestWorkflowEndToEnd:
                 )
                 mock_get_sensor.return_value = sensor
 
+                # 仓库是接入进来的:生产里这条投递只会在仓库页接入之后才被处理
+                # (`/webhook/{source}` 先判"接入了没有")。这里直接跑工作流,所以要
+                # 自己把"工作区那一行"和"仓库那一行"喂给假会话。
                 payload = {
                     "tenant_slug": "default",
                     "repo_full_name": "my-org/my-repo",
@@ -434,7 +440,22 @@ class TestWorkflowEndToEnd:
                     "title": "Test Bug",
                     "body": "Steps to reproduce...",
                     "source": "issue",
+                    "source_adapter": "github",
                 }
+                from engine.db.models import Project as _Project
+                from engine.db.models import Tenant as _Tenant
+
+                tenant_row = _Tenant(slug="default", name="default")
+                tenant_row.id = uuid.uuid4()
+                repo_row = _Project(
+                    tenant_id=tenant_row.id,
+                    parent_id=uuid.uuid4(),
+                    slug="github-my-org-my-repo",
+                    source="github",
+                    name="my-org/my-repo",
+                )
+                repo_row.id = uuid.uuid4()
+                session.scalar = AsyncMock(side_effect=[tenant_row, repo_row])
 
                 workflow_id = f"gwei-triage-{uuid.uuid4()}"
                 with SetWorkflowID(workflow_id):
@@ -452,9 +473,9 @@ class TestWorkflowEndToEnd:
                 )
 
                 assert result["record"]["tenant_id"]
-                # Tenant + 项目 + 仓库 + Issue + AgentSession:项目和仓库是两行
-                # (见 engine/db/models/project.py),一条投递会把项目那一级补齐。
-                assert len(added) == 5
+                # Issue + AgentSession:工作区与仓库已经在库里(投递不建仓库),
+                # 这条投递只在这两样之上写两行。
+                assert len(added) == 2
                 # 本地兜底 intent 把结论转成一条 comment.create;测试环境没有效果
                 # 提供者,如实记 blocked——绝不假装发过评论。
                 effects = result["applied"]["applied"]

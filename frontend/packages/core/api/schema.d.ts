@@ -1177,6 +1177,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/repos/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sources
+         * @description 这个部署能接哪些来源。装着的适配器说了算,不是一张写死的清单。
+         */
+        get: operations["list_sources_api_repos_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Connect Repo
+         * @description 接入一个仓库。
+         *
+         *     接入只是"这一道账开始管这份代码":投递从这一步起才会被处理。它**不拉代码、
+         *     不建议题、不跑工作流** —— 第一次投递才是那件事。
+         */
+        put: operations["connect_repo_api_repos__source___owner___name__put"];
+        post?: never;
+        /**
+         * Disconnect Repo
+         * @description 解除接入。议题与账本行留着:账是发生过的事,不跟着绑定一起消失。
+         */
+        delete: operations["disconnect_repo_api_repos__source___owner___name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Attach Repo
+         * @description 把已接入的仓库挂到另一个项目。空串 = 回到按全名第一段的默认归属。
+         */
+        put: operations["attach_repo_api_repos__source___owner___name__project_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/roles": {
         parameters: {
             query?: never;
@@ -2494,6 +2561,17 @@ export interface components {
              */
             items: components["schemas"]["ProjectDTO"][];
         };
+        /**
+         * ProjectRefDTO
+         * @description 仓库挂到哪个项目。空串 = 挂回按全名第一段的默认归属。
+         */
+        ProjectRefDTO: {
+            /**
+             * Project
+             * @default
+             */
+            project: string;
+        };
         /** ProjectSettingsDTO */
         ProjectSettingsDTO: {
             /** Defaults */
@@ -2538,6 +2616,23 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * RepoConnectDTO
+         * @description 接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。
+         */
+        RepoConnectDTO: {
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Source */
+            source: string;
+        };
         /** RepoDTO */
         RepoDTO: {
             /** Activeagents */
@@ -2574,6 +2669,22 @@ export interface components {
             source: string;
             /** Status */
             status: string;
+        };
+        /**
+         * RepoSourceDTO
+         * @description 这个部署能接的来源。
+         *
+         *     清单由装着的适配器答(`registry.webhook_adapters()`):加一个新平台是装一个
+         *     插件的事,核心里没有一张写死 github / cnb / gitlab 的表。
+         */
+        RepoSourceDTO: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Source */
+            source: string;
         };
         /** ResetCompleteDTO */
         ResetCompleteDTO: {
@@ -4954,6 +5065,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoDTO"][];
+                };
+            };
+        };
+    };
+    list_sources_api_repos_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSourceDTO"][];
+                };
+            };
+        };
+    };
+    connect_repo_api_repos__source___owner___name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoConnectDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_repo_api_repos__source___owner___name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_repo_api_repos__source___owner___name__project_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRefDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

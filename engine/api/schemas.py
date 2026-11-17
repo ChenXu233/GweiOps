@@ -48,6 +48,26 @@ class RepoDTO(BaseModel):
     projectName: str = ""
 
 
+class RepoSourceDTO(BaseModel):
+    """这个部署能接的来源。
+
+    清单由装着的适配器答(`registry.webhook_adapters()`):加一个新平台是装一个
+    插件的事,核心里没有一张写死 github / cnb / gitlab 的表。
+    """
+
+    source: str
+    label: str = ""
+
+
+class RepoConnectDTO(BaseModel):
+    """接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。"""
+
+    slug: str
+    source: str
+    name: str
+    created: bool = False
+
+
 class ProjectDTO(BaseModel):
     """一个项目 —— 仓库上面那一级。
 

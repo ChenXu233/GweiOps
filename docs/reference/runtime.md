@@ -28,6 +28,7 @@
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
 - 周期巡检走 DBOS 自己的调度器,不在 `gwei-agents` 队列上:入队的定时执行不带分区键,调度与幂等由系统库里的 `sched-<调度名>-<点火时刻>` 保证。发现与校验规则见[插件系统](plugin-system.md#周期巡检)。
 - 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。没有一家专用入口,也没有"默认来源"——没装适配器就是 503。
+- **投递只喂已接入的仓库**:仓库是人在仓库页接入的(`PUT /api/repos/{source}/{owner}/{name}`),投递到达时先判「这个仓库接入了没有」。没接入返回 `unconnected` 并说清去哪接,不起工作流——一次公网可达的 webhook 不该能让引擎替陌生人拉代码、跑模型。规则与判据见[工作区模型](../explanation/workspace-model.md#21-仓库怎么进工作区)。
 - 信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 回评往哪回、工作区里的代码从哪来,都按投递自身的 `source_adapter` 解析:CNB 的议题进来就回 CNB、拉 CNB 的仓库。载荷缺来源直接报错,不拿 GitHub 顶上。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
@@ -436,6 +437,10 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
 | GET | `/api/workspaces` | **我进得去**的工作区(= 租户):各有几个仓库、来自哪些平台。人按成员关系算,机器返回令牌那一个 |
 | GET | `/api/repos` | 仓库列表:当前工作区里的仓库。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
+| GET | `/api/repos/sources` | 这个部署能接哪些来源 —— 由声明了 `webhook.receive` 的适配器答,核心没有写死的平台表。需 `settings.read` |
+| PUT | `/api/repos/{source}/{owner}/{name}` | 接入一个仓库,幂等。仓库全名按路径段给(GitLab 子组是 `group/sub/repo`)。需 `settings.write` |
+| DELETE | `/api/repos/{source}/{owner}/{name}` | 解除接入:投递不再认它,议题与账本行留着。需 `settings.write` |
+| PUT | `/api/repos/{source}/{owner}/{name}/project` | 把已接入的仓库挂到另一个项目(空串 = 回到按全名第一段的默认归属),写完刷新发布快照。需 `settings.write` |
 | GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;每行带 `visibility` |
 | GET | `/api/projects/{slug}/settings` | 一个项目的可见性、默认发布参数、项目级凭据(只回答"设了没有",值不回显)。需 `settings.read` |
 | PUT | `/api/projects/{slug}/settings` | 改可见性与默认发布参数。需 `settings.write`;写完整份,不担心字段级 diff |
@@ -487,7 +492,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/console/tools` | 调用者身份能给助手用的工具全集(开面板时从里面挑) |
 | POST | `/api/keys` | 签发密钥,明文只在签发响应里出现一次,需 `keys.manage` |
 | DELETE | `/api/keys/{key_id}` | 吊销:记录留着,之后每个请求都是 401 |
-| POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503 |
+| POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503;仓库没接入返回 `unconnected` 且不入队 |
 | POST | `/webhook/github/comment` | GitHub 评论事件的专用别名 |
 
 ### 议题时间线

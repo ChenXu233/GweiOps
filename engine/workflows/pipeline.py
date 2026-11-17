@@ -82,61 +82,40 @@ async def _analyze_with_cache(payload: dict) -> dict:
 def repo_slug(source: str, full_name: str) -> str:
     """仓库在这棵树上的名字:`来源-仓库全名`,`/` 也压成 `-`。
 
-    `acme/api` 在 GitHub 与 CNB 上是两份不同的代码,而 slug 在租户内唯一,
-    所以来源不同就得叫不同的名字:github-acme-api 与 cnb-acme-api。
-
-    分隔符一律用 `-`:URL 里不必转义,人也能照着念。代价是 slug 到"来源 +
-    仓库全名"不可逆 —— 谁要这两个值,库里 `source` / `name` 两栏都在,
-    不从 slug 里猜。
+    规则与接入时用的是同一条(见 `engine/projects/connect.py`):投递时按它判
+    "这个仓库接入了没有",接入时按它建行。两处各写一遍,迟早有一处认错人。
     """
-    name = (full_name or "").replace("/", "-")
-    if not source:
-        return name
-    return f"{source}-{name}"
+    from engine.projects.connect import repo_slug as _repo_slug
+
+    return _repo_slug(source, full_name)
 
 
 def project_slug_of(full_name: str) -> str:
-    """仓库全名所属的项目:取路径里的第一段。`acme/api` 属于项目 `acme`。
+    """仓库全名所属的项目:第一段。规则同样只有一处(`connect.project_slug_of`)。"""
+    from engine.projects.connect import project_slug_of as _project_slug_of
 
-    这只是**没有更好信息时**的默认归属。真要把 `acme/api` 与 `acme/web` 放进同一个
-    项目,靠的是同一个前缀;要放到别处,改 `parent_id` 就行,这里不猜第二次。
+    return _project_slug_of(full_name)
+
+
+# 投递落在一个没接入的仓库上时给的答复。webhook 与工作流报告用的是同一句话:
+# 人看到的应该是"这个仓库还没接入",不是"出错了"。
+_NOT_CONNECTED = "这个仓库还没接入这个工作区:去仓库页接入它,投递才会被处理"
+
+
+async def _ingested_repo(session, tenant_id, payload: dict):
+    """这次投递说的是哪个已接入的仓库。**投递不建仓库。**
+
+    一次投递只说得清"哪份代码上发生了一件事",说不清"这道账要不要管它"。所以
+    仓库是人在仓库页接入的;没接入的来源在这里拿到 None,调用方据此如实报告,
+    而不是替陌生人建一行仓库、拉一份代码、跑一遍模型。
     """
-    head, _, _ = (full_name or "").partition("/")
-    return head
+    from engine.projects.connect import resolve
 
-
-async def _resolve_project(session, tenant_id, payload: dict):
-    """这次投递里的仓库属于哪个项目。已经有了就用,没有就按默认归属建一个。
-
-    项目与仓库同一张表(见 models/project.py):`parent_id` 空的那一行是项目。
-    同一条投递重试十次不该建出十个项目,所以按 slug 幂等取。
-    """
-    slug = str(payload.get("project_slug") or "") or project_slug_of(
-        payload.get("repo_full_name", "")
-    )
-    if not slug:
+    source = str(payload.get("source_adapter") or "") or "github"
+    full_name = str(payload.get("repo_full_name") or "")
+    if not full_name:
         return None
-    found = (
-        await session.execute(
-            select(Project).where(
-                Project.tenant_id == tenant_id,
-                Project.slug == slug,
-                Project.parent_id.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if found is not None:
-        return found
-    created = Project(
-        tenant_id=tenant_id,
-        parent_id=None,
-        slug=slug,
-        source="",
-        name=str(payload.get("project_name") or slug),
-    )
-    session.add(created)
-    await session.flush()
-    return created
+    return await resolve(session, tenant_id, source, full_name)
 
 
 async def _find_issue(session, project_id, payload: dict) -> Issue | None:
@@ -168,52 +147,33 @@ async def _find_issue(session, project_id, payload: dict) -> Issue | None:
 
 
 async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> dict:
-    """按 (租户, 仓库) 与平台侧 id 幂等 upsert Tenant/Project/Issue,并新建 AgentSession。
+    """按已接入的仓库与平台侧 id 幂等 upsert Issue,并新建 AgentSession。
 
     仓库的身份是 (租户, 来源, 仓库全名):数字 id 只在同一个来源里可比,没有 id
     的来源(部分投递不带)不能拿它当身份,`github_id` 也可能根本不存在。
+
+    **这一版不再建仓库**:仓库是人在仓库页接入的。没接入就返回"没接入",不落库。
     """
     async with async_session_factory() as session:
         try:
-            tenant = (
-                await session.execute(select(Tenant).where(Tenant.slug == payload["tenant_slug"]))
-            ).scalar_one_or_none()
+            tenant = await session.scalar(
+                select(Tenant).where(Tenant.slug == payload["tenant_slug"])
+            )
             if tenant is None:
-                tenant = Tenant(slug=payload["tenant_slug"], name=payload["tenant_slug"])
-                session.add(tenant)
-                await session.flush()
+                # 工作区不存在,这个仓库也就无处接入过。不替一个陌生 slug 建工作区。
+                return {"tenant_id": "", "repo": "", "reason": _NOT_CONNECTED}
 
-            source = str(payload.get("source_adapter") or "") or "github"
-            full_name = payload["repo_full_name"]
-            # 仓库的 slug 带上来源前缀:同一个 `acme/api` 在 github 与 cnb 上是两份代码,
-            # 而 slug 在租户内唯一(见 models/project.py),所以要带上来源前缀。
-            slug = repo_slug(source, full_name)
-            project = (
-                await session.execute(
-                    select(Project).where(Project.tenant_id == tenant.id, Project.slug == slug)
-                )
-            ).scalar_one_or_none()
+            project = await _ingested_repo(session, tenant.id, payload)
             if project is None:
-                parent = await _resolve_project(session, tenant.id, payload)
-                project = Project(
-                    tenant_id=tenant.id,
-                    parent_id=parent.id if parent is not None else None,
-                    slug=slug,
-                    source=source,
-                    github_id=payload.get("repo_github_id"),
-                    name=full_name,
-                )
-                session.add(project)
-                await session.flush()
-            else:
-                if project.parent_id is None:
-                    # 头一次投递时它还没有父、后来攒出了项目:补上。父只往上补,不换。
-                    parent = await _resolve_project(session, tenant.id, payload)
-                    if parent is not None:
-                        project.parent_id = parent.id
-                if project.github_id is None and payload.get("repo_github_id") is not None:
-                    # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
-                    project.github_id = payload["repo_github_id"]
+                # 没接入:这条投递到此为止,不落库、不建工作区、不建仓库。
+                return {
+                    "tenant_id": str(tenant.id),
+                    "repo": str(payload.get("repo_full_name") or ""),
+                    "reason": _NOT_CONNECTED,
+                }
+            if project.github_id is None and payload.get("repo_github_id") is not None:
+                # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
+                project.github_id = payload["repo_github_id"]
 
             issue = await _find_issue(session, project.id, payload)
             if issue is None:

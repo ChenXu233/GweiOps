@@ -26,6 +26,7 @@ from engine.api.routes.release_settings import router as release_settings_router
 from engine.api.routes.settings_scopes import router as settings_scopes_router
 from engine.api.routes.invitations import router as invitations_router
 from engine.api.routes.project_settings import router as project_settings_router
+from engine.api.routes.repos import router as repos_router
 from engine.api.routes.webhook import router as webhook_router
 from engine.plugin_manager import registry
 from engine.shared.config import config
@@ -222,6 +223,7 @@ app.include_router(registration_router)
 app.include_router(plugins_router)
 app.include_router(quota_router)
 app.include_router(console_router)
+app.include_router(repos_router)
 app.include_router(changes_router)
 app.include_router(agent_router)
 app.include_router(incidents_router)

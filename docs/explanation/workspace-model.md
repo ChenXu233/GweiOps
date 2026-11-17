@@ -39,6 +39,23 @@ acme                项目这一行,没有来源
 - 分隔符只有一个(`-`),因为它要塞进查询串(`/issues?repo=github-acme-api`),`:` 要转义成 `%3A`
 - **slug 不可逆**:`github-acme-api` 拆不回"来源 github + 全名 acme/api"。要这两个值读库里 `source` / `name` 两栏,不从 slug 猜
 - 投递里没明说项目时按仓库全名第一段建或取一个(幂等):`acme/api` 的父是 `acme`。要塞进别处改 `parent_id`,这里不猜第二次
+- **仓库是接入的,不是投递长出来的**:投递只喂已接入的仓库,详见 §2.1
+
+### 2.1 仓库怎么进工作区
+
+一次投递只说得清"哪份代码上发生了一件事",说不清"这道账要不要管它"。所以仓库的建立是显式的:人在仓库页接入(`PUT /api/workspaces/{slug}/repos/{source}/{owner}/{name}`),投递到达时只认已接入的仓库。
+
+| 判据 | 落地 |
+| --- | --- |
+| 没接入 = 不处理 | `/webhook/{source}` 在起工作流之前判一次,返回 `unconnected` 并说清"去仓库页接入它"。一次公网可达的 webhook 不该能让引擎替陌生人拉代码、跑模型 |
+| 接入不拉代码 | 接入只写一行仓库。第一次投递才是拉代码、建议题、跑工作流的那一刻 |
+| 能接哪些来源由适配器答 | `GET /api/repos/sources` 走 `registry.webhook_adapters()`。核心里没有一张写死 github / cnb / gitlab 的表,加一个平台仍然是装一个插件 |
+| 接入是幂等的 | 同一个 (来源, 全名) 再接一次返回原来那行,`created=false`,不改任何东西 |
+| 解除接入不等于抹掉历史 | 议题与账本行留着:账是发生过的事。`remove` 只让投递不再认它 |
+| 仓库属于哪一层由 `parent_id` 说 | 接入时按全名第一段挂到项目,要换项目调 `PUT …/project`。slug 不可逆,所以解绑与换项目都用"来源 + 全名",不用 slug |
+| 写操作要 `settings.write` | 仓库是这一道账的边界,接进/切断它不是读操作 |
+
+规则只有一处实现:`engine/projects/connect.py`。投递时判"接入了没有"、接入时建行,读的是同一个 `repo_slug`。
 
 ## 3 为什么工作区不是新表
 
@@ -139,6 +156,10 @@ changes.approve@github-acme-api      只在这一个仓库上
 | --- | --- |
 | `GET /api/workspaces` | 我进得去的工作区,以及每个里面有几个仓库、来自哪些平台 |
 | `GET /api/workspaces/{slug}/repos` | 这个工作区里的仓库,每行带来源、slug 与所属项目 |
+| `GET /api/workspaces/{slug}/repos/sources` | 这个部署能接哪些来源 —— 由装着的适配器答 |
+| `PUT /api/workspaces/{slug}/repos/{source}/{owner}/{name}` | 接入一个仓库(`settings.write`) |
+| `DELETE /api/workspaces/{slug}/repos/{source}/{owner}/{name}` | 解除接入,议题与账本行留着 |
+| `PUT /api/workspaces/{slug}/repos/{source}/{owner}/{name}/project` | 把已接入的仓库挂到另一个项目 |
 | `GET /api/workspaces/{slug}/board?project=&repo=` | 议题板,`project` / `repo` 是范围闸 |
 | `GET /api/me` | 我是谁、属于哪些工作区、每个里面是什么角色 |
 | `GET /api/workspaces/{slug}/projects/{slug}/settings` | 一个项目的可见性、默认发布参数、项目级凭据(只回答"设了没有") |
