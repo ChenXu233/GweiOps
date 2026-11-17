@@ -200,5 +200,5 @@ GET /api/changes                      ← 没说,按令牌 / 会话自己声明�
 | --- | --- | --- |
 | 成员关系直接挂范围授权 | 已落:`memberships.permissions` 里可以写 `权限@范围`,上限按范围逐个比 | 本节 5.1d |
 | 邀请与认领 | 已落:`invitations` 表 + 两条豁免路径 + `/invite` 页 | 本节 5.1c |
-| 库级隔离全覆盖 | 共享部署是默认形态,于是每张租户可见的表都要有策略。013/018 之后加的表全都没有,含 `memberships` 与 `persons`;核心自己的连接也不设 `gwei.tenant` | [SaaS 交付形态](saas-delivery.md) §2.1、工作分解 §6.6 |
-| 注册即建工作区 | 注册的人落在 `registration_tenant` 指定的那一个工作区里,没有"注册即建自己的"这条路 | 工作分解 §6.7 |
+| 库级隔离全覆盖 | 已落:清单在 `engine/db/tenancy.py`,迁移 `020` 照它建策略,核心连接也设 `gwei.tenant`(缺省什么都看不见) | [SaaS 交付形态](saas-delivery.md) §2.1 |
+| 注册即建工作区 | 已落:没配 `registration_tenant` 时按邮箱给他建一个工作区,他在里面是 owner | [SaaS 交付形态](saas-delivery.md) §2.2 |

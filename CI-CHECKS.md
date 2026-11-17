@@ -81,6 +81,22 @@ python scripts/identity_audit.py --check    # 有没结论的就非零退出
 上跑 `alembic upgrade head` 会挂在 `relation ... does not exist`——而 CI 只检查
 "是不是一条链",不建库,这个错到部署时才炸。所以新增表时先写迁移。
 
+## 隔离清单得覆盖每一张租户可见的表
+
+`engine/db/tenancy.py` 的 `isolated_tables()` 是「哪些表要有行级安全策略」的唯一一份清单。
+`.ci/engine-tests.py` 的 `隔离清单` 那一段拿它和 `Base.metadata` 对一遍:
+
+- 带 `tenant` / `tenant_id` 列的表,必须在清单里;
+- 清单里的名字,必须都是真表。
+
+它不连库。策略建没建对由 `tests/test_integration/test_isolation_live.py` 在真库上验
+(那张库上 `alembic upgrade head` 跑到底,再以受限角色读两个工作区的行),门控用例,
+需要 `GWEI_TEST_DATABASE_URL`。
+
+漏一张的后果是「那个客户的数据,另一个客户的插件读得到」,而且不报错。所以这条判据
+是清单能被执行的那一半 —— 另一半是启动时的 `enforce_isolation()`(`deployment_mode=saas`
+缺策略拒绝启动)。
+
 ## gRPC 桩也要跟着 proto
 
 `proto/plugin.proto` 是进程外插件的 wire 契约,桩生成后提交进仓库(`engine/plugin_manager/grpc_proto/`)——

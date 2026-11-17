@@ -107,12 +107,12 @@ harness 已经在 `local` / `cnb` / `ssh` 三个提供者上跑通同一个接�
 | ID | 工作包 | 依赖 | 验收判据 | 规模 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 6.1 | 配额执行点:超配额拒绝入队并给出原因 | — | 把某租户配额调到 0,新工作流入队被拒且响应说清楚是哪条配额;其他租户不受影响 | M | 进行中(账本、判定与接口已落;差的只有入队入口那一道门) |
-| 6.2 | 开通流程:从创建租户到第一条工作流跑通,不改库 | 6.1 | 新租户走一遍开通,全程不手工改库;缺项时给出可读的下一步 | M | 未开始 |
+| 6.2 | 开通流程:从创建租户到第一条工作流跑通,不改库 | 6.1 | 新租户走一遍开通,全程不手工改库;缺项时给出可读的下一步 | M | 已落注册那半:`GET /api/workspaces/{slug}/onboarding` 给出四步与各自的下一步。**差的另一半是"接进仓库"仍然要人点一次同步**:来源接通之后仓库不会自己出现在工作区里(要先有一条投递) |
 | 6.4 | 配额按人计:`quota_usage.subject_kind=user` 已经在表里,还没有哪个入口按人限额 | 6.1 | 给一个用户设 0/5h,他的出口调用被拒,同租户其他人不受影响 | S | 未开始 |
 | 6.5 | 邀请制开通:管理员发邀请,被邀请人自己设密码并核验 | — | 邀请链接只能用一次;过期或已用的链接给出明确下一步;被邀请人看到的角色与管理员选的一致 | M | 已落(`invitations` + 迁移 019;`/api/invitations/{token}` 两条口豁免鉴权;接的时候按邮箱认领已有的人,不给他第二份密码;`/invite` 页给出"过期 / 用过 / 已撤销"各自的下一步) |
 | 6.3 | 计费口径与出账 | 6.1 | 给定一个月的数据,账单条目能逐条对上账本与 LLM 计量;对不上的行要能列出来 | L | 待定义(计费单位未定) |
-| 6.6 | 库级隔离全覆盖:客户之间不共享一份应用层过滤 | — | 一张表要不要策略由迁移声明,漏了在迁移/启动期失败;`plugin_tenancy` / `project_settings` / `quota_usage` 等表对受限会话不可见;核心连接设了租户,跨租户查询必须显式声明不限 | M | 未开始(见[SaaS 交付形态](../explanation/saas-delivery.md) §2.1)。013/018 之后没策略的表:`memberships` / `persons` / `user_sessions` / `user_contacts` / `user_roles` / `user_activations` / `password_reset_tokens` / `external_identities` / `verification_codes` / `invitations` / `project_settings` / `plugin_tenancy` / `quota_usage` / `audit_log` / `agent_sessions` |
-| 6.7 | 注册即建工作区:自助的人落到自己的新工作区,而不是 `registration_tenant` 指定的那一个 | 6.6 | 新注册的人拥有他自己建的工作区与 owner 角色,不是别人工作区里的 viewer;建完之后能接第一个来源 | M | 未开始(注册今天落在配置指定的单租户,见 `engine/auth/registration_store.py`) |
+| 6.6 | 库级隔离全覆盖:客户之间不共享一份应用层过滤 | — | 一张表要不要策略由迁移声明,漏了在迁移/启动期失败;`plugin_tenancy` / `project_settings` / `quota_usage` 等表对受限会话不可见;核心连接设了租户,跨租户查询必须显式声明不限 | M | 已落:`engine/db/tenancy.py` 一张清单(28 张表),迁移 `020` 照它建策略,`.ci/engine-tests.py` 照它对一遍模型;核心连接在 `begin` 时写 `gwei.tenant`(缺省 = 一个工作区都不属于),`connecting("*")` 才是不限;saas 档缺策略拒绝启动。见[SaaS 交付形态](../explanation/saas-delivery.md) §2.1 |
+| 6.7 | 注册即建工作区:自助的人落到自己的新工作区,而不是 `registration_tenant` 指定的那一个 | 6.6 | 新注册的人拥有他自己建的工作区与 owner 角色,不是别人工作区里的 viewer;建完之后能接第一个来源 | M | 已落:没配 `registration_tenant` 时按邮箱建工作区并给 `registration_signup_role`(缺省 owner);配了仍按老路走(单租户自部署)。见 `engine/auth/registration_store.py` |
 
 ## 7 清理
 

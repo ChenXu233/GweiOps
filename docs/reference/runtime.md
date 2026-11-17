@@ -367,12 +367,17 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 - `projects` 唯一约束 `(tenant_id, slug)`(`slug` 是 `来源-仓库全名`,`/` 也压成 `-`);`issues` 唯一约束 `(project_id, github_id)`。
 - 工作区在路径里(`/api/workspaces/{slug}/…`),见[工作区怎么带](#工作区怎么带);查询串的 `tenant` 不再生效。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
-- **隔离在库上,不在 SQL 里**:租户可见的表开了行级安全,策略读
-  `current_setting('gwei.tenant', true)`;变量没设时比较为假,所以默认是看不见。
-  可见范围收口在库侧,"忘了写 `where`"因此退化成读到空集。
-- 核心自己的连接不设 `gwei.tenant`,不受策略影响。绕开策略的唯一身份是超级用户与
-  `BYPASSRLS` 角色——插件那条路因此必须走受限角色(`gwei_plugin_reader`),详见
-  [插件读库](plugin-system.md#插件读库)。
+- **隔离在库上,不在 SQL 里**:租户可见的表全部开了行级安全,策略是
+  「`current_setting('gwei.tenant', true)` 等于 `*`(明确不限)或者这一行的租户等于它」。
+  变量没设时比较为假,所以默认是看不见;"忘了写 `where`"因此退化成读到空集。
+- **哪些表要有策略只有一份清单**:`engine/db/tenancy.py` 的 `isolated_tables()`。
+  迁移照它建,`.ci/engine-tests.py` 照它对模型,启动时 `enforce_isolation()` 再对一遍库
+  —— `deployment_mode=saas` 缺一张就拒绝启动。
+- **核心自己的连接也设租户**:池子里每条连接 `begin` 时写 `gwei.tenant`,缺省是空
+  (一个工作区都不属于)。要跨工作区读必须显式声明:`engine.db.connecting("*")` 或
+  `connecting_any()` —— 认证(`resolve_key`)、维护脚本、清表走它们。
+- 绕开策略的唯一身份是超级用户与 `BYPASSRLS` 角色——插件那条路因此必须走受限角色
+  (`gwei_plugin_reader`),详见[插件读库](plugin-system.md#插件读库)。
 - `issues` 有 `tenant_id`(由 `projects` 派生后补齐);`pull_requests` / `patches` /
   `approval_votes` 不加列,租户口径由父表派生——多一份租户列就多一份会漂移的事实。
 
