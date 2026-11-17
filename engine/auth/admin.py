@@ -71,6 +71,38 @@ def _clean_permissions(raw: list[str] | None) -> list[str]:
     return sorted(picked)
 
 
+def _grantable_by(identity: Identity, wanted: list[str]) -> list[str]:
+    """授出去的东西不能超过自己 —— 带范围的也照这条判。
+
+    判据是"我手上这个权限覆盖不覆盖这一步":
+
+    - 工作区级那份覆盖任何范围(包括收窄给某个项目)
+    - 只被收窄过的那个权限,只覆盖它自己点名的那些范围,也覆盖不了整个工作区
+
+    没被收窄过的权限在工作区级,所以"整个工作区的放行权"可以给;只有 acme/api
+    放行权的人给不出 acme 的。
+    """
+    own_entries: list[str] = list(identity.permissions)
+    for permission, scopes in identity.scoped_permissions.items():
+        own_entries.extend(f"{permission}@{scope}" for scope in scopes)
+    own_whole, own_scoped = split_scoped(own_entries)
+    for entry in wanted:
+        permission, sep, scope = entry.partition("@")
+        if permission in own_whole:
+            continue
+        if not sep:
+            # 只有收窄过的那个权限,给不出整个工作区
+            raise AdminError("不能授出自己没有的权限")
+        if scope in own_scoped.get(permission, frozenset()):
+            continue
+        raise AdminError(
+            f"你手上的 {permission} 不包含 {scope},授不出去"
+            if permission in own_scoped
+            else "不能授出自己没有的权限"
+        )
+    return wanted
+
+
 # ---------------------------------------------------------------------------
 # 角色
 # ---------------------------------------------------------------------------
@@ -296,9 +328,7 @@ async def create_user(
     if password and len(password) < 8:
         raise AdminError("密码至少 8 位")
 
-    granted = _clean_permissions(permissions)
-    if not set(granted) <= set(identity.permissions):
-        raise AdminError("不能授出自己没有的权限")
+    granted = _grantable_by(identity, _clean_permissions(permissions))
 
     async with async_session_factory() as session:
         tenant_id = await _tenant_id(session, identity.tenant)
@@ -333,9 +363,8 @@ async def create_user(
             if role is None or role.tenant_id != tenant_id:
                 raise AdminError("角色不存在")
             roles.append(role)
-        role_perms = {p for role in roles for p in (role.permissions or [])}
-        if not (role_perms | set(granted)) <= set(identity.permissions):
-            raise AdminError("不能授出自己没有的权限")
+        role_perms = sorted({p for role in roles for p in (role.permissions or [])})
+        _grantable_by(identity, role_perms)
 
         # 建人的人是租户所有者(权限等于全集)时,新建的是同级成员;
         # 否则就是自己的子成员——子成员的权限上限仍然是父成员。
@@ -362,6 +391,7 @@ async def create_user(
             "is_sub_user": membership.is_sub_user,
             "roles": [{"id": str(r.id), "key": r.key, "name": r.name} for r in roles],
             "permissions": granted,
+            "scoped_permissions": {},
         }
 
 
@@ -375,7 +405,7 @@ async def update_user(
     permissions: list[str] | None = None,
     password: str | None = None,
 ) -> dict:
-    """改的是**这条成员关系**:角色、个人追加权限、从属、停用。
+    """改的是**这条成员关系**:角色、个人追加权限(含按范围收窄的那些)、从属、停用。
 
     唯一的例外是密码:它属于人,不属于工作区。在这里改密码等于替这个人改了他
     在所有工作区里的登录凭据 —— 所以只允许他自己改(`POST /api/auth/password`),
@@ -384,12 +414,11 @@ async def update_user(
     target = uuid.UUID(user_id)
     if password:
         raise AdminError("密码属于这个人,不在工作区里改;让他自己走「改密码」")
+    granted: list[str] | None = None
     if permissions is not None:
-        granted = _clean_permissions(permissions)
-        if not set(granted) <= set(identity.permissions):
-            raise AdminError("不能授出自己没有的权限")
-    else:
-        granted = None
+        # 个人追加的权限与角色里那份是同一栏:`changes.approve@acme` 与
+        # `changes.approve` 一起写在这里,判定时由 `split_scoped` 拆成两份。
+        granted = _grantable_by(identity, _clean_permissions(permissions))
 
     async with async_session_factory() as session:
         user = await session.get(Membership, target)
