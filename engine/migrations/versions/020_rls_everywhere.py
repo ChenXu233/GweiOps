@@ -78,13 +78,19 @@ def _add_tenant_column(table: str) -> None:
     )
 
 
-def _policy_sql(table: str, using: str) -> str:
+def _policy_sql(table: str, using: str) -> tuple[str, ...]:
+    """一张表四条语句,**分开执行**。
+
+    拼成一条(用分号连起来)在 psycopg 上能过,在 asyncpg 上必挂:
+    "cannot insert multiple commands into a prepared statement"。而部署路径
+    走的就是 asyncpg —— 迁移是引擎容器的第一步,这里挂了整个服务起不来。
+    """
     return (
-        f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY;'
-        f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY;'
-        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}";'
+        f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY',
+        f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY',
+        f'DROP POLICY IF EXISTS {POLICY_NAME} ON "{table}"',
         f'CREATE POLICY {POLICY_NAME} ON "{table}" '
-        f"USING ({using}) WITH CHECK ({using});"
+        f"USING ({using}) WITH CHECK ({using})",
     )
 
 
@@ -106,7 +112,8 @@ def upgrade() -> None:
         _add_tenant_column(table)
 
     for table, using in isolated_tables().items():
-        op.execute(_policy_sql(table, using))
+        for statement in _policy_sql(table, using):
+            op.execute(statement)
 
     # 插件只看得见视图:这一版把三张视图的读权限重新钉一遍(`REVOKE … ON ALL
     # TABLES` 之类会顺手把它们带走)。视图保持 014 定的 `security_invoker = true`:
