@@ -16,8 +16,9 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.orm import aliased
 
-from engine.api.auth import require, tenant_scope
+from engine.api.auth import require, workspace_access
 from engine.api.schemas import (
     ContinueRoundDTO,
     ContinuedDTO,
@@ -63,6 +64,14 @@ async def _load_issue(wanted: UUID, scope: str | None) -> dict:
         if scope and slug != scope:
             raise HTTPException(status_code=404, detail="Issue not found")
 
+        # 仓库所属项目的 slug:按项目授的授权,对项目下每一个仓库算数
+        # (engine/api/auth.py 的 require)。一次取回,别让每处判定各查一次父。
+        project_slug = ""
+        if project.parent_id is not None:
+            parent = await db.get(Project, project.parent_id)
+            if parent is not None:
+                project_slug = parent.slug
+
         sessions = (
             (
                 await db.execute(
@@ -87,6 +96,8 @@ async def _load_issue(wanted: UUID, scope: str | None) -> dict:
                 "created_at": issue.created_at.isoformat() if issue.created_at else "",
             },
             "repo": project.name,
+            "repo_slug": project.slug,
+            "project_slug": project_slug,
             "repo_id": project.github_id,
             "tenant": slug,
             "sessions": [_session_row(s) for s in sessions],
@@ -110,11 +121,11 @@ def _session_row(session: AgentSession) -> dict:
 
 @router.get("/api/issues/{issue_id}/timeline")
 async def issue_timeline(
-    issue_id: str, request: Request, tenant: str | None = None
+    issue_id: str, request: Request
 ) -> IssueTimelineDTO:
     """一个议题的完整时间线。还没有变更也返回:那是"还没发生",不是"查不到"。"""
     require(request, "changes.read")
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
     try:
         wanted = UUID(issue_id)
     except ValueError:
@@ -142,19 +153,29 @@ async def issue_timeline(
             truncated=len(incidents) >= INCIDENT_SCAN or len(changes) >= LEDGER_SCAN,
         )
     )
+
+
 @router.get("/api/board")
 async def issue_board(
-    request: Request, tenant: str | None = None, limit: int = 100
+    request: Request,
+    project: str | None = None,
+    repo: str | None = None,
+    limit: int = 100,
 ) -> IssueBoardDTO:
     """议题板:首页那一张列表。
 
     一块板子三个段,判据与详情页同源(`normalize_state`)——列表说"在跑"、
     点进去说"落了"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得
     最久在前,跑着与落了的按最新在前。
+
+    `project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看
+    的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,
+    而它能被选到,本身就说明它属于当前这一档。
     """
     require(request, "changes.read")
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
 
+    parent = aliased(Project)
     async with async_session_factory() as db:
         stmt = (
             select(Issue, Project.name, Tenant.slug)
@@ -165,6 +186,12 @@ async def issue_board(
         )
         if scope:
             stmt = stmt.where(Tenant.slug == scope)
+        if repo:
+            # 仓库档:slug 是来源前缀的写法(github-acme-api),与 /api/repos 同一栏
+            stmt = stmt.where(Project.slug == repo)
+        elif project:
+            # 项目档:仓库行的 parent_id 指向项目那一行
+            stmt = stmt.join(parent, parent.id == Project.parent_id).where(parent.slug == project)
         rows = (await db.execute(stmt)).all()
         if not rows:
             return IssueBoardDTO(items=[], counts={"waiting": 0, "running": 0, "landed": 0})
@@ -272,15 +299,13 @@ async def continue_issue(
     issue_id: str,
     body: ContinueRoundDTO,
     request: Request,
-    tenant: str | None = None,
 ) -> ContinuedDTO:
     """从界面发起新一轮:话题不变、分支不变、PR 不新开。
 
     权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。
     真要细分的话是加一条新权限,不是在这里各自判断。
     """
-    require(request, "changes.approve")
-    scope = tenant_scope(request, tenant)
+    scope = workspace_access(request)
     try:
         wanted = UUID(issue_id)
     except ValueError:
@@ -290,6 +315,15 @@ async def continue_issue(
     if not instruction:
         raise HTTPException(status_code=422, detail="写一句要改什么再来")
     loaded = await _load_issue(wanted, scope)
+    # 按议题所在的仓库判,仓库所属的项目是判定链上的上一档:只被授了 acme/api
+    # 的人,对 acme/web 的议题发起不动;授了整个项目 acme 的人,对 acme 下面
+    # 任何一个仓库都发得动。
+    require(
+        request,
+        "changes.approve",
+        loaded["repo_slug"],
+        loaded["project_slug"],
+    )
     topic = topic_of(loaded["repo"], loaded["issue"]["number"])
     payload = continue_payload(
         issue=loaded["issue"],

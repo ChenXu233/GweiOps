@@ -101,7 +101,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description 我是谁。老路径,回答 `/api/me` 的同一个形状(没写工作区段时是最早的那一个)。
+         */
         get: operations["me_api_auth_me_get"];
         put?: never;
         post?: never;
@@ -163,6 +166,8 @@ export interface paths {
         /**
          * Change Password
          * @description 改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。
+         *
+         *     改的是**人**的密码:一次改完,他在每个工作区里都是新密码。
          */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;
@@ -288,7 +293,7 @@ export interface paths {
         put?: never;
         /**
          * Setup
-         * @description 第一次跑起来时创建所有者。库里已经有用户就直接 409,不留后门。
+         * @description 第一次跑起来时创建所有者。库里已经有人就直接 409,不留后门。
          */
         post: operations["setup_api_auth_setup_post"];
         delete?: never;
@@ -331,6 +336,10 @@ export interface paths {
          *     一块板子三个段,判据与详情页同源(`normalize_state`)——列表说"在跑"、
          *     点进去说"落了"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得
          *     最久在前,跑着与落了的按最新在前。
+         *
+         *     `project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看
+         *     的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,
+         *     而它能被选到,本身就说明它属于当前这一档。
          */
         get: operations["issue_board_api_board_get"];
         put?: never;
@@ -664,6 +673,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitations */
+        get: operations["list_invitations_api_invitations_get"];
+        put?: never;
+        /**
+         * Create Invitation
+         * @description 发一条邀请。响应里的 `token` 只出现这一次 —— 拼成链接交给被邀请人。
+         */
+        post: operations["create_invitation_api_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Invitation */
+        delete: operations["revoke_invitation_api_invitations__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Invitation
+         * @description 这条链接现在什么情况。不要求登录:链接本身就是凭据。
+         *
+         *     过期、用过、撤销过都正常返回状态,由页面给下一步 —— 404 只会让被邀请人
+         *     以为链接坏了。
+         */
+        get: operations["preview_invitation_api_invitations__token__get"];
+        put?: never;
+        /**
+         * Accept Invitation
+         * @description 接邀请。成功之后这个人就已经登录了 —— 顺手发一个会话,少一步。
+         */
+        post: operations["accept_invitation_api_invitations__token__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/issues/{issue_id}/continue": {
         parameters: {
             query?: never;
@@ -785,6 +859,28 @@ export interface paths {
          * @description 吊销。之后这把密钥的每个请求都是 401,记录留着。
          */
         delete: operations["revoke_key_api_keys__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me Root
+         * @description `/api/me`:一个人,以及他在每个工作区里的角色。
+         *
+         *     路径不带工作区段时 `workspace` 取他最早的那条成员关系;带了就是那一个。
+         */
+        get: operations["me_root_api_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -950,6 +1046,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projects
+         * @description 这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。
+         *
+         *     项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →
+         *     某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。
+         *     工作区从路径来,不从查询串来。
+         */
+        get: operations["list_projects_api_projects_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{slug}/credentials/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Project Credential
+         * @description 写一条项目级凭据。值进密钥仓库,库里只留键与说明。
+         *
+         *     空值等于删掉:凭据没有"空着"这种状态 —— 空着和没设是同一件事,分成两种会让
+         *     "设了没有"永远有两种答案。
+         */
+        put: operations["put_project_credential_api_projects__slug__credentials__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{slug}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Settings */
+        get: operations["get_project_settings_api_projects__slug__settings_get"];
+        /**
+         * Put Project Settings
+         * @description 可见性与默认发布参数。两者都在这一行里,整份写、不担心字段级 diff。
+         */
+        put: operations["put_project_settings_api_projects__slug__settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quota": {
         parameters: {
             query?: never;
@@ -997,9 +1161,109 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Repos */
+        /**
+         * List Repos
+         * @description 这个工作区里的仓库。工作区从路径来(`/api/workspaces/acme/repos`),不是参数。
+         *
+         *     同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,
+         *     所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
+         */
         get: operations["list_repos_api_repos_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sources
+         * @description 这个部署能接哪些来源。装着的适配器说了算,不是一张写死的清单。
+         */
+        get: operations["list_sources_api_repos_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Connect Repo
+         * @description 接入一个仓库。
+         *
+         *     接入的意思是"这一道账从现在起管这份代码",所以它当场读一次这个仓库已有的
+         *     议题,把已经发生的事补进来 —— 否则人接完看到的是一张空板子,而出问题的那条
+         *     议题通常早在接之前就开了。
+         *
+         *     这一下是**读**:补进来的是议题事实,不拉代码、不跑模型、不回评。判据在答复
+         *     里 —— `issue_sync.added` 是补进来的条数,不是"起了几个工作流"。
+         */
+        put: operations["connect_repo_api_repos__source___owner___name__put"];
+        post?: never;
+        /**
+         * Disconnect Repo
+         * @description 解除接入。议题与账本行留着:账是发生过的事,不跟着绑定一起消失。
+         */
+        delete: operations["disconnect_repo_api_repos__source___owner___name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pull Repo Issues
+         * @description 再读一次这个仓库已有的议题。
+         *
+         *     接入那一刻已经读过一次;这条路径是给人补的 —— 读的时候上游正好不通、或者
+         *     接入之后仓库上又开了几十条。它与接入时读的是同一个函数,不会读成两份。
+         */
+        post: operations["pull_repo_issues_api_repos__source___owner___name__issues_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/repos/{source}/{owner}/{name}/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Attach Repo
+         * @description 把已接入的仓库挂到另一个项目。空串 = 回到按全名第一段的默认归属。
+         */
+        put: operations["attach_repo_api_repos__source___owner___name__project_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1204,6 +1468,53 @@ export interface paths {
         post?: never;
         /** Delete User */
         delete: operations["delete_user_api_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Workspaces
+         * @description 我可以进的工作区(租户),以及每个里面有几个仓库、来自哪些平台。
+         *
+         *     人这一侧问的是"我属于哪几家" —— 这个选择器换的是数据边界,列出一个我进不去
+         *     的工作区,只会给出"它在这儿但你不能点"的坏体验。机器那一侧(静态令牌 / 密钥)
+         *     本来就写死一个租户,回答的还是那一个。
+         */
+        get: operations["list_workspaces_api_workspaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspaces/{slug}/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Onboarding
+         * @description 这个工作区走到"第一条工作流"还差什么。
+         *
+         *     开通不该是一份要人读的文档:陌生人自己走一遍,每一步都要说得出下一步做什么。
+         *     读接口,不改任何东西 —— 状态从来源配置、仓库数、议题与账本现算。
+         */
+        get: operations["onboarding_api_workspaces__slug__onboarding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1533,6 +1844,24 @@ export interface components {
             /** Workflow Id */
             workflow_id: string;
         };
+        /**
+         * CredentialDTO
+         * @description 一条项目级凭据。`value` 只写不读 —— 读回来的响应里没有这一栏。
+         */
+        CredentialDTO: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+        };
         /** DecisionDTO */
         DecisionDTO: {
             /** Allow */
@@ -1685,6 +2014,29 @@ export interface components {
             items: components["schemas"]["IncidentDTO"][];
             /** Total */
             total: number;
+        };
+        /**
+         * InviteAcceptDTO
+         * @description 接邀请时他要设的密码。这个邮箱已经有人时不需要 —— 给了也不改他的。
+         */
+        InviteAcceptDTO: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /** InviteCreateDTO */
+        InviteCreateDTO: {
+            /** Email */
+            email: string;
+            /** Role Ids */
+            role_ids?: string[];
         };
         /**
          * IssueBoardDTO
@@ -2197,6 +2549,65 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * ProjectDTO
+         * @description 一个项目 —— 仓库上面那一级。
+         *
+         *     项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在
+         *     工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是
+         *     行自己的 slug。
+         */
+        ProjectDTO: {
+            /** Id */
+            id: string;
+            /**
+             * Issues
+             * @default 0
+             */
+            issues: number;
+            /** Name */
+            name: string;
+            /**
+             * Repos
+             * @default 0
+             */
+            repos: number;
+            /** Slug */
+            slug: string;
+            /**
+             * Visibility
+             * @default workspace
+             */
+            visibility: string;
+        };
+        /** ProjectListDTO */
+        ProjectListDTO: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["ProjectDTO"][];
+        };
+        /**
+         * ProjectRefDTO
+         * @description 仓库挂到哪个项目。空串 = 挂回按全名第一段的默认归属。
+         */
+        ProjectRefDTO: {
+            /**
+             * Project
+             * @default
+             */
+            project: string;
+        };
+        /** ProjectSettingsDTO */
+        ProjectSettingsDTO: {
+            /** Defaults */
+            defaults?: {
+                [key: string]: string;
+            } | null;
+            /** Visibility */
+            visibility?: string | null;
+        };
         /** QuotaDTO */
         QuotaDTO: {
             /** Items */
@@ -2232,6 +2643,36 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * RepoConnectDTO
+         * @description 接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。
+         *
+         *     `issue_sync` 是接进来那一刻顺带读的那一次:已经发生的议题补进板子,不等下一次
+         *     投递。它是读,不是替人跑一次工作流。
+         */
+        RepoConnectDTO: {
+            /**
+             * Created
+             * @default false
+             */
+            created: boolean;
+            /**
+             * @default {
+             *       "added": 0,
+             *       "listed": false,
+             *       "reason": "",
+             *       "seen": 0,
+             *       "truncated": false
+             *     }
+             */
+            issue_sync: components["schemas"]["RepoSyncDTO"];
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Source */
+            source: string;
+        };
         /** RepoDTO */
         RepoDTO: {
             /** Activeagents */
@@ -2246,8 +2687,78 @@ export interface components {
             lastSyncAt: string;
             /** Name */
             name: string;
+            /**
+             * Project
+             * @default
+             */
+            project: string;
+            /**
+             * Projectname
+             * @default
+             */
+            projectName: string;
+            /**
+             * Slug
+             * @default
+             */
+            slug: string;
+            /**
+             * Source
+             * @default github
+             */
+            source: string;
             /** Status */
             status: string;
+        };
+        /**
+         * RepoSourceDTO
+         * @description 这个部署能接的来源。
+         *
+         *     清单由装着的适配器答(`registry.webhook_adapters()`):加一个新平台是装一个
+         *     插件的事,核心里没有一张写死 github / cnb / gitlab 的表。
+         */
+        RepoSourceDTO: {
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Source */
+            source: string;
+        };
+        /**
+         * RepoSyncDTO
+         * @description 读一次仓库已有议题的结果。
+         *
+         *     `listed=False` 是"这个来源列不出来",不是失败:适配器没声明 `list_issues`、
+         *     或者本次读取被来源拒了,原因在 `reason` 里。别把它读成"这个仓库没有议题"。
+         */
+        RepoSyncDTO: {
+            /**
+             * Added
+             * @default 0
+             */
+            added: number;
+            /**
+             * Listed
+             * @default false
+             */
+            listed: boolean;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /**
+             * Seen
+             * @default 0
+             */
+            seen: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** ResetCompleteDTO */
         ResetCompleteDTO: {
@@ -2696,6 +3207,42 @@ export interface components {
              * @default
              */
             password: string;
+        };
+        /**
+         * WorkspaceDTO
+         * @description 一个工作区 = 一个租户。
+         *
+         *     界面上"工作区"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、
+         *     配置、密钥、成员都落在它里面,跨工作区不共享一条账。
+         */
+        WorkspaceDTO: {
+            /** Name */
+            name: string;
+            /**
+             * Repos
+             * @default 0
+             */
+            repos: number;
+            /** Slug */
+            slug: string;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: string[];
+        };
+        /** WorkspaceListDTO */
+        WorkspaceListDTO: {
+            /**
+             * Current
+             * @default
+             */
+            current: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["WorkspaceDTO"][];
         };
     };
     responses: never;
@@ -3187,7 +3734,8 @@ export interface operations {
     issue_board_api_board_get: {
         parameters: {
             query?: {
-                tenant?: string | null;
+                project?: string | null;
+                repo?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3222,7 +3770,6 @@ export interface operations {
                 verdict?: string | null;
                 binding?: string | null;
                 incident?: string | null;
-                tenant?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3253,9 +3800,7 @@ export interface operations {
     };
     get_change_api_changes__unit_id__get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 unit_id: string;
@@ -3289,7 +3834,6 @@ export interface operations {
             query?: {
                 by?: string;
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3323,7 +3867,6 @@ export interface operations {
         parameters: {
             query?: {
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3358,7 +3901,6 @@ export interface operations {
             query?: {
                 by?: string;
                 reason?: string;
-                tenant?: string | null;
             };
             header?: never;
             path: {
@@ -3735,7 +4277,6 @@ export interface operations {
     list_incidents_api_incidents_get: {
         parameters: {
             query?: {
-                tenant?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3766,9 +4307,7 @@ export interface operations {
     };
     get_incident_api_incidents__incident_id__get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 incident_id: string;
@@ -3797,11 +4336,169 @@ export interface operations {
             };
         };
     };
+    list_invitations_api_invitations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_invitation_api_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invitation_api_invitations__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_invitation_api_invitations__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invitation_api_invitations__token__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAcceptDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     continue_issue_api_issues__issue_id__continue_post: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 issue_id: string;
@@ -3836,9 +4533,7 @@ export interface operations {
     };
     issue_timeline_api_issues__issue_id__timeline_get: {
         parameters: {
-            query?: {
-                tenant?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 issue_id: string;
@@ -3989,6 +4684,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_root_api_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -4213,6 +4930,134 @@ export interface operations {
             };
         };
     };
+    list_projects_api_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListDTO"];
+                };
+            };
+        };
+    };
+    put_project_credential_api_projects__slug__credentials__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_settings_api_projects__slug__settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_project_settings_api_projects__slug__settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSettingsDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_quota_api_quota_get: {
         parameters: {
             query?: {
@@ -4294,6 +5139,166 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoDTO"][];
+                };
+            };
+        };
+    };
+    list_sources_api_repos_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSourceDTO"][];
+                };
+            };
+        };
+    };
+    connect_repo_api_repos__source___owner___name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoConnectDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_repo_api_repos__source___owner___name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pull_repo_issues_api_repos__source___owner___name__issues_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoSyncDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_repo_api_repos__source___owner___name__project_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRefDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4808,6 +5813,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspaces_api_workspaces_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListDTO"];
+                };
+            };
+        };
+    };
+    onboarding_api_workspaces__slug__onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

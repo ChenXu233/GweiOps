@@ -11,6 +11,15 @@ const { show: showPalette } = usePalette()
 const { data: settings } = useSettings()
 // 谁在操作。首屏没有就拉一次;退出按钮走同一个 composable。
 const { user, load: loadUser, logout } = useAuth()
+
+// 一个人在每个工作区里的角色不一样,所以这一行要看"当前落在哪个工作区"。
+const displayName = computed(() => user.value?.display_name || '')
+const roleLine = computed(() => {
+  if (user.value?.is_sub_user) return '子成员'
+  const roles = user.value?.roles ?? []
+  if (!roles.length) return user.value?.workspace ? '没有角色' : '不属于任何工作区'
+  return roles.map((r) => r.name).join(' / ')
+})
 onMounted(() => {
   if (!user.value) loadUser()
 })
@@ -102,6 +111,11 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
       </button>
     </div>
 
+    <!-- 工作区:换它 = 换一整套议题、账本、配置与成员。永远在导航之上。 -->
+    <div class="shrink-0 pb-1.5" :class="rail ? 'px-3 lg:px-3.5' : 'px-3'">
+      <WorkspaceSwitcher :rail="rail" />
+    </div>
+
     <!-- 搜索 -->
     <div class="shrink-0 px-3" :class="rail ? 'lg:px-3.5' : ''">
       <button
@@ -183,14 +197,14 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
           <span
             class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-ink text-[11.5px] font-semibold text-paper"
           >
-            {{ (user?.name || settings?.teamName || '当').slice(0, 1) }}
+            {{ (displayName || settings?.teamName || '当').slice(0, 1) }}
           </span>
           <div class="min-w-0 flex-1">
             <div class="truncate text-[12.5px] font-medium leading-tight">
-              {{ user?.name || settings?.teamName || '当前租户' }}
+              {{ displayName || settings?.teamName || '当前租户' }}
             </div>
             <div class="mono-label mt-1 truncate">
-              {{ user?.is_sub_user ? '子账号' : '所有者' }} · {{ user?.tenant || settings?.plan || 'SELFHOST' }}
+              {{ roleLine }} · {{ user?.workspace || settings?.plan || 'SELFHOST' }}
             </div>
           </div>
           <button

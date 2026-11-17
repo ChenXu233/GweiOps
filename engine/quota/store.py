@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from engine.db import async_session_factory
-from engine.db.models import QuotaUsage, Tenant, User
+from engine.db.models import QuotaUsage, Tenant
 from engine.quota import Limit, limits_for
 
 

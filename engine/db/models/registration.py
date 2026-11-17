@@ -1,6 +1,8 @@
 """注册留下的三类事实:谁能联系到你、发出去的码、待激活的人。
 
 - `user_contacts`:一个人可以被几种方式联系到。手机号是核验过的才留下。
+  挂在**人**(`persons`)上,不挂在成员关系上:联系方式跟着人走,换工作区不该
+  重新验证一遍手机号。
 - `verification_codes`:一次性码,只存哈希。用完即删,过期不续。
 - `user_activations`:先验证、后建号。行还活着说明这个人还没成为用户。
 """
@@ -25,14 +27,14 @@ class UserContact(Base):
     __tablename__ = "user_contacts"
     __table_args__ = (
         Index("ix_user_contacts_target", "kind", "target", unique=True),
-        Index("ix_user_contacts_user", "user_id"),
+        Index("ix_user_contacts_person", "person_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
     )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)  # email | phone
     target: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -89,11 +91,11 @@ class PasswordResetToken(Base):
     """重置密码的一次性令牌。邮件链接里是明文,库里只有哈希。"""
 
     __tablename__ = "password_reset_tokens"
-    __table_args__ = (Index("ix_password_reset_user", "user_id"),)
+    __table_args__ = (Index("ix_password_reset_person", "person_id"),)
 
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
     )
     used: Mapped[bool] = mapped_column(default=False, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -103,19 +105,23 @@ class PasswordResetToken(Base):
 
 
 class ExternalIdentity(Base):
-    """OIDC 的 sub 与本地用户的绑定。同一 issuer + sub 只对应一个人。"""
+    """OIDC 的 sub 与本地人的绑定。同一 issuer + sub 只对应一个人。
+
+    绑定的是**人**,不是成员关系:统一身份登录一次,他属于哪些工作区由成员关系
+    决定,不由这条绑定决定。
+    """
 
     __tablename__ = "external_identities"
     __table_args__ = (
         Index("ix_external_identities_subject", "issuer", "subject", unique=True),
-        Index("ix_external_identities_user", "user_id"),
+        Index("ix_external_identities_person", "person_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("persons.id", ondelete="CASCADE"), nullable=False
     )
     issuer: Mapped[str] = mapped_column(String(255), nullable=False)
     subject: Mapped[str] = mapped_column(String(255), nullable=False)

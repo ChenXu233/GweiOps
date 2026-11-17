@@ -679,6 +679,24 @@ class PluginRegistry:
             raise LookupError(f"来源 {source!r} 有多个 webhook 适配器,拒绝猜一个")
         return found[0] if found else None
 
+    def webhook_adapters(self) -> list[PluginBase]:
+        """每一个来源各一个适配器 —— "现在能接哪些来源"由装着的插件答。
+
+        与 `webhook_adapter(source)` 同一套判据:声明了 `webhook.receive` 的实例,
+        按它自己声明的来源名排。同名来源有多个提供者时**不列出**那一个:那种情况
+        下面取不到确定的适配器,当成能接就会在投递时才炸。
+        """
+        by_source: dict[str, list[PluginBase]] = {}
+        for key, instance in self._instances.items():
+            source = str(getattr(instance, "source", "") or "")
+            if not source:
+                continue
+            manifest = self._manifests.get(self._instance_names.get(key, ""))
+            if manifest is not None and "webhook.receive" not in manifest.capabilities:
+                continue
+            by_source.setdefault(source, []).append(instance)
+        return [found[0] for found in by_source.values() if len(found) == 1]
+
     def instances_for_event(self, event: str) -> list[PluginBase]:
         return [
             self._instances[key] for key in self._event_index.get(event, [])

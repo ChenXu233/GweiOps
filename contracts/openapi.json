@@ -384,6 +384,34 @@
         "title": "ContinuedDTO",
         "type": "object"
       },
+      "CredentialDTO": {
+        "description": "一条项目级凭据。`value` 只写不读 —— 读回来的响应里没有这一栏。",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "CredentialDTO",
+        "type": "object"
+      },
       "DecisionDTO": {
         "properties": {
           "allow": {
@@ -587,6 +615,47 @@
           "total"
         ],
         "title": "IncidentListDTO",
+        "type": "object"
+      },
+      "InviteAcceptDTO": {
+        "description": "接邀请时他要设的密码。这个邮箱已经有人时不需要 —— 给了也不改他的。",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "title": "InviteAcceptDTO",
+        "type": "object"
+      },
+      "InviteCreateDTO": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InviteCreateDTO",
         "type": "object"
       },
       "IssueBoardDTO": {
@@ -1399,6 +1468,103 @@
         "title": "PluginWidgetMetricDTO",
         "type": "object"
       },
+      "ProjectDTO": {
+        "description": "一个项目 —— 仓库上面那一级。\n\n项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在\n工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是\n行自己的 slug。",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "issues": {
+            "default": 0,
+            "title": "Issues",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repos": {
+            "default": 0,
+            "title": "Repos",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "workspace",
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "title": "ProjectDTO",
+        "type": "object"
+      },
+      "ProjectListDTO": {
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProjectDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "ProjectListDTO",
+        "type": "object"
+      },
+      "ProjectRefDTO": {
+        "description": "仓库挂到哪个项目。空串 = 挂回按全名第一段的默认归属。",
+        "properties": {
+          "project": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "title": "ProjectRefDTO",
+        "type": "object"
+      },
+      "ProjectSettingsDTO": {
+        "properties": {
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "ProjectSettingsDTO",
+        "type": "object"
+      },
       "QuotaDTO": {
         "properties": {
           "items": {
@@ -1476,6 +1642,45 @@
         "title": "ReleaseValuesDTO",
         "type": "object"
       },
+      "RepoConnectDTO": {
+        "description": "接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。\n\n`issue_sync` 是接进来那一刻顺带读的那一次:已经发生的议题补进板子,不等下一次\n投递。它是读,不是替人跑一次工作流。",
+        "properties": {
+          "created": {
+            "default": false,
+            "title": "Created",
+            "type": "boolean"
+          },
+          "issue_sync": {
+            "$ref": "#/components/schemas/RepoSyncDTO",
+            "default": {
+              "added": 0,
+              "listed": false,
+              "reason": "",
+              "seen": 0,
+              "truncated": false
+            }
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "source",
+          "name"
+        ],
+        "title": "RepoConnectDTO",
+        "type": "object"
+      },
       "RepoDTO": {
         "properties": {
           "activeAgents": {
@@ -1502,6 +1707,26 @@
             "title": "Name",
             "type": "string"
           },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "projectName": {
+            "default": "",
+            "title": "Projectname",
+            "type": "string"
+          },
+          "slug": {
+            "default": "",
+            "title": "Slug",
+            "type": "string"
+          },
+          "source": {
+            "default": "github",
+            "title": "Source",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1517,6 +1742,57 @@
           "lastSyncAt"
         ],
         "title": "RepoDTO",
+        "type": "object"
+      },
+      "RepoSourceDTO": {
+        "description": "这个部署能接的来源。\n\n清单由装着的适配器答(`registry.webhook_adapters()`):加一个新平台是装一个\n插件的事,核心里没有一张写死 github / cnb / gitlab 的表。",
+        "properties": {
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "RepoSourceDTO",
+        "type": "object"
+      },
+      "RepoSyncDTO": {
+        "description": "读一次仓库已有议题的结果。\n\n`listed=False` 是\"这个来源列不出来\",不是失败:适配器没声明 `list_issues`、\n或者本次读取被来源拒了,原因在 `reason` 里。别把它读成\"这个仓库没有议题\"。",
+        "properties": {
+          "added": {
+            "default": 0,
+            "title": "Added",
+            "type": "integer"
+          },
+          "listed": {
+            "default": false,
+            "title": "Listed",
+            "type": "boolean"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "seen": {
+            "default": 0,
+            "title": "Seen",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "title": "RepoSyncDTO",
         "type": "object"
       },
       "ResetCompleteDTO": {
@@ -2416,6 +2692,57 @@
         ],
         "title": "VerifyDTO",
         "type": "object"
+      },
+      "WorkspaceDTO": {
+        "description": "一个工作区 = 一个租户。\n\n界面上\"工作区\"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、\n配置、密钥、成员都落在它里面,跨工作区不共享一条账。",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repos": {
+            "default": 0,
+            "title": "Repos",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "title": "WorkspaceDTO",
+        "type": "object"
+      },
+      "WorkspaceListDTO": {
+        "properties": {
+          "current": {
+            "default": "",
+            "title": "Current",
+            "type": "string"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceDTO"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "title": "WorkspaceListDTO",
+        "type": "object"
       }
     }
   },
@@ -2602,6 +2929,7 @@
     },
     "/api/auth/me": {
       "get": {
+        "description": "我是谁。老路径,回答 `/api/me` 的同一个形状(没写工作区段时是最早的那一个)。",
         "operationId": "me_api_auth_me_get",
         "responses": {
           "200": {
@@ -2698,7 +3026,7 @@
     },
     "/api/auth/password": {
       "post": {
-        "description": "改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。",
+        "description": "改自己的密码。要验旧密码;改完把旧会话全踢掉,再发一个新的给当前浏览器。\n\n改的是**人**的密码:一次改完,他在每个工作区里都是新密码。",
         "operationId": "change_password_api_auth_password_post",
         "requestBody": {
           "content": {
@@ -2924,7 +3252,7 @@
     },
     "/api/auth/setup": {
       "post": {
-        "description": "第一次跑起来时创建所有者。库里已经有用户就直接 409,不留后门。",
+        "description": "第一次跑起来时创建所有者。库里已经有人就直接 409,不留后门。",
         "operationId": "setup_api_auth_setup_post",
         "requestBody": {
           "content": {
@@ -2986,12 +3314,12 @@
     },
     "/api/board": {
       "get": {
-        "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。",
+        "description": "议题板:首页那一张列表。\n\n一块板子三个段,判据与详情页同源(`normalize_state`)——列表说\"在跑\"、\n点进去说\"落了\"是最难查的那类 bug。三段各按自己的顺序排:等着的按等得\n最久在前,跑着与落了的按最新在前。\n\n`project` 与 `repo` 是范围闸,不是两段导航:板子始终只有一个,收窄的是它看\n的范围 —— 整个工作区 → 某个项目 → 某个仓库。两档都给时仓库那个说了算:它更窄,\n而它能被选到,本身就说明它属于当前这一档。",
         "operationId": "issue_board_api_board_get",
         "parameters": [
           {
             "in": "query",
-            "name": "tenant",
+            "name": "project",
             "required": false,
             "schema": {
               "anyOf": [
@@ -3002,7 +3330,23 @@
                   "type": "null"
                 }
               ],
-              "title": "Tenant"
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
             }
           },
           {
@@ -3096,22 +3440,6 @@
           },
           {
             "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -3157,22 +3485,6 @@
             "schema": {
               "title": "Unit Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -3234,22 +3546,6 @@
               "title": "Reason",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
           }
         ],
         "responses": {
@@ -3299,22 +3595,6 @@
               "default": "人工回滚",
               "title": "Reason",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -3375,22 +3655,6 @@
               "default": "人工否决",
               "title": "Reason",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -3870,22 +4134,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -3932,22 +4180,6 @@
               "title": "Incident Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
-            }
           }
         ],
         "responses": {
@@ -3975,6 +4207,198 @@
         "summary": "Get Incident"
       }
     },
+    "/api/invitations": {
+      "get": {
+        "operationId": "list_invitations_api_invitations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Invitations Api Invitations Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Invitations"
+      },
+      "post": {
+        "description": "发一条邀请。响应里的 `token` 只出现这一次 —— 拼成链接交给被邀请人。",
+        "operationId": "create_invitation_api_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCreateDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Invitation Api Invitations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invitation"
+      }
+    },
+    "/api/invitations/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_invitation_api_invitations__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Invitation Api Invitations  Invite Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invitation"
+      }
+    },
+    "/api/invitations/{token}": {
+      "get": {
+        "description": "这条链接现在什么情况。不要求登录:链接本身就是凭据。\n\n过期、用过、撤销过都正常返回状态,由页面给下一步 —— 404 只会让被邀请人\n以为链接坏了。",
+        "operationId": "preview_invitation_api_invitations__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Invitation Api Invitations  Token  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invitation"
+      },
+      "post": {
+        "description": "接邀请。成功之后这个人就已经登录了 —— 顺手发一个会话,少一步。",
+        "operationId": "accept_invitation_api_invitations__token__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteAcceptDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Invitation Api Invitations  Token  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invitation"
+      }
+    },
     "/api/issues/{issue_id}/continue": {
       "post": {
         "description": "从界面发起新一轮:话题不变、分支不变、PR 不新开。\n\n权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。\n真要细分的话是加一条新权限,不是在这里各自判断。",
@@ -3987,22 +4411,6 @@
             "schema": {
               "title": "Issue Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -4053,22 +4461,6 @@
             "schema": {
               "title": "Issue Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tenant",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant"
             }
           }
         ],
@@ -4229,6 +4621,27 @@
           }
         },
         "summary": "Revoke Key"
+      }
+    },
+    "/api/me": {
+      "get": {
+        "description": "`/api/me`:一个人,以及他在每个工作区里的角色。\n\n路径不带工作区段时 `workspace` 取他最早的那条成员关系;带了就是那一个。",
+        "operationId": "me_root_api_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Me Root Api Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Me Root"
       }
     },
     "/api/metrics": {
@@ -4511,6 +4924,177 @@
         "summary": "Plugin Ui Asset"
       }
     },
+    "/api/projects": {
+      "get": {
+        "description": "这个工作区里的项目,以及每个项目下面有几个仓库、几条议题。\n\n项目是仓库上面那一级,也是范围闸上的中间那一档:整个工作区 → 某个项目 →\n某个仓库。它是资源不只是标签 —— 项目级的可见性、默认动作、凭据要有地方摆。\n工作区从路径来,不从查询串来。",
+        "operationId": "list_projects_api_projects_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Projects"
+      }
+    },
+    "/api/projects/{slug}/credentials/{key}": {
+      "put": {
+        "description": "写一条项目级凭据。值进密钥仓库,库里只留键与说明。\n\n空值等于删掉:凭据没有\"空着\"这种状态 —— 空着和没设是同一件事,分成两种会让\n\"设了没有\"永远有两种答案。",
+        "operationId": "put_project_credential_api_projects__slug__credentials__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Project Credential Api Projects  Slug  Credentials  Key  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Project Credential"
+      }
+    },
+    "/api/projects/{slug}/settings": {
+      "get": {
+        "operationId": "get_project_settings_api_projects__slug__settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Project Settings Api Projects  Slug  Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Project Settings"
+      },
+      "put": {
+        "description": "可见性与默认发布参数。两者都在这一行里,整份写、不担心字段级 diff。",
+        "operationId": "put_project_settings_api_projects__slug__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSettingsDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Project Settings Api Projects  Slug  Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Project Settings"
+      }
+    },
     "/api/quota": {
       "get": {
         "description": "这个租户每条限量的用量。没声明的资源不出现在里面。",
@@ -4611,6 +5195,7 @@
     },
     "/api/repos": {
       "get": {
+        "description": "这个工作区里的仓库。工作区从路径来(`/api/workspaces/acme/repos`),不是参数。\n\n同一个仓库名在两个工作区里是两份数据,所以每行都带上来源;仓库上面还有项目,\n所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。",
         "operationId": "list_repos_api_repos_get",
         "responses": {
           "200": {
@@ -4629,6 +5214,273 @@
           }
         },
         "summary": "List Repos"
+      }
+    },
+    "/api/repos/sources": {
+      "get": {
+        "description": "这个部署能接哪些来源。装着的适配器说了算,不是一张写死的清单。",
+        "operationId": "list_sources_api_repos_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepoSourceDTO"
+                  },
+                  "title": "Response List Sources Api Repos Sources Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sources"
+      }
+    },
+    "/api/repos/{source}/{owner}/{name}": {
+      "delete": {
+        "description": "解除接入。议题与账本行留着:账是发生过的事,不跟着绑定一起消失。",
+        "operationId": "disconnect_repo_api_repos__source___owner___name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Disconnect Repo Api Repos  Source   Owner   Name  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disconnect Repo"
+      },
+      "put": {
+        "description": "接入一个仓库。\n\n接入的意思是\"这一道账从现在起管这份代码\",所以它当场读一次这个仓库已有的\n议题,把已经发生的事补进来 —— 否则人接完看到的是一张空板子,而出问题的那条\n议题通常早在接之前就开了。\n\n这一下是**读**:补进来的是议题事实,不拉代码、不跑模型、不回评。判据在答复\n里 —— `issue_sync.added` 是补进来的条数,不是\"起了几个工作流\"。",
+        "operationId": "connect_repo_api_repos__source___owner___name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoConnectDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connect Repo"
+      }
+    },
+    "/api/repos/{source}/{owner}/{name}/issues": {
+      "post": {
+        "description": "再读一次这个仓库已有的议题。\n\n接入那一刻已经读过一次;这条路径是给人补的 —— 读的时候上游正好不通、或者\n接入之后仓库上又开了几十条。它与接入时读的是同一个函数,不会读成两份。",
+        "operationId": "pull_repo_issues_api_repos__source___owner___name__issues_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSyncDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pull Repo Issues"
+      }
+    },
+    "/api/repos/{source}/{owner}/{name}/project": {
+      "put": {
+        "description": "把已接入的仓库挂到另一个项目。空串 = 回到按全名第一段的默认归属。",
+        "operationId": "attach_repo_api_repos__source___owner___name__project_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectRefDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Attach Repo Api Repos  Source   Owner   Name  Project Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attach Repo"
       }
     },
     "/api/roles": {
@@ -5237,6 +6089,46 @@
           }
         },
         "summary": "Update User"
+      }
+    },
+    "/api/workspaces": {
+      "get": {
+        "description": "我可以进的工作区(租户),以及每个里面有几个仓库、来自哪些平台。\n\n人这一侧问的是\"我属于哪几家\" —— 这个选择器换的是数据边界,列出一个我进不去\n的工作区,只会给出\"它在这儿但你不能点\"的坏体验。机器那一侧(静态令牌 / 密钥)\n本来就写死一个租户,回答的还是那一个。",
+        "operationId": "list_workspaces_api_workspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceListDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Workspaces"
+      }
+    },
+    "/api/workspaces/{slug}/onboarding": {
+      "get": {
+        "description": "这个工作区走到\"第一条工作流\"还差什么。\n\n开通不该是一份要人读的文档:陌生人自己走一遍,每一步都要说得出下一步做什么。\n读接口,不改任何东西 —— 状态从来源配置、仓库数、议题与账本现算。",
+        "operationId": "onboarding_api_workspaces__slug__onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Api Workspaces  Slug  Onboarding Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Onboarding"
       }
     },
     "/mcp": {

@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from engine.api.auth import TokenConfigError, load_tokens
@@ -50,7 +50,7 @@ class Provider:
         return True, {"comment_exists": True}
 
 
-def _unit(verdict="kept", handle="42", unit_id="u1", tenant="acme"):
+def _unit(verdict="kept", handle="42", unit_id="u1", tenant="acme", repo=""):
     return ChangeUnit(
         id=unit_id,
         intent={"summary": "回评"},
@@ -62,6 +62,7 @@ def _unit(verdict="kept", handle="42", unit_id="u1", tenant="acme"):
             capability="comment.create",
         ),
         tenant=tenant,
+        repo=repo,
         binding="github",
         handle=handle,
         window=Window(unbounded=True, source="test"),
@@ -186,18 +187,42 @@ def test_a_tenant_token_only_sees_its_own_rows(ledger):
     assert [row["id"] for row in body["items"]] == ["a"]
 
 
-def test_asking_for_another_tenant_is_403(ledger):
+def test_asking_for_another_tenant_is_rejected(ledger):
+    """工作区只能写在路径里。查询串再写一次不再生效 —— 这个迷你 app 只装了
+    changes 那条路由,所以这里的判据是"它不再能改变分账",而不是状态码。"""
+    asyncio.run(ledger.append(_unit()))
     resp = _client(OPERATOR).get(
         "/api/changes?tenant=other", headers=_h("t-operate")
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 1
 
 
-def test_a_wildcard_token_sees_everything(ledger):
-    asyncio.run(ledger.append(_unit(unit_id="a", tenant="acme")))
-    asyncio.run(ledger.append(_unit(unit_id="b", tenant="other")))
-    body = _client(ROOT).get("/api/changes", headers=_h("t-root")).json()
-    assert body["total"] == 2
+def test_the_workspace_segment_is_what_selects_the_account():
+    """工作区写在路径里:折成路由认得的那条,再把里面那一段定成这次请求的工作区。
+
+    折路径与定工作区是**同一步**:只折不定,请求会落到默认工作区;只定不折,路由
+    认不出。所以这里一次验两件事 —— 折过去的路径命中了 `/api/probe`,而且
+    `workspace_access()` 用的是路径里那一段。
+    """
+    from engine.api.auth import workspace_access
+
+    app = FastAPI()
+
+    @app.get("/api/probe")
+    async def probe(request: Request) -> dict:  # 只在这一份 app 上存在
+        return {"ws": workspace_access(request)}
+
+    app.middleware("http")(changes_mod_middleware(OPERATOR))
+    client = TestClient(app)
+
+    own = client.get("/api/workspaces/acme/probe", headers=_h("t-operate"))
+    assert own.status_code == 200
+    assert own.json()["ws"] == "acme"
+
+    other = client.get("/api/workspaces/other/probe", headers=_h("t-operate"))
+    assert other.status_code == 403
+    assert "other" in other.json()["detail"]
 
 
 def test_another_tenants_change_is_404_not_403(ledger):
@@ -232,3 +257,147 @@ def test_tokens_parse_into_actors():
 def test_actor_repr_does_not_leak_the_token():
     actor = load_tokens(OPERATOR)["t-operate"]
     assert "t-operate" not in repr(actor)
+
+
+# ---------------------------------------------------------------------------
+# 按仓库分工:只授了一个仓库的人,动不了别的仓库
+# ---------------------------------------------------------------------------
+
+
+SCOPED = "t-scoped:acme:只管一个仓库:operate"
+
+
+def _client_with_actor(actor) -> TestClient:
+    """一条把身份写死的通道:静态令牌没有细粒度权限,这里要的正是那种身份。"""
+    from engine.api.auth import make_middleware
+
+    app = FastAPI()
+    app.include_router(changes_mod.router)
+
+    async def middleware(request, call_next):
+        request.state.actor = actor
+        request.state.identity = None
+        return await call_next(request)
+
+    app.middleware("http")(middleware)
+    return TestClient(app)
+
+
+def _scoped_actor():
+    from engine.api.auth import Actor
+
+    return Actor(
+        token_id="key",
+        name="只管一个仓库",
+        tenant="acme",
+        scope="operate",
+        permissions=frozenset({"changes.read"}),
+        scoped_permissions={"changes.approve": frozenset({"github-acme-api"})},
+    )
+
+
+def test_a_repo_scoped_identity_can_approve_on_that_repo(ledger, monkeypatch):
+    from engine.api.auth import set_auth_required
+
+    asyncio.run(ledger.append(_unit("blocked", handle=None, repo="github-acme-api")))
+    provider = Provider()
+    monkeypatch.setattr(
+        changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
+    )
+    set_auth_required(True)
+    try:
+        resp = _client_with_actor(_scoped_actor()).post("/api/changes/u1/approve")
+    finally:
+        set_auth_required(False)
+    assert resp.status_code == 200, resp.text
+
+
+def test_a_repo_scoped_identity_cannot_approve_on_another_repo(ledger, monkeypatch):
+    from engine.api.auth import set_auth_required
+
+    asyncio.run(ledger.append(_unit("blocked", handle=None, repo="github-acme-web")))
+    provider = Provider()
+    monkeypatch.setattr(
+        changes_mod.registry, "effect_decl", lambda *a, **k: (provider, DECL)
+    )
+    set_auth_required(True)
+    try:
+        resp = _client_with_actor(_scoped_actor()).post("/api/changes/u1/approve")
+    finally:
+        set_auth_required(False)
+    assert resp.status_code == 403
+    assert "changes.approve" in resp.json()["detail"]
+
+
+def test_a_scoped_only_identity_cannot_act_workspace_wide():
+    """只授了某几个仓库的权限,不等于在这个工作区上有这个权限,而且要说清楚。"""
+    from fastapi import HTTPException
+
+    from engine.api.auth import Actor, require, set_auth_required
+
+    actor = Actor(
+        token_id="key",
+        name="只管一个仓库",
+        tenant="acme",
+        scope="operate",
+        permissions=frozenset({"changes.read"}),
+        scoped_permissions={"changes.approve": frozenset({"github-acme-api"})},
+    )
+
+    class Request:
+        class state:  # noqa: N801 - 形似 request.state
+            actor = None
+
+    request = Request()
+    request.state.actor = actor
+    set_auth_required(True)
+    try:
+        # 不点名仓库 = 整个工作区,不该放行
+        with pytest.raises(HTTPException) as raised:
+            require(request, "changes.approve")
+        assert raised.value.status_code == 403
+        assert "只对具体范围生效" in raised.value.detail
+        # 点名那个仓库就放行
+        require(request, "changes.approve", "github-acme-api")
+    finally:
+        set_auth_required(False)
+
+
+def test_a_project_scoped_identity_covers_the_whole_project():
+    """授在项目上的人,对项目下每一个仓库都放行 —— 判定链 repo → project → 工作区。
+
+    这一档必须问出来,不能在建身份时展开:项目下新加一个仓库时,没有人回来改
+    这份身份,展开的那一份会漏掉它(engine/api/auth.py 的 require)。
+    """
+    from fastapi import HTTPException
+
+    from engine.api.auth import Actor, require, set_auth_required
+
+    actor = Actor(
+        token_id="key",
+        name="只管 acme",
+        tenant="acme",
+        scope="operate",
+        permissions=frozenset({"changes.read"}),
+        scoped_permissions={"changes.approve": frozenset({"acme"})},
+    )
+
+    class Request:
+        class state:  # noqa: N801 - 形似 request.state
+            actor = None
+
+    request = Request()
+    request.state.actor = actor
+    set_auth_required(True)
+    try:
+        # 项目下的仓库,带上项目就放行
+        require(request, "changes.approve", "github-acme-api", "acme")
+        # 不带项目,只写仓库 slug:那一档没点这个仓库,不放行
+        with pytest.raises(HTTPException) as raised:
+            require(request, "changes.approve", "github-acme-api")
+        assert raised.value.status_code == 403
+        # 项目外的仓库不放行,即使它也叫 api
+        with pytest.raises(HTTPException):
+            require(request, "changes.approve", "github-other-api", "other")
+    finally:
+        set_auth_required(False)

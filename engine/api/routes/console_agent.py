@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from engine.agent import console as store
-from engine.api.auth import actor_of, require, tenant_scope
+from engine.api.auth import actor_of, require, workspace_access
 from engine.api.schemas import (
     ConsolePendingDTO,
     ConsoleSessionDTO,
@@ -106,7 +106,7 @@ async def open_session(request: Request, body: SessionOpenDTO | None = None) -> 
     if actor is None and auth_required():
         raise HTTPException(status_code=401, detail="未登录或令牌无效")
     draft = body or SessionOpenDTO()
-    tenant = tenant_scope(request, draft.tenant or None) or config.settings.default_tenant_slug
+    tenant = workspace_access(request) or config.settings.default_tenant_slug
     try:
         session = await store.open_session(
             actor=actor,

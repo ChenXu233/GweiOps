@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from engine.api.auth import tenant_scope
+from engine.api.auth import workspace_access
 from engine.api.schemas import IncidentDTO, IncidentListDTO
 from engine.incidents import create_incident_store
 
@@ -24,19 +24,19 @@ router = APIRouter(dependencies=[Depends(_need_changes_read)])
 
 @router.get("/api/incidents")
 async def list_incidents(
-    request: Request, tenant: str | None = None, limit: int = 50
+    request: Request, limit: int = 50
 ) -> IncidentListDTO:
     """最近的在前。status 停在 open 的那几行,就是开了没收口的事故。"""
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     rows = await create_incident_store().list(tenant=tenant, limit=limit)
     return IncidentListDTO(items=rows, total=len(rows))
 
 
 @router.get("/api/incidents/{incident_id}")
 async def get_incident(
-    incident_id: str, request: Request, tenant: str | None = None
+    incident_id: str, request: Request
 ) -> IncidentDTO:
-    tenant = tenant_scope(request, tenant)
+    tenant = workspace_access(request)
     row = await create_incident_store().get(incident_id, tenant=tenant)
     if row is None:
         raise HTTPException(status_code=404, detail="unknown incident")

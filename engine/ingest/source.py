@@ -11,6 +11,11 @@
 | `mentions` | 这个来源上人叫平台用的触发词(CNB 上是 `@CodeBuddy`,不是 `@gwei`) |
 | `webhook_configured()` / `verify_webhook()` / `parse_webhook()` | 验签与归一化 |
 | `workspace_source(repo)` | 把哪份代码、哪条分支放进工作区 |
+| `list_issues(repo)` | 接进来的那一刻,这个仓库上已经有哪些议题(可选能力) |
+
+`list_issues` 是**可选**的:不声明就是"这个来源列不出来",入口照原样说"列不了",
+不去猜、不兜底。声明了就要一次返回本页的所有议题,由 `since` 给出下一页的继续点
+(见 `IssuePage`)—— 分页是"这个来源怎么翻页"的事,核心不知道任何一家的游标。
 
 **不拿某一个适配器兜底**:把 GitHub 的仓库名发给 CNB,要么 404,要么在另一个
 仓库里留下一条评论。所以解析只有一种"找不到"的表达 —— `LookupError`,调用方
@@ -19,10 +24,48 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 # 一条评论要平台动起来,得有人用这些词叫它。空元组 = 这个来源不接评论触发。
 DEFAULT_MENTIONS: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class IssueRef:
+    """来源上的一个议题,已经归一化成平台这一侧的形状。
+
+    只有这几栏:`repo` / `source` 由调用方补(它才知道自己在接哪个仓库),
+    `number` 每一条都必须有 —— 议题号是仓库内唯一的那个键,别的都可能缺。
+    """
+
+    number: int
+    title: str
+    body: str = ""
+    action: str = "opened"
+    is_pull: bool = False
+
+
+@dataclass(frozen=True)
+class IssuePage:
+    """一页议题 + 下一页的继续点。
+
+    `cursor` 为空 = 没有下一页。它是不透明的:核心只把它原样交还给同一个适配器,
+    不解释、不拼装 —— 游标是"这个来源怎么翻页"的事。
+    """
+
+    issues: list[IssueRef] = field(default_factory=list)
+    cursor: str = ""
+
+
+async def list_issues_of(adapter: Any, repo: str, cursor: str = "") -> IssuePage:
+    """问适配器要一页议题。没声明这个能力就抛 `LookupError`,由调用方如实报告。"""
+    fn = getattr(adapter, "list_issues", None)
+    if fn is None:
+        raise LookupError(
+            f"{type(adapter).__name__} 没有实现 list_issues:这个来源列不出仓库里已有的议题"
+        )
+    return await fn(repo, cursor)
 
 
 def source_adapter(source: str) -> Any:
@@ -78,6 +121,9 @@ async def workspace_source_of(adapter: Any, repo: str) -> Any:
 
 __all__ = [
     "DEFAULT_MENTIONS",
+    "IssuePage",
+    "IssueRef",
+    "list_issues_of",
     "mentions_of",
     "mentions_prompt",
     "source_adapter",

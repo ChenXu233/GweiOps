@@ -1,5 +1,5 @@
 # engine/auth/admin.py
-"""角色与用户的增删改 —— RBAC 里"谁来定义权限"的那一半。
+"""角色与成员的增删改 —— RBAC 里"谁来定义权限"的那一半。
 
 两条红线写在这里,不靠界面提示:
 
@@ -7,6 +7,10 @@
    "自己有效权限"的子集——子账号尤其如此。
 2. **不能把自己删掉,也不能把最后一个所有者删掉**:删完之后"谁能管这个租户"
    就没有答案了。
+
+这里改的是**成员关系**:同一句"把人拉进来",在 Acme 里是给这个人加一条成员
+关系,不是再建一条密码。人在别的部署里已经存在时,新成员关系直接挂到那一个人身上,
+display_name 从人那里借,只有角色是这个工作区单独给的。
 """
 
 from __future__ import annotations
@@ -17,10 +21,16 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from engine.auth import ALL_PERMISSIONS, Identity, hash_password
+from engine.auth import (
+    ALL_PERMISSIONS,
+    SCOPED_PERMISSIONS,
+    Identity,
+    hash_password,
+    split_scoped,
+)
 from engine.auth import store as auth_store
 from engine.db import async_session_factory
-from engine.db.models import Role, Tenant, User, UserRole
+from engine.db.models import Membership, Person, Role, Tenant, UserRole
 
 
 class AdminError(ValueError):
@@ -35,9 +45,62 @@ async def _tenant_id(session: AsyncSession, slug: str) -> uuid.UUID:
 
 
 def _clean_permissions(raw: list[str] | None) -> list[str]:
-    """只留看得懂的权限,顺序固定,方便前端比对。"""
-    picked = {p for p in (raw or []) if p in ALL_PERMISSIONS}
+    """只留看得懂的权限,顺序固定,方便前端比对。
+
+    带范围的写法(`changes.approve@github-acme-api`,或 `changes.approve@acme`)
+    也在这里过一遍:权限名得在目录里,收窄必须落在 `SCOPED_PERMISSIONS` 里,范围
+    名不能是空串。写错的条目丢掉而不是猜 —— 猜成工作区级会多给。
+
+    范围名是 `projects` 里的 slug,项目与仓库共用一个名字空间,所以这里不区分
+    两者:范围指着一个项目时,它下面每一个仓库都算数(含以后新增的)。**这里不查
+    库**——slug 是否存在是数据问题,不是权限问题;写个不存在的名字,后果只是
+    判定永远不命中,不会多给。
+    """
+    picked: set[str] = set()
+    for entry in raw or []:
+        text = str(entry or "").strip()
+        permission, sep, scope = text.partition("@")
+        if permission not in ALL_PERMISSIONS:
+            continue
+        if not sep:
+            picked.add(permission)
+            continue
+        if not scope.strip() or permission not in SCOPED_PERMISSIONS:
+            continue
+        picked.add(f"{permission}@{scope.strip()}")
     return sorted(picked)
+
+
+def _grantable_by(identity: Identity, wanted: list[str]) -> list[str]:
+    """授出去的东西不能超过自己 —— 带范围的也照这条判。
+
+    判据是"我手上这个权限覆盖不覆盖这一步":
+
+    - 工作区级那份覆盖任何范围(包括收窄给某个项目)
+    - 只被收窄过的那个权限,只覆盖它自己点名的那些范围,也覆盖不了整个工作区
+
+    没被收窄过的权限在工作区级,所以"整个工作区的放行权"可以给;只有 acme/api
+    放行权的人给不出 acme 的。
+    """
+    own_entries: list[str] = list(identity.permissions)
+    for permission, scopes in identity.scoped_permissions.items():
+        own_entries.extend(f"{permission}@{scope}" for scope in scopes)
+    own_whole, own_scoped = split_scoped(own_entries)
+    for entry in wanted:
+        permission, sep, scope = entry.partition("@")
+        if permission in own_whole:
+            continue
+        if not sep:
+            # 只有收窄过的那个权限,给不出整个工作区
+            raise AdminError("不能授出自己没有的权限")
+        if scope in own_scoped.get(permission, frozenset()):
+            continue
+        raise AdminError(
+            f"你手上的 {permission} 不包含 {scope},授不出去"
+            if permission in own_scoped
+            else "不能授出自己没有的权限"
+        )
+    return wanted
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +124,8 @@ async def list_roles(identity: Identity) -> list[dict]:
             (
                 await session.execute(
                     select(UserRole.role_id, func.count())
-                    .join(User, User.id == UserRole.user_id)
-                    .where(User.tenant_id == tenant_id)
+                    .join(Membership, Membership.user_id == UserRole.user_id)
+                    .where(Membership.tenant_id == tenant_id)
                     .group_by(UserRole.role_id)
                 )
             ).all()
@@ -181,17 +244,21 @@ async def delete_role(identity: Identity, role_id: str) -> None:
 
 
 async def list_users(identity: Identity) -> list[dict]:
+    """这个工作区的成员。一行是一条成员关系,`person_id` 是它挂在哪个人身上。
+
+    同一个人在两个工作区里就是两行、两个 id —— 页面只认得当前工作区,所以
+    `id` 是成员关系那个,不是人那个。
+    """
     async with async_session_factory() as session:
         tenant_id = await _tenant_id(session, identity.tenant)
-        users = list(
-            (
-                await session.execute(
-                    select(User).where(User.tenant_id == tenant_id).order_by(User.created_at)
-                )
+        users = (
+            await session.execute(
+                select(Membership, Person)
+                .join(Person, Person.id == Membership.person_id)
+                .where(Membership.tenant_id == tenant_id)
+                .order_by(Membership.created_at)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
         rows = (
             await session.execute(
                 select(UserRole.user_id, Role.id, Role.key, Role.name, Role.permissions)
@@ -200,26 +267,35 @@ async def list_users(identity: Identity) -> list[dict]:
             )
         ).all()
         by_user: dict[uuid.UUID, list[dict]] = {}
-        extra: dict[uuid.UUID, set[str]] = {}
+        extra: dict[uuid.UUID, dict[str, set[str]]] = {}
         for user_id, role_id, key, name, perms in rows:
             by_user.setdefault(user_id, []).append(
                 {"id": str(role_id), "key": key, "name": name}
             )
-            extra.setdefault(user_id, set()).update(perms or [])
+            # 角色里可能带范围的授权(`changes.approve@github-acme-api`),
+            # 界面要能把"他在这个仓库上能放行"显示出来,所以按仓库归一次。
+            for permission, scopes in split_scoped(perms or [])[1].items():
+                extra.setdefault(user_id, {}).setdefault(permission, set()).update(scopes)
 
         out = []
-        for user in users:
+        for user, person in users:
             out.append(
                 {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "display_name": user.display_name,
+                    "id": str(user.user_id),
+                    "person_id": str(person.id),
+                    "email": person.email,
+                    "display_name": user.display_name or person.display_name,
                     "status": user.status,
                     "is_sub_user": user.is_sub_user,
                     "permissions": sorted(set(user.permissions or [])),
-                    "roles": by_user.get(user.id, []),
+                    # 这个人额外能管哪几个仓库:{权限: [仓库 slug…]}
+                    "scoped_permissions": {
+                        permission: sorted(scopes)
+                        for permission, scopes in (extra.get(user.user_id) or {}).items()
+                    },
+                    "roles": by_user.get(user.user_id, []),
                     "created_at": user.created_at.isoformat() if user.created_at else "",
-                    "last_login_at": user.last_login_at.isoformat() if user.last_login_at else "",
+                    "last_login_at": person.last_login_at.isoformat() if person.last_login_at else "",
                 }
             )
         return out
@@ -229,27 +305,57 @@ async def create_user(
     identity: Identity,
     *,
     email: str,
-    password: str,
+    password: str = "",
     display_name: str = "",
     role_ids: list[str] | None = None,
     permissions: list[str] | None = None,
 ) -> dict:
+    """把一个人拉进这个工作区。
+
+    三种情况,三种做法,判据只有一条:**这个邮箱在这个部署里是不是已经有一个人**。
+
+    | 邮箱 | 密码 | 做法 |
+    | --- | --- | --- |
+    | 没有 | 给了 | 建 person + 建成员关系(这就是"新建一个人") |
+    | 有,但他不在这里 | 不给 | 只建成员关系 —— 他自己的密码属于他,不归这个工作区改写 |
+    | 有,而且已经在这里 | — | 拒绝:同一个工作区里一个人只该有一条成员关系 |
+
+    第二种是最要紧的那条:以前同一句"把人拉进来"会再建一行,连带第二份密码。
+    """
     email = (email or "").strip().lower()
     if not email or "@" not in email:
         raise AdminError("邮箱格式不对")
-    if len(password or "") < 8:
+    if password and len(password) < 8:
         raise AdminError("密码至少 8 位")
 
-    granted = _clean_permissions(permissions)
-    if not set(granted) <= set(identity.permissions):
-        raise AdminError("不能授出自己没有的权限")
+    granted = _grantable_by(identity, _clean_permissions(permissions))
 
     async with async_session_factory() as session:
         tenant_id = await _tenant_id(session, identity.tenant)
-        if await session.scalar(
-            select(User.id).where(User.tenant_id == tenant_id, User.email == email)
-        ):
-            raise AdminError("这个邮箱已经有人用了")
+        person = await session.scalar(select(Person).where(Person.email == email))
+        if person is not None:
+            already = await session.scalar(
+                select(Membership.user_id).where(
+                    Membership.tenant_id == tenant_id, Membership.person_id == person.id
+                )
+            )
+            if already:
+                raise AdminError("这个人已经在这个工作区里了")
+            if password:
+                raise AdminError(
+                    "这个邮箱已经有账号了;邀请他进来不用再设密码,密码属于他自己"
+                )
+        elif not password:
+            raise AdminError("新的人要有初始密码")
+        elif not person:
+            person = Person(
+                email=email,
+                display_name=(display_name or email.split("@")[0])[:128],
+                password_hash=hash_password(password),
+                status="active",
+            )
+            session.add(person)
+            await session.flush()
 
         roles: list[Role] = []
         for rid in role_ids or []:
@@ -257,35 +363,35 @@ async def create_user(
             if role is None or role.tenant_id != tenant_id:
                 raise AdminError("角色不存在")
             roles.append(role)
-        role_perms = {p for role in roles for p in (role.permissions or [])}
-        if not (role_perms | set(granted)) <= set(identity.permissions):
-            raise AdminError("不能授出自己没有的权限")
+        role_perms = sorted({p for role in roles for p in (role.permissions or [])})
+        _grantable_by(identity, role_perms)
 
-        # 建人的人是租户所有者(权限等于全集)时,新建的是同级用户;
-        # 否则就是自己的子账号——子账号的权限上限仍然是父用户。
+        # 建人的人是租户所有者(权限等于全集)时,新建的是同级成员;
+        # 否则就是自己的子成员——子成员的权限上限仍然是父成员。
         is_owner = set(identity.permissions) == set(ALL_PERMISSIONS)
-        user = User(
+        membership = Membership(
             tenant_id=tenant_id,
+            person_id=person.id,
             parent_id=None if is_owner else uuid.UUID(identity.user_id),
-            email=email,
-            display_name=display_name or email.split("@")[0],
-            password_hash=hash_password(password),
+            display_name=(display_name or person.display_name or email.split("@")[0])[:128],
             permissions=granted,
             status="active",
         )
-        session.add(user)
+        session.add(membership)
         await session.flush()
         for role in roles:
-            session.add(UserRole(user_id=user.id, role_id=role.id))
+            session.add(UserRole(user_id=membership.user_id, role_id=role.id))
         await session.commit()
         return {
-            "id": str(user.id),
-            "email": user.email,
-            "display_name": user.display_name,
-            "status": user.status,
-            "is_sub_user": user.is_sub_user,
+            "id": str(membership.user_id),
+            "person_id": str(person.id),
+            "email": person.email,
+            "display_name": membership.display_name,
+            "status": membership.status,
+            "is_sub_user": membership.is_sub_user,
             "roles": [{"id": str(r.id), "key": r.key, "name": r.name} for r in roles],
             "permissions": granted,
+            "scoped_permissions": {},
         }
 
 
@@ -299,16 +405,23 @@ async def update_user(
     permissions: list[str] | None = None,
     password: str | None = None,
 ) -> dict:
+    """改的是**这条成员关系**:角色、个人追加权限(含按范围收窄的那些)、从属、停用。
+
+    唯一的例外是密码:它属于人,不属于工作区。在这里改密码等于替这个人改了他
+    在所有工作区里的登录凭据 —— 所以只允许他自己改(`POST /api/auth/password`),
+    这条接口给了密码就直接拒绝,不静默替他改。
+    """
     target = uuid.UUID(user_id)
+    if password:
+        raise AdminError("密码属于这个人,不在工作区里改;让他自己走「改密码」")
+    granted: list[str] | None = None
     if permissions is not None:
-        granted = _clean_permissions(permissions)
-        if not set(granted) <= set(identity.permissions):
-            raise AdminError("不能授出自己没有的权限")
-    else:
-        granted = None
+        # 个人追加的权限与角色里那份是同一栏:`changes.approve@acme` 与
+        # `changes.approve` 一起写在这里,判定时由 `split_scoped` 拆成两份。
+        granted = _grantable_by(identity, _clean_permissions(permissions))
 
     async with async_session_factory() as session:
-        user = await session.get(User, target)
+        user = await session.get(Membership, target)
         tenant_id = await _tenant_id(session, identity.tenant)
         if user is None or user.tenant_id != tenant_id:
             raise AdminError("用户不存在")
@@ -318,15 +431,11 @@ async def update_user(
         if status is not None:
             if status not in ("active", "disabled"):
                 raise AdminError("状态只能是 active 或 disabled")
-            if status == "disabled" and str(user.id) == identity.user_id:
+            if status == "disabled" and str(user.user_id) == identity.user_id:
                 raise AdminError("不能停用自己")
             user.status = status
         if granted is not None:
             user.permissions = granted
-        if password:
-            if len(password) < 8:
-                raise AdminError("密码至少 8 位")
-            user.password_hash = hash_password(password)
         if role_ids is not None:
             roles = []
             for rid in role_ids:
@@ -335,20 +444,32 @@ async def update_user(
                     raise AdminError("角色不存在")
                 roles.append(role)
             await session.execute(
-                UserRole.__table__.delete().where(UserRole.user_id == user.id)
+                UserRole.__table__.delete().where(UserRole.user_id == user.user_id)
             )
             for role in roles:
-                session.add(UserRole(user_id=user.id, role_id=role.id))
+                session.add(UserRole(user_id=user.user_id, role_id=role.id))
         await session.commit()
-        return {"id": str(user.id), "email": user.email, "status": user.status}
+        person = await session.get(Person, user.person_id)
+        return {
+            "id": str(user.user_id),
+            "person_id": str(user.person_id),
+            "email": person.email if person else "",
+            "status": user.status,
+        }
 
 
 async def delete_user(identity: Identity, user_id: str) -> None:
+    """把这个人从这个工作区移出去。
+
+    删的是成员关系,不是那个人:他在别的工作区里照样能登录。删完一条成员关系也
+    不剩时,人还在(他的密码、联系方式都在),只是没有任何一道门 — 再次被邀请时
+    直接认领,不用重新建号。
+    """
     target = uuid.UUID(user_id)
     if str(target) == identity.user_id:
         raise AdminError("不能删掉自己")
     async with async_session_factory() as session:
-        user = await session.get(User, target)
+        user = await session.get(Membership, target)
         tenant_id = await _tenant_id(session, identity.tenant)
         if user is None or user.tenant_id != tenant_id:
             raise AdminError("用户不存在")
@@ -360,17 +481,19 @@ async def delete_user(identity: Identity, user_id: str) -> None:
             is_owner = await session.scalar(
                 select(func.count())
                 .select_from(UserRole)
-                .where(UserRole.user_id == user.id, UserRole.role_id == owner_role.id)
+                .where(
+                    UserRole.user_id == user.user_id, UserRole.role_id == owner_role.id
+                )
             )
             if is_owner:
                 owners = await session.scalar(
                     select(func.count())
                     .select_from(UserRole)
-                    .join(User, User.id == UserRole.user_id)
+                    .join(Membership, Membership.user_id == UserRole.user_id)
                     .where(
                         UserRole.role_id == owner_role.id,
-                        User.tenant_id == tenant_id,
-                        User.status == "active",
+                        Membership.tenant_id == tenant_id,
+                        Membership.status == "active",
                     )
                 )
                 if (owners or 0) <= 1:

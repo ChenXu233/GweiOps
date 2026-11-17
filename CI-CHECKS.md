@@ -18,6 +18,9 @@ GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**�
 `UV_VERSION` 决定,默认 0.13.8),脚本因此能在干净的 `python:3.12` 里原样跑;
 本地已有 uv 时跳过安装。uv 钉版本的理由和 lock 一样:解析规则一变,lock 可能整份重写。
 
+装 uv 那一下带 curl 重试:这一段只有一次出网请求,构建节点到 astral.sh 的 TLS 偶发
+中断,单发失败会让整阶段红,而重跑同一提交就绿。这类红与代码无关,因此不值得去看 diff。
+
 `engine-tests.sh` 在 lock 与装依赖之后调 `.ci/engine-tests.py`:先比 `contracts/openapi.json`
 是否与 `app.openapi()` 一致、再查迁移是不是一条链、再比 gRPC 桩,最后跑 `pytest tests/`。
 比对是 `tests/test_integration/test_openapi_contract.py` 同一件事的重复断言;单拎出来
@@ -49,6 +52,19 @@ python scripts/dump_openapi.py                      # 改完响应模型就重�
 pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生成
 ```
 
+## 一人多工作区的审计清单
+
+拆表之后,"同一个邮箱挂在两个工作区"这件事的结论在 `deploy/identity-merge.json`。
+清单本身可以随时重跑:
+
+```bash
+python scripts/identity_audit.py            # 打出清单,待判定的在最前
+python scripts/identity_audit.py --check    # 有没结论的就非零退出
+```
+
+`--check` **不接进 CI**:它依赖一份特定的库,而且判据是"人看过没有",不是"代码对不对"。
+接成门禁只会让每次构建多一个与改动无关的红。
+
 ## 迁移也得是一条链
 
 `engine/migrations/versions/` 里每个文件写一个 `revision`,用 `down_revision` 指向上一个。
@@ -64,6 +80,22 @@ pnpm --filter @gwei/core gen:api                    # 前端类型跟着重生�
 留着只是 checkfirst 兜底(单测用内存/SQLite,不跑迁移)。两边各建一份的话,干净库
 上跑 `alembic upgrade head` 会挂在 `relation ... does not exist`——而 CI 只检查
 "是不是一条链",不建库,这个错到部署时才炸。所以新增表时先写迁移。
+
+## 隔离清单得覆盖每一张租户可见的表
+
+`engine/db/tenancy.py` 的 `isolated_tables()` 是「哪些表要有行级安全策略」的唯一一份清单。
+`.ci/engine-tests.py` 的 `隔离清单` 那一段拿它和 `Base.metadata` 对一遍:
+
+- 带 `tenant` / `tenant_id` 列的表,必须在清单里;
+- 清单里的名字,必须都是真表。
+
+它不连库。策略建没建对由 `tests/test_integration/test_isolation_live.py` 在真库上验
+(那张库上 `alembic upgrade head` 跑到底,再以受限角色读两个工作区的行),门控用例,
+需要 `GWEI_TEST_DATABASE_URL`。
+
+漏一张的后果是「那个客户的数据,另一个客户的插件读得到」,而且不报错。所以这条判据
+是清单能被执行的那一半 —— 另一半是启动时的 `enforce_isolation()`(`deployment_mode=saas`
+缺策略拒绝启动)。
 
 ## gRPC 桩也要跟着 proto
 

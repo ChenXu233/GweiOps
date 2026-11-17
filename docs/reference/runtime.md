@@ -28,6 +28,8 @@
 - 事件与 Hook 调用放在 DBOS step 内,恢复重放不会重复执行。
 - 周期巡检走 DBOS 自己的调度器,不在 `gwei-agents` 队列上:入队的定时执行不带分区键,调度与幂等由系统库里的 `sched-<调度名>-<点火时刻>` 保证。发现与校验规则见[插件系统](plugin-system.md#周期巡检)。
 - 所有来源走同一个入口 `/webhook/<source>`,由各自的适配器验签并翻译:代码托管产事件,监控与巡检产信号。没有一家专用入口,也没有"默认来源"——没装适配器就是 503。
+- **投递只喂已接入的仓库**:仓库是人在仓库页接入的(`PUT /api/repos/{source}/{owner}/{name}`),投递到达时先判「这个仓库接入了没有」。没接入返回 `unconnected` 并说清去哪接,不起工作流——一次公网可达的 webhook 不该能让引擎替陌生人拉代码、跑模型。规则与判据见[工作区模型](../explanation/workspace-model.md#21-仓库怎么进工作区)。
+- **接进来时读一次已有议题**:「这道账从此管这份代码」如果只对以后的投递成立,人接完看到的是空板子,而出问题的那条议题通常早在接之前就开了。所以接入会调适配器的 `list_issues` 把已有的议题补进来(身份是仓库 + 议题号,与投递那条路径同一个键),再让每一条回到 `issue_triage_workflow`。这一下是**读**:补进来的是议题事实,判据是答复里的 `issue_sync.added`,不是「起了几个工作流」。来源不实现 `list_issues` 时 `listed=false` 并给出原因——那不等于「没有议题」。
 - 信号只说"哪里出了什么事",动作归 `intent.propose`;没有提供者时 effects 为空,不编动作。
 - 回评往哪回、工作区里的代码从哪来,都按投递自身的 `source_adapter` 解析:CNB 的议题进来就回 CNB、拉 CNB 的仓库。载荷缺来源直接报错,不拿 GitHub 顶上。
 - 效果执行以 `workflow_id:effects:effect:<n>` 为幂等键:重放只复用账本结论,不二次外呼。
@@ -37,7 +39,7 @@
 
 审核发生在来源侧:人看 PR/MR、合并。平台不替人点合并,只认来源适配器归一化出的 `kind="merge"`。GitHub 的 `pull_request`、GitLab 的 `merge_request`、CNB 的 `PullRequestEvent` 都在各自适配器里翻译,核心不认这些字段名。
 
-- 每个仓库的发布配置按「出厂默认 → 部署环境变量 → 租户默认 → 仓库行」四层逐键合并,高层覆盖低层,空值不算覆盖。前两层是全局一份,后两层存在 plugin_settings(`scope="release"`):租户默认的 key 是 `*`,仓库行的 key 是 `owner/repo`,value 是一个 JSON 对象,形如:
+- 每个仓库的发布配置按「出厂默认 → 部署环境变量 → 租户默认 → 项目默认 → 仓库行」逐键合并,高层覆盖低层,空值不算覆盖。前两层是全局一份,第三、五层存在 plugin_settings(`scope="release"`):租户默认的 key 是 `*`,仓库行的 key 是 `owner/repo`,value 是一个 JSON 对象,形如:
 
   ```json
   {"mode": "compose", "binding": "prod-cluster", "project_dir": "/srv/api", "service": "api", "image_template": "ghcr.io/{repo}:{sha}", "base_branch": "main"}
@@ -51,7 +53,8 @@
 - 撤销是把切换前的镜像部署回去。切换前镜像记在句柄里,读不到就不发布(没有撤销承诺的发布不进第一类路径);窗口是 `unbounded`,项目在就一直能撤。因此第一次发布之前,服务必须已经由 compose 跑起来一次——没有"切换前镜像",就没有可兑现的撤销。
 - 验证读服务当前镜像:容器在跑、镜像与目标一致才算成;不一致走回滚。
 - 发布效果打到的下游是 `binding` 参数(出厂默认 `local`,按层覆盖),与部署默认的 `DEFAULT_BINDING` 分别配置。配置写法与层次语义见上。
-- 租户默认与仓库行在控制台的「设置 → 发布配置」页面读写(`GET/PUT/DELETE /api/settings/release` 及其子路径);页面展示四层合并后的生效值兜底,留空不产生覆盖。也可以 API/SQL 直写 plugin_settings。
+- 租户默认与仓库行在控制台的「设置 → 发布配置」页面读写(`GET/PUT/DELETE /api/settings/release` 及其子路径);页面展示合并后的生效值兜底,留空不产生覆盖。也可以 API/SQL 直写 plugin_settings。
+- **项目默认**是第四层,落在 `project_settings.defaults`(`PUT /api/projects/{slug}/settings`):一个项目下几个仓库共享同一套发布策略,不必每行抄一遍。位置在租户默认之后、仓库行之前,所以仓库行仍然能例外。解析是同步函数(工作流步骤里到处在调),读的是 `config` 里的一份快照,由写入接口与启动流程各刷一次。载荷里只有仓库全名时,项目 slug 从快照反查(`repo_slug → project_slug`)。
 - 一次发布就是一个单元、一步切换;分阶段发布见[工作分解](../plan/wbs.md)的「发布形态」。
 - 来源适配器与新增来源的方式见[插件系统](plugin-system.md#webhook-适配器);回评只在来源适配器声明了 `comment.create` 时发生,没有就只写事故报告,不拿 GitHub 去回 GitLab 的仓库。
 - 当前默认只启用 GitHub 适配器,合并触发因此只有 GitHub PR;GitLab MR 与 CNB 的适配器是预留位(`default_enabled: false`),打开后走同一条链路。
@@ -88,7 +91,7 @@
 | --- | --- | --- |
 | 密钥(`gwei_` 前缀) | 外界的 agent | 它的权限集 ∩ 它自己的工具白名单(`tools`) |
 | 静态令牌 | harness、alertmanager | `operate` 看全部,`read` 只看只读工具 |
-| 会话 cookie | 浏览器里的人 | 角色算出来的权限 |
+| 会话 cookie | 浏览器里的人 | 那一个工作区里的角色算出来的权限 |
 | 没有凭据 | 没配任何凭据的部署 | 不筛(单机自用) |
 
 同一套判据也用在出口(`GET /api/agent/exits` 与 `POST /api/agent/exits/{name}`):清单同样收窄,调越界的工具是 403。
@@ -177,6 +180,24 @@ flowchart LR
 
 `operator` 带 `keys.manage`:运维接一个 agent 不必先找所有者。签出去的权限不能超过运维自己持有的权限。
 
+### 按范围授权:项目与仓库两档
+
+角色与个人追加里的权限可以带一个范围,写法 `权限@范围slug`。范围是 `projects` 里的 slug,**项目与仓库共用同一个名字空间**:
+
+```text
+changes.approve                     整个工作区都能放行
+changes.approve@acme                 整个 acme 项目,含以后新增的仓库
+changes.approve@github-acme-api     只在这一个仓库上能放行
+```
+
+- 能收窄的只有 `SCOPED_PERMISSIONS` 里的四个(`changes.read` / `execute` / `approve` / `rollback`):它们最终都落在一个仓库上。管人、管密钥、改配置是工作区级的事,写成 `users.manage@…` 会被丢掉,不当工作区级权限用。
+- 带范围的授权**不算**工作区级权限:不点名范围的判定(`require(request, "changes.approve")`)在只有这份授权的身份上返回 403,并说明"这个权限只对具体范围生效"。
+- 判定链是 **repo → project → 工作区**,`require(request, permission, repo, project)`。项目授权对项目下每一个仓库算数,包括登录之后才加进项目里的那个 —— 所以这一档只能在判定时问,不能在建身份时展开成一份仓库清单。
+- 子用户与父取交集时按范围逐个算:父没有的范围留不下来。
+- 落点:放行 / 否决 / 撤销按账本行的 `repo` 判(项目档由它反查所属项目),议题的"再来一轮"按议题所属仓库判。仓库 slug 的写法见[工作区模型](../explanation/workspace-model.md) §3。
+- 成员页(`/team`)勾权限时,能收窄的权限旁边会先列当前工作区的项目、再列仓库,勾哪几个就只在那几个上生效。
+- **成员这一栏也走同一套**:`memberships.permissions` 里同样可以写 `权限@范围`,上限按"我手上这个权限覆盖不覆盖这一步"判 —— 有工作区级那份就能给任何范围,只有 `changes.approve@github-acme-api` 的人给不出项目档,更给不出整个工作区。
+
 ## 控制台鉴权
 
 `API_TOKENS` 留空 = 不鉴权:`by` 与 `tenant` 由调用方自报,只适合单机自用。每个响应都带 `X-Gwei-Auth: on|off` 标明当前状态。
@@ -188,6 +209,44 @@ flowchart LR
 - 租户只能看到自己的账;请求里写别的租户是 403,不属于自己的单元是 404。
 - `by` 以令牌为准,请求里的值不再被采信;放行的 `authorized_by`、否决的 `vetoed_by`、撤销的 `rolled_back_by` 都进账本。
 - 令牌写错(段数不对、scope 非法、重复)拒绝启动,不静默降级成"不鉴权"。
+
+### 人、成员关系与会话
+
+| 表 | 一行是什么 |
+| --- | --- |
+| `persons` | 一个人。`email` 在整个部署里唯一,`password_hash` / `last_login_at` 只在这里 |
+| `memberships` | 一个人在**一个工作区**里的身份:主键 `user_id`、`parent_id`(子成员)、`permissions`(工作区级的个人追加) |
+| `user_sessions` | 一次登录,挂 `person_id` —— 换工作区不重新登录 |
+| `user_roles` | 成员 × 角色,`user_id` 是成员关系的 |
+| `user_contacts` / `password_reset_tokens` / `external_identities` | 联系方式 / 找回密码 / OIDC 绑定,都挂 `person_id` |
+
+`user_id` 这个列名保留下来,值是**成员关系的 id**:会话、审计、"谁点的头"问的一直是"这个工作区里的哪个人"。改密码只在 `POST /api/auth/password`(它属于人);成员接口带密码直接拒绝。
+
+`GET /api/me` 回答一个人 + 他在每个工作区里的角色,顶层那几个字段只对**这次请求落在的那个工作区**算数。形状与判据见[身份与授权](../explanation/identity-and-authorization.md) §5。
+
+### 邀请与认领
+
+"把人拉进来"有两条路,分工只有一句话:**谁定密码**。管理员替他定临时密码走 `POST /api/users`;他自己定就走邀请。
+
+| 接口 | 判据 |
+| --- | --- |
+| `GET /api/workspaces/{slug}/invitations` | 这个工作区发出去的邀请,用过的、撤销的、过期的一起列,状态各自说清。要 `users.read` |
+| `POST /api/workspaces/{slug}/invitations` | 发一条。响应里的 `token` 只出现这一次,拼成 `/invite?token=…` 交给对方。要 `users.manage` |
+| `DELETE /api/workspaces/{slug}/invitations/{id}` | 撤销一条还没接的。已经接过 / 过期 / 已撤销的当场拒绝并说清 |
+| `GET /api/invitations/{token}` | 这条链接现在什么情况。**不要登录**:链接里那枚令牌就是凭据 |
+| `POST /api/invitations/{token}` | 接它。接完顺手发一个会话,少一步登录 |
+
+`invitations` 一行只装**工作区**与**被邀请的邮箱**,不装密码。令牌只存哈希(`token_hash`,列上有唯一索引,不是主键)。
+
+几条判据:
+
+- **接的时候认邮箱,不认链接发给谁**:部署里已经有这个人 → 认领:只加一条成员关系,他的密码一个字都不动;没有 → 他现场设一次密码(`password` 少于 8 位拒绝),那一刻才建这个人。
+- **只能用一次**:`accepted_at` 留着,再点得到"这条邀请已经用过了",不是一个 404。`state` 取 `pending` / `accepted` / `revoked` / `expired` 之一,`note` 给出能照着办的下一步。
+- **同一个邮箱只留一条没接的**:再发一条,前一条当场作废 —— 同时有效的邀请越多,撞上来的机会越多。
+- **已经在这个工作区里的人不发**:发了他也接不了。
+- **角色在发的时候定死**:`invitation.role_ids` 在接的那一刻展开成 `user_roles`。个人追加那一栏留空 —— 要额外给什么,是管理员在成员页上再改一次的事。
+- 发邀请的人是所有者时新成员是同级,否则挂在他下面(`parent_id`)—— 与 `POST /api/users` 同一条规则。
+- 接的两条口豁免鉴权(`engine/api/auth.py` 的 `INVITE_PATH`),但豁免只覆盖那一个 token 路径:列表与发邀请仍然要登录。
 
 ## 注册与账号核验
 
@@ -307,14 +366,20 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 ## 租户
 
 - webhook payload 顶层携带 `tenant_slug`;当前取 `settings.default_tenant_slug`(默认 `default`)。
-- `projects` 唯一约束 `(tenant_id, github_id)`;`issues` 唯一约束 `(project_id, github_id)`。
+- `projects` 唯一约束 `(tenant_id, slug)`(`slug` 是 `来源-仓库全名`,`/` 也压成 `-`);`issues` 唯一约束 `(project_id, github_id)`。
+- 工作区在路径里(`/api/workspaces/{slug}/…`),见[工作区怎么带](#工作区怎么带);查询串的 `tenant` 不再生效。
 - 每租户的凭据、队列分区、模型用量都按 `tenant_slug` 归属。
-- **隔离在库上,不在 SQL 里**:租户可见的表开了行级安全,策略读
-  `current_setting('gwei.tenant', true)`;变量没设时比较为假,所以默认是看不见。
-  可见范围收口在库侧,"忘了写 `where`"因此退化成读到空集。
-- 核心自己的连接不设 `gwei.tenant`,不受策略影响。绕开策略的唯一身份是超级用户与
-  `BYPASSRLS` 角色——插件那条路因此必须走受限角色(`gwei_plugin_reader`),详见
-  [插件读库](plugin-system.md#插件读库)。
+- **隔离在库上,不在 SQL 里**:租户可见的表全部开了行级安全,策略是
+  「`current_setting('gwei.tenant', true)` 等于 `*`(明确不限)或者这一行的租户等于它」。
+  变量没设时比较为假,所以默认是看不见;"忘了写 `where`"因此退化成读到空集。
+- **哪些表要有策略只有一份清单**:`engine/db/tenancy.py` 的 `isolated_tables()`。
+  迁移照它建,`.ci/engine-tests.py` 照它对模型,启动时 `enforce_isolation()` 再对一遍库
+  —— `deployment_mode=saas` 缺一张就拒绝启动。
+- **核心自己的连接也设租户**:池子里每条连接 `begin` 时写 `gwei.tenant`,缺省是空
+  (一个工作区都不属于)。要跨工作区读必须显式声明:`engine.db.connecting("*")` 或
+  `connecting_any()` —— 认证(`resolve_key`)、维护脚本、清表走它们。
+- 绕开策略的唯一身份是超级用户与 `BYPASSRLS` 角色——插件那条路因此必须走受限角色
+  (`gwei_plugin_reader`),详见[插件读库](plugin-system.md#插件读库)。
 - `issues` 有 `tenant_id`(由 `projects` 派生后补齐);`pull_requests` / `patches` /
   `approval_votes` 不加列,租户口径由父表派生——多一份租户列就多一份会漂移的事实。
 
@@ -350,20 +415,52 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 ## API
 
+### 工作区怎么带
+
+**路径里**:`/api/workspaces/{slug}/…`。资源要有 URL,链接自带"这是哪一道账"。中间件把这一段折成路由认得的那条路径,并在同一步把工作区定死(`engine/api/auth.py` 的 `make_middleware` / `workspace_access`)。
+
+| 情形 | 结果 |
+| --- | --- |
+| 路径里写了工作区,且他是成员 | 用这个 |
+| 路径里写了,但他不是成员 | 403,说清是哪个工作区 |
+| 路径里没写,令牌 / 会话声明了工作区 | 用令牌那一个 |
+| 路径里没写,令牌的租户是 `*`,或没配鉴权 | 不限 |
+
+查询串的 `tenant` 不再生效 —— 两份真相源迟早一边说 Acme 一边说 Beta。机器那侧(静态令牌、密钥、`/mcp`)本来就是写死一个租户,路径里写另一个是 403。
+
+界面那一侧同理:页面是 `/workspaces/{slug}/issues`,调用点由 `packages/core/api/typed.ts` 的 `scopePath()` 补上接口那一段。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查 |
-| GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它 |
+| GET | `/api/board` | 议题板:三段(等我 / 在跑 / 落了)与三个数,首页就是它。`?project=<slug>` / `?repo=<slug>` 是范围闸的两档(项目 / 仓库),仓库档优先。工作区在路径里,查询串的 `tenant` 不再生效 — 见上面的「工作区怎么带」 |
 | GET | `/api/issues/{id}/timeline` | 议题时间线:三个状态 + 各轮次的分段证据(见下) |
 | POST | `/api/issues/{id}/continue` | 接着该议题再改一轮:与 `@gwei` 评论同一条工作流,分支沿用、PR 不新开 |
-| GET | `/api/repos` | 仓库列表 |
+| GET | `/api/workspaces` | **我进得去**的工作区(= 租户):各有几个仓库、来自哪些平台。人按成员关系算,机器返回令牌那一个 |
+| GET | `/api/repos` | 仓库列表:当前工作区里的仓库。每行带 `source`、`slug`(`来源-仓库全名` 的树内唯一名)、`project` / `projectName`。项目行不出现在这里 |
+| GET | `/api/repos/sources` | 这个部署能接哪些来源 —— 由声明了 `webhook.receive` 的适配器答,核心没有写死的平台表。需 `settings.read` |
+| PUT | `/api/repos/{source}/{owner}/{name}` | 接入一个仓库,幂等。仓库全名按路径段给(GitLab 子组是 `group/sub/repo`)。接进来时当场读一次它已有的议题(见下),答复里的 `issue_sync` 是这一次的结果。需 `settings.write` |
+| POST | `/api/repos/{source}/{owner}/{name}/issues` | 再读一次这个仓库已有的议题,与接入时是同一个函数。需 `settings.write` |
+| DELETE | `/api/repos/{source}/{owner}/{name}` | 解除接入:投递不再认它,议题与账本行留着。需 `settings.write` |
+| PUT | `/api/repos/{source}/{owner}/{name}/project` | 把已接入的仓库挂到另一个项目(空串 = 回到按全名第一段的默认归属),写完刷新发布快照。需 `settings.write` |
+| GET | `/api/projects` | 项目列表:仓库上面那一级,每个项目下有几个仓库、几条议题;每行带 `visibility` |
+| GET | `/api/projects/{slug}/settings` | 一个项目的可见性、默认发布参数、项目级凭据(只回答"设了没有",值不回显)。需 `settings.read` |
+| PUT | `/api/projects/{slug}/settings` | 改可见性与默认发布参数。需 `settings.write`;写完整份,不担心字段级 diff |
+| PUT | `/api/projects/{slug}/credentials/{key}` | 写一条项目级凭据:值进密钥仓库(`scope=project:<slug>`),库里只留键与说明。空值等于删 |
 | GET | `/api/settings` | 设置(脱敏) |
+| GET | `/api/me` | 我是谁 + 我在每个工作区里的角色。顶层 `permissions` 只对这次请求落在的那个工作区算数 |
+| GET | `/api/auth/me` | 同一个形状,老入口 |
 | GET | `/api/auth/registration/policy` | 现在能不能注册、能用什么方式(登录页据此画按钮) |
 | POST | `/api/auth/register/start` | 发注册验证码 |
 | POST | `/api/auth/register/verify` | 验码建号并登录 |
 | POST | `/api/auth/password/reset` | 申请重置邮件(有没有账号回同一句话) |
 | POST | `/api/auth/password/reset/complete` | 用链接令牌或验证码设新密码 |
 | GET | `/api/auth/oidc/authorize`、`/api/auth/oidc/callback` | OIDC 授权码流程 |
+| GET | `/api/invitations` | 这个工作区发出去的邀请与各自状态,需 `users.read` |
+| POST | `/api/invitations` | 发一条邀请,响应里的 `token` 只出现一次,需 `users.manage` |
+| DELETE | `/api/invitations/{invite_id}` | 撤销一条还没接的邀请 |
+| GET | `/api/invitations/{token}` | 这条邀请现在什么情况。**不要求登录**(链接本身就是凭据) |
+| POST | `/api/invitations/{token}` | 接邀请:邮箱已经有人就认领他,没有就现场设密码;接完顺手发会话 |
 | GET | `/api/quota` | 租户各资源在窗口内的用量与上限 |
 | GET | `/api/quota/parse` | 把 `2000/30d` 拆开看看 |
 | GET | `/api/settings/scopes` | 插件声明的配置项:要填什么、填了没有、缺什么(不回显值) |
@@ -397,7 +494,7 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 | GET | `/api/console/tools` | 调用者身份能给助手用的工具全集(开面板时从里面挑) |
 | POST | `/api/keys` | 签发密钥,明文只在签发响应里出现一次,需 `keys.manage` |
 | DELETE | `/api/keys/{key_id}` | 吊销:记录留着,之后每个请求都是 401 |
-| POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503 |
+| POST | `/webhook/{source}` | 任何来源的投递:按 `source` 找声明了 `webhook.receive` 的适配器,由它验签并翻译;没装适配器或适配器没配密钥返回 503;仓库没接入返回 `unconnected` 且不入队 |
 | POST | `/webhook/github/comment` | GitHub 评论事件的专用别名 |
 
 ### 议题时间线

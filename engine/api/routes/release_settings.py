@@ -18,7 +18,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from engine.api.auth import by_of, require, tenant_scope
+from engine.api.auth import by_of, require, workspace_access, identity_of
 from engine.shared.config import config
 from engine.shared.settings_store import create_settings_store
 from engine.workflows.release import (
@@ -96,7 +96,7 @@ def _request_tenant(request: Request) -> str:
     租户时落在 default_tenant_slug。页面没有鉴权租户声明时跟随它,不然页面写的是
     公共层、引擎读的是租户层,填了等于没填。
     """
-    return tenant_scope(request, None) or config.settings.default_tenant_slug
+    return workspace_access(request) or config.settings.default_tenant_slug
 
 
 def _layer_info(values: dict[str, str] | None) -> dict:
@@ -185,7 +185,7 @@ async def _put_row(key: str, body: ReleaseValuesDTO, request: Request) -> dict:
 
     from engine.auth import audit
 
-    identity = getattr(request.state, "identity", None)
+    identity = identity_of(request)
     await audit.record(
         "settings.write",
         identity=identity,

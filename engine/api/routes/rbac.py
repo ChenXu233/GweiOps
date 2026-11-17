@@ -12,7 +12,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from engine.api.auth import actor_of, require, set_auth_required
+from engine.api.auth import actor_of, identity_of, require, set_auth_required
 from engine.auth import PERMISSIONS, Identity
 from engine.auth import admin as admin_store
 from engine.auth import audit
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _identity(request: Request) -> Identity:
-    identity: Identity | None = getattr(request.state, "identity", None)
+    identity: Identity | None = identity_of(request)
     if identity is None:
         raise HTTPException(status_code=401, detail="未登录")
     return identity

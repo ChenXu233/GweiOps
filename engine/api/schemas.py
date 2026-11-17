@@ -39,6 +39,92 @@ class RepoDTO(BaseModel):
     issueCount: int
     activeAgents: int
     lastSyncAt: str
+    # 这个仓库来自哪个平台(github / cnb / gitlab …):同名仓库在不同平台上不是同一个
+    source: str = "github"
+    # 它在这棵树上的名字,也是范围闸里的那一档(`来源-仓库全名`,`/` 也是 `-`)
+    slug: str = ""
+    # 所属项目。空串 = 还没归到任何项目
+    project: str = ""
+    projectName: str = ""
+
+
+class RepoSourceDTO(BaseModel):
+    """这个部署能接的来源。
+
+    清单由装着的适配器答(`registry.webhook_adapters()`):加一个新平台是装一个
+    插件的事,核心里没有一张写死 github / cnb / gitlab 的表。
+    """
+
+    source: str
+    label: str = ""
+
+
+class RepoSyncDTO(BaseModel):
+    """读一次仓库已有议题的结果。
+
+    `listed=False` 是"这个来源列不出来",不是失败:适配器没声明 `list_issues`、
+    或者本次读取被来源拒了,原因在 `reason` 里。别把它读成"这个仓库没有议题"。
+    """
+
+    listed: bool = False
+    added: int = 0
+    seen: int = 0
+    truncated: bool = False
+    reason: str = ""
+
+
+class RepoConnectDTO(BaseModel):
+    """接入的结果。`created=False` 表示这个仓库早就在这个工作区里了。
+
+    `issue_sync` 是接进来那一刻顺带读的那一次:已经发生的议题补进板子,不等下一次
+    投递。它是读,不是替人跑一次工作流。
+    """
+
+    slug: str
+    source: str
+    name: str
+    created: bool = False
+    issue_sync: RepoSyncDTO = RepoSyncDTO()
+
+
+class ProjectDTO(BaseModel):
+    """一个项目 —— 仓库上面那一级。
+
+    项目是资源也是范围:项目级的可见性、默认动作、凭据都摆在这里,而不是全堆在
+    工作区级。它和仓库同一张表(`parent_id` 空的那一行),所以这里的 `slug` 就是
+    行自己的 slug。
+    """
+
+    id: str
+    slug: str
+    name: str
+    repos: int = 0
+    issues: int = 0
+    # workspace 谁看得见谁看见;restricted 的项目连同它下面的仓库不列给外人。
+    # 它管"列不列出来",不替代权限判定 —— 见 docs/reference/runtime.md
+    visibility: str = "workspace"
+
+
+class ProjectListDTO(BaseModel):
+    items: list[ProjectDTO] = []
+
+
+class WorkspaceDTO(BaseModel):
+    """一个工作区 = 一个租户。
+
+    界面上"工作区"就是租户在控制台的名字。它是所有数据的边界:议题、变更账本、
+    配置、密钥、成员都落在它里面,跨工作区不共享一条账。
+    """
+
+    slug: str
+    name: str
+    repos: int = 0
+    sources: list[str] = []
+
+
+class WorkspaceListDTO(BaseModel):
+    items: list[WorkspaceDTO] = []
+    current: str = ""
 
 
 class SettingsDTO(BaseModel):
@@ -444,3 +530,84 @@ class ConsolePendingDTO(BaseModel):
     """待批准的改世界调用;没有时为 null。"""
 
     pending: dict | None = None
+
+
+# ---------------------------------------------------------------------------
+# 成员身份:人是全局的,角色是某个工作区给的
+# ---------------------------------------------------------------------------
+#
+# 一个人的身份不再等于"某一行 users"。users 那一行只说明"这个人能登录",
+# 他属于哪个工作区、在那里是什么角色,由成员关系说明。响应里因此没有第二个
+# "user_id" 的名字:工作区这件事在 URL 与工作区选择器里,身份只回答"我是谁"。
+
+
+class PersonDTO(BaseModel):
+    """一个人,不含任何工作区的角色。"""
+
+    email: str = ""
+    display_name: str = ""
+
+
+class PersonMembershipDTO(BaseModel):
+    """这个人在某个工作区里的样子:角色与范围授权都在这里。"""
+
+    workspace: str
+    workspace_name: str = ""
+    user_id: str = ""
+    is_sub_user: bool = False
+    status: str = "active"
+    roles: list["MembershipRoleDTO"] = Field(default_factory=list)
+    # 工作区级的权限
+    permissions: list[str] = Field(default_factory=list)
+    # 只对某几个仓库生效的权限:`changes.approve@github-acme-api`
+    scoped_permissions: list[str] = Field(default_factory=list)
+
+
+class MembershipRoleDTO(BaseModel):
+    id: str = ""
+    key: str = ""
+    name: str = ""
+
+
+class ActorDTO(BaseModel):
+    """`GET /api/me`:我是谁、我属于哪些工作区、每个里面是什么角色。
+
+    `workspace` 是这次请求实际落在哪个工作区(按 `X-Gwei-Workspace`),
+    `permissions` / `scoped_permissions` 只对那一个工作区算数——不然界面上
+    "能不能点这个按钮"就得自己把多个工作区的权限并起来,而那正好是越权的起点。
+    不属于任何工作区时 `workspace` 为空、权限为空:能登录不等于能看账。
+    """
+
+    email: str = ""
+    display_name: str = ""
+    workspace: str = ""
+    workspace_name: str = ""
+    permissions: list[str] = Field(default_factory=list)
+    scoped_permissions: list[str] = Field(default_factory=list)
+    roles: list[MembershipRoleDTO] = Field(default_factory=list)
+    workspaces: list[PersonMembershipDTO] = Field(default_factory=list)
+    is_sub_user: bool = False
+
+
+class MembershipDTO(BaseModel):
+    """工作区成员页的一行:这个人在这里是谁。
+
+    `user_id` 是成员关系的 id,不是全局那个人的 —— 同一个人在两个工作区里是
+    两条成员关系、两个不同的 id,页面只认得当前工作区。
+    """
+
+    user_id: str = ""
+    person_id: str = ""
+    email: str = ""
+    display_name: str = ""
+    status: str = "active"
+    is_sub_user: bool = False
+    roles: list[MembershipRoleDTO] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    scoped_permissions: list[str] = Field(default_factory=list)
+    last_login_at: str = ""
+
+
+class MembershipListDTO(BaseModel):
+    items: list[MembershipDTO] = Field(default_factory=list)
+    total: int = 0

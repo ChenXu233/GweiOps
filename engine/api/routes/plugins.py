@@ -15,7 +15,7 @@ from pathlib import PurePosixPath
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
-from engine.api.auth import actor_of, by_of, require, tenant_scope
+from engine.api.auth import actor_of, by_of, require, workspace_access
 from engine.api.schemas import MetricDTO, PluginDTO, PluginWidgetDTO
 from engine.plugin_manager import tenancy
 from engine.plugin_manager.registry import registry
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _requested_tenant(request: Request) -> str:
     """这次调用代表哪个租户。令牌声明的租户优先;两者冲突是越权,不是覆盖。"""
     declared = request.query_params.get("tenant") or None
-    return tenant_scope(request, declared) or ""
+    return workspace_access(request) or ""
 
 
 def _plugin_dto(state, tenant: str) -> PluginDTO:

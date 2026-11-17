@@ -126,10 +126,57 @@ def check_migrations() -> bool:
     return False
 
 
+def check_isolation_manifest() -> bool:
+    """每张租户可见的表都得进隔离清单;清单里的表都得真有。
+
+    判据两条,都不连库:
+
+    1. `engine/db/tenancy.py` 的 `isolated_tables()` 覆盖 `Base.metadata` 里
+       "有租户口径"的每一张表。新加一张带 `tenant` / `tenant_id` 的表却忘了登记,
+       它在共享部署里就是一张谁都能读的表 —— 那种漏,只有清单能被对一遍时才抓得住。
+    2. 清单里的名字都在 metadata 里(删了表忘了删清单,迁移会红在更晚的地方)。
+
+    派生表(靠父表推租户的)在 `DERIVED` 里点名:它们没有租户列,只能人工判断。
+    """
+    import engine.db.models  # noqa: F401 — 注册全部模型
+    from engine.db.base import Base
+    from engine.db.tenancy import isolated_tables
+
+    derived = {
+        "patches",
+        "pull_requests",
+        "approval_votes",
+        "agent_sessions",
+        "audit_log",
+        "persons",
+    }
+    covered = set(isolated_tables())
+    tables = set(Base.metadata.tables)
+
+    missing_columns = sorted(tables - covered - derived)
+    unknown = sorted(covered - tables - {"tenants"})
+
+    # 有租户口径却没登记的表:带 tenant 或 tenant_id 列的都算
+    unregistered = [
+        name
+        for name in missing_columns
+        if {"tenant", "tenant_id"} & {column.name for column in Base.metadata.tables[name].columns}
+    ]
+    if unregistered:
+        print("::error::这些表有租户列,却没进隔离清单: " + "、".join(unregistered))
+        print("   加进 engine/db/tenancy.py 的 isolated_tables(),并补一条迁移")
+        return False
+    if unknown:
+        print("::error::隔离清单里有、metadata 里没有的表: " + "、".join(unknown))
+        return False
+    return True
+
+
 def main() -> int:
     checks = [
         ("契约", check_contract),
         ("迁移", check_migrations),
+        ("隔离清单", check_isolation_manifest),
         ("gRPC 桩", check_grpc_stubs),
     ]
     failed = [name for name, fn in checks if not fn()]

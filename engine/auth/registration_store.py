@@ -29,10 +29,11 @@ from engine.auth.registration import (
 from engine.db import async_session_factory
 from engine.db.models import (
     ExternalIdentity,
+    Membership,
     PasswordResetToken,
+    Person,
     Role,
     Tenant,
-    User,
     UserActivation,
     UserContact,
     UserRole,
@@ -89,13 +90,45 @@ async def _tenant_id_for(session, slug: str) -> uuid.UUID:
     return tenant_id
 
 
+def _workspace_slug_for(email: str) -> str:
+    """邮箱 → 工作区 slug。可读、可分享、不撞名。
+
+    slug 进 URL(`/workspaces/{slug}/issues`),所以只留 `[a-z0-9-]`。同一份邮箱
+    在整个部署里只有一条 person,所以它天然唯一;真撞上了(有人手工建了同名工作区),
+    `_create_workspace` 会加一段随机后缀,而不是让注册失败。
+    """
+    local = (email or "").split("@")[0].lower()
+    cleaned = "".join(ch if ch.isalnum() or ch == "-" else "-" for ch in local)
+    cleaned = "-".join(part for part in cleaned.split("-") if part)[:48]
+    return cleaned or "workspace"
+
+
+async def _create_workspace(session, slug: str, *, owner_name: str = "") -> uuid.UUID:
+    """建一个工作区,连同三个预设角色。
+
+    预设角色必须在这一步就建出来 —— 后面挂角色是按 (租户, key) 找的,少了这一步,
+    新工作区的所有者会是一个"有成员关系但没有角色"的人:登录进去什么都看不见,
+    而且没有任何报错。
+    """
+    taken = await session.scalar(select(Tenant.id).where(Tenant.slug == slug))
+    if taken is not None:
+        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+    tenant = Tenant(slug=slug, name=(owner_name or slug)[:255], settings={})
+    session.add(tenant)
+    await session.flush()
+    await auth_store.ensure_default_roles(session, tenant.id)
+    return tenant.id
+
+
 async def _role_id(session, tenant_id: uuid.UUID, key: str) -> uuid.UUID | None:
     return await session.scalar(
         select(Role.id).where(Role.tenant_id == tenant_id, Role.key == key)
     )
 
 
-async def _attach_default_role(session, user: User, tenant_id: uuid.UUID, key: str) -> None:
+async def _attach_default_role(
+    session, membership: Membership, tenant_id: uuid.UUID, key: str
+) -> None:
     if not key:
         return
     role_id = await _role_id(session, tenant_id, key)
@@ -104,10 +137,12 @@ async def _attach_default_role(session, user: User, tenant_id: uuid.UUID, key: s
         import logging
 
         logging.getLogger(__name__).warning(
-            "注册要接的角色 %s 在租户里不存在,新用户 %s 没有角色", key, user.email
+            "注册要接的角色 %s 在租户里不存在,新成员 %s 没有角色",
+            key,
+            membership.user_id,
         )
         return
-    session.add(UserRole(user_id=user.id, role_id=role_id))
+    session.add(UserRole(user_id=membership.user_id, role_id=role_id))
 
 
 # ---------------------------------------------------------------------------
@@ -117,21 +152,31 @@ async def _attach_default_role(session, user: User, tenant_id: uuid.UUID, key: s
 
 async def find_user_by_contact(
     session, channel: str, target: str, tenant_id: uuid.UUID | None = None
-) -> User | None:
-    """这个人是不是已经有了。邮箱看 users.email,手机号看已验证的 contact。"""
+) -> Person | None:
+    """这个人是不是已经有了。邮箱看 persons.email,手机号看已验证的 contact。
+
+    查的是**人**,不是成员关系:邮箱在整个部署里唯一,所以这个人属于哪个工作区
+    是下一步的事(`tenant_id` 给了就再问一句"他在这儿有没有成员关系")。
+    """
     if channel == "email":
-        stmt = select(User).where(User.email == target)
-        if tenant_id is not None:
-            stmt = stmt.where(User.tenant_id == tenant_id)
-        return await session.scalar(stmt)
-    contact = await session.scalar(
-        select(UserContact).where(
-            UserContact.kind == "phone", UserContact.target == target, UserContact.confirmed.is_(True)
+        person = await session.scalar(select(Person).where(Person.email == target))
+    else:
+        contact = await session.scalar(
+            select(UserContact).where(
+                UserContact.kind == "phone",
+                UserContact.target == target,
+                UserContact.confirmed.is_(True),
+            )
+        )
+        person = await session.get(Person, contact.person_id) if contact else None
+    if person is None or tenant_id is None:
+        return person
+    belongs = await session.scalar(
+        select(Membership.user_id).where(
+            Membership.person_id == person.id, Membership.tenant_id == tenant_id
         )
     )
-    if contact is None:
-        return None
-    return await session.get(User, contact.user_id)
+    return person if belongs else None
 
 
 async def contact_taken(channel: str, target: str) -> bool:
@@ -275,8 +320,24 @@ async def create_user(
     policy: Policy,
     tenant_slug: str = "",
     confirmed: bool = True,
-) -> tuple[User, Identity]:
-    """建一个人。邮箱是必填的身份,手机号是可选的第二联系方式。"""
+) -> tuple[Person, Identity]:
+    """建一个人,并把他落进一个工作区。
+
+    邮箱是必填的身份,手机号是可选的第二联系方式。`persons.email` 在整个部署里
+    唯一:同一个邮箱再来一次不是"第二个人",是同一个人有了第二条成员关系 ——
+    那种情况在这里直接拒绝,邀请走 `admin.create_user`。
+
+    **进哪个工作区由这次注册决定,不由配置决定**:
+
+    | 情形 | 落在哪 | 什么角色 |
+    | --- | --- | --- |
+    | 配了 `registration_tenant` | 那一个(单租户自部署,别人不该从这儿进) | `default_role` |
+    | 没配 | **他自己新建的那一个**,slug 从他的邮箱取 | `signup_role`(缺省 owner) |
+
+    第二行是共享部署的准入条件:一个陌生人拿到部署地址,注册完就有自己的账,
+    不用别人替他改库建租户。第一行留着,是因为单租户那台机器上"注册"本来
+    就是"成为这台机器的人",给他建一个新工作区反而把他隔在外面。
+    """
     email = normalize_email(email) if email else ""
     if not email:
         # 手机号注册的人也得有一行唯一身份:用手机号占住 email 列,
@@ -284,39 +345,61 @@ async def create_user(
         if not phone:
             raise RegistrationError("至少要有邮箱或者手机号")
         email = f"{phone}@phone.local"
-    slug = policy.target_tenant or tenant_slug or auth_store.DEFAULT_TENANT_SLUG
+    fixed_tenant = policy.target_tenant or tenant_slug
+    slug = fixed_tenant or ""
+    created_workspace = False
 
     async with async_session_factory() as session:
-        tenant_id = await _tenant_id_for(session, slug)
-        if await session.scalar(
-            select(func.count()).select_from(User).where(
-                User.tenant_id == tenant_id, User.email == email
-            )
-        ):
+        # 查重放在**建工作区之前**:下面那个插入也可能撞上唯一键,但那时用户看到的
+        # 是一句 Postgres 的约束名,不是"这个邮箱已经注册过了"。
+        if await session.scalar(select(Person.id).where(Person.email == email)):
             raise RegistrationError("这个邮箱已经注册过了")
-        user = User(
-            tenant_id=tenant_id,
+        if slug:
+            tenant_id = await _tenant_id_for(session, slug)
+        else:
+            # 没有指定的工作区:给他建一个。slug 由邮箱来 —— 同一份邮箱在整个
+            # 部署里只有一条 person,所以这个 slug 不会因为重复注册而撞名。
+            slug = _workspace_slug_for(email)
+            tenant_id = await _create_workspace(session, slug, owner_name=display_name or email)
+            created_workspace = True
+        person = Person(
             email=email,
             display_name=(display_name or email.split("@")[0])[:128],
             password_hash=password_hash or (hash_password(password) if password else ""),
-            permissions=[],
             status="active" if confirmed else "pending",
         )
-        session.add(user)
+        session.add(person)
         await session.flush()
         if email and "@phone.local" not in email:
             session.add(
-                UserContact(user_id=user.id, kind="email", target=email, confirmed=True)
+                UserContact(person_id=person.id, kind="email", target=email, confirmed=True)
             )
         if phone:
             session.add(
-                UserContact(user_id=user.id, kind="phone", target=phone, confirmed=True)
+                UserContact(person_id=person.id, kind="phone", target=phone, confirmed=True)
             )
-        await _attach_default_role(session, user, tenant_id, role_key)
+        membership = Membership(
+            tenant_id=tenant_id,
+            person_id=person.id,
+            display_name=person.display_name,
+            permissions=[],
+            status="active" if confirmed else "pending",
+        )
+        session.add(membership)
+        await session.flush()
+        # 自己建的那个工作区里,他是所有者;别人指定的那个工作区里,是 `default_role`。
+        # 判据是"这次注册有没有建工作区",不是"角色字符串是否为空":空角色会落进
+        # `signup_role`,在那台单租户机器上等于把新来的人升成 owner。
+        await _attach_default_role(
+            session,
+            membership,
+            tenant_id,
+            role_key or (policy.signup_role if created_workspace else ""),
+        )
         await session.commit()
-        await session.refresh(user)
-        identity = await auth_store.identity_of(session, user)
-        return user, identity
+        await session.refresh(membership)
+        identity = await auth_store.identity_of(session, membership, person)
+        return person, identity
 
 
 # ---------------------------------------------------------------------------
@@ -328,19 +411,21 @@ async def issue_reset_token(email: str, policy: Policy) -> str | None:
     """有这个人就发一枚令牌。没这个人返回 None —— 接口两边回同一句话。"""
     target = normalize_email(email)
     async with async_session_factory() as session:
-        user = await session.scalar(select(User).where(User.email == target, User.status != "disabled"))
+        user = await session.scalar(
+            select(Person).where(Person.email == target, Person.status != "disabled")
+        )
         if user is None or not user.active:
             return None
         token, token_hash = new_link_token()
         await session.execute(
             delete(PasswordResetToken).where(
-                PasswordResetToken.user_id == user.id, PasswordResetToken.used.is_(False)
+                PasswordResetToken.person_id == user.id, PasswordResetToken.used.is_(False)
             )
         )
         session.add(
             PasswordResetToken(
                 token_hash=token_hash,
-                user_id=user.id,
+                person_id=user.id,
                 expires_at=_now() + timedelta(minutes=policy.reset_ttl_minutes),
             )
         )
@@ -348,7 +433,7 @@ async def issue_reset_token(email: str, policy: Policy) -> str | None:
         return token
 
 
-async def verify_reset_token(token: str) -> User | None:
+async def verify_reset_token(token: str) -> Person | None:
     from engine.auth import hash_session_token
 
     if not token:
@@ -359,10 +444,10 @@ async def verify_reset_token(token: str) -> User | None:
             return None
         if (_aware(row.expires_at) or _now()) <= _now():
             return None
-        return await session.get(User, row.user_id)
+        return await session.get(Person, row.person_id)
 
 
-async def complete_reset(token: str, new_password: str) -> User:
+async def complete_reset(token: str, new_password: str) -> Person:
     """用令牌改密码。改完踢掉所有会话 —— 密码变了,旧 cookie 不该还能开。"""
     from engine.auth import hash_session_token
 
@@ -374,20 +459,20 @@ async def complete_reset(token: str, new_password: str) -> User:
             raise RegistrationError("链接无效或已用过")
         if (_aware(row.expires_at) or _now()) <= _now():
             raise RegistrationError("链接已过期,重新申请一封")
-        user = await session.get(User, row.user_id)
+        user = await session.get(Person, row.person_id)
         if user is None or not user.active:
             raise RegistrationError("账号已不可用")
         user.password_hash = hash_password(new_password)
         row.used = True
         await session.execute(
-            delete(UserSession).where(UserSession.user_id == user.id)
+            delete(UserSession).where(UserSession.person_id == user.id)
         )
         await session.commit()
         await session.refresh(user)
         return user
 
 
-async def change_with_code(channel: str, target: str, new_password: str) -> User:
+async def change_with_code(channel: str, target: str, new_password: str) -> Person:
     """凭验证码改密码。**只对还没设过密码的账号开放**:
 
     已经是密码账号的人,拿到手机号/邮箱不等于拿到账号,否则"验证码注册"
@@ -404,16 +489,16 @@ async def change_with_code(channel: str, target: str, new_password: str) -> User
     return await complete_reset_by_user(user, new_password)
 
 
-async def complete_reset_by_user(user: User, new_password: str) -> User:
+async def complete_reset_by_user(user: Person, new_password: str) -> Person:
     if len(new_password or "") < 8:
         raise RegistrationError("新密码至少 8 位")
     async with async_session_factory() as session:
-        found = await session.get(User, user.id)
+        found = await session.get(Person, user.id)
         if found is None or not found.active:
             raise RegistrationError("账号已不可用")
         found.password_hash = hash_password(new_password)
         await session.execute(
-            delete(UserSession).where(UserSession.user_id == found.id)
+            delete(UserSession).where(UserSession.person_id == found.id)
         )
         await session.commit()
         await session.refresh(found)
@@ -432,7 +517,9 @@ class OidcProfile:
     name: str
 
 
-async def resolve_oidc_user(profile: OidcProfile, issuer: str, policy: Policy) -> tuple[User, bool]:
+async def resolve_oidc_user(
+    profile: OidcProfile, issuer: str, policy: Policy
+) -> tuple[Person, bool]:
     """sub 绑过就登那个人;没绑过按邮箱对上;都没有就看开不开自动建号。
 
     返回 (user, created)。绑定是**先认 sub**:同一个人在提供方那边改了邮箱,
@@ -446,17 +533,17 @@ async def resolve_oidc_user(profile: OidcProfile, issuer: str, policy: Policy) -
             )
         )
         if link is not None:
-            user = await session.get(User, link.user_id)
+            user = await session.get(Person, link.person_id)
             if user is None or not user.active:
                 raise RegistrationError("绑定的账号已不可用")
             return user, False
 
         if email:
-            user = await session.scalar(select(User).where(User.email == email))
+            user = await session.scalar(select(Person).where(Person.email == email))
             if user is not None and user.active:
                 session.add(
                     ExternalIdentity(
-                        user_id=user.id, issuer=issuer, subject=profile.subject, email=email
+                        person_id=user.id, issuer=issuer, subject=profile.subject, email=email
                     )
                 )
                 await session.commit()
@@ -475,7 +562,7 @@ async def resolve_oidc_user(profile: OidcProfile, issuer: str, policy: Policy) -
     async with async_session_factory() as session:
         session.add(
             ExternalIdentity(
-                user_id=user.id, issuer=issuer, subject=profile.subject, email=email
+                person_id=user.id, issuer=issuer, subject=profile.subject, email=email
             )
         )
         await session.commit()

@@ -208,6 +208,10 @@ def test_workflow_does_not_apply_when_configuration_is_missing(monkeypatch):
     assert "mode=off" in report["summary"]
 
 
+async def _always_connected(payload: dict) -> bool:
+    return True
+
+
 class TestPullRequestWebhook:
     def _client(self, monkeypatch, merged: bool, captured: list):
         from engine.api.routes import webhook as webhook_mod
@@ -247,6 +251,8 @@ class TestPullRequestWebhook:
         monkeypatch.setattr(webhook_mod, "source_adapter", lambda source: Adapter())
         monkeypatch.setattr(webhook_mod, "dedup_once", dedup)
         monkeypatch.setattr(webhook_mod, "_enqueue_workflow", enqueue)
+        # 这条路径测的是"合并事件会入发布队列",前提当然包括仓库已接入
+        monkeypatch.setattr(webhook_mod, "_connects_here", _always_connected)
 
         app = FastAPI()
         app.include_router(webhook_mod.router)

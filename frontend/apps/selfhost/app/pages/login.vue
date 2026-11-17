@@ -42,7 +42,7 @@ const COPY: Record<string, { title: string, subtitle: string, submit: string, bu
   login: { title: '登录既未', subtitle: '夜里发生的事,早上只做判断。', submit: '登录', busy: '登录中…' },
   register: {
     title: '注册既未',
-    subtitle: '注册完成后按默认角色进来,权限由管理员再调。',
+    subtitle: '注册会给你建一个自己的工作区,你是它的所有者。',
     submit: '注册并进入',
     busy: '注册中…',
   },
@@ -175,7 +175,11 @@ async function submitRegister() {
         password: password.value,
       },
     })
-    await navigateTo('/issues', { replace: true })
+    // 落在哪一道账由服务端说了算(自助注册会给自己建一个工作区)。跳过去时把
+    // 那一段带进路径:工作区在路径里,不带就等于让下一跳去猜。
+    const me = await $fetch<{ workspace?: string }>('/api/auth/me').catch(() => null)
+    const slug = me?.workspace || ''
+    await navigateTo(slug ? `/workspaces/${encodeURIComponent(slug)}/issues` : '/issues', { replace: true })
   } catch (err) {
     fail(err)
   } finally {

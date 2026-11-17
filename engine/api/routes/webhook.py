@@ -15,6 +15,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select
 
 from engine.ingest.events import header_value
 from engine.ingest.source import mentions_prompt, source_adapter
@@ -113,6 +114,15 @@ async def _handle_source_event(source: str, request: Request) -> dict:
     payload = _payload_from_event(event)
     delivery = _delivery_id(headers, body)
 
+    # 仓库是人在仓库页接入的,不由投递自己长出来:没接入就是"这个工作区不管它",
+    # 连工作流都不起 —— 一次公网可达的 webhook 不该能让引擎替陌生人拉代码。
+    if not await _connects_here(payload):
+        return {
+            "status": "unconnected",
+            "message": f"{source} 的 {payload['repo_full_name']} 还没接入工作区 "
+            f"{payload['tenant_slug']}:去仓库页接入它,投递才会被处理",
+        }
+
     # 投递去重(键带租户段):来源会重试投递,防止重复触发工作流
     if not await dedup_once(
         f"gwei:{payload['tenant_slug']}:webhook-dedup:{delivery}",
@@ -129,6 +139,32 @@ async def _handle_source_event(source: str, request: Request) -> dict:
             return {"status": "ignored", "message": f"{source} 上的评论没叫平台"}
         return await _enqueue_workflow("gwei-fix", fix_suggestion_workflow, delivery, payload)
     return await _enqueue_workflow("gwei-triage", issue_triage_workflow, delivery, payload)
+
+
+async def _connects_here(payload: dict) -> bool:
+    """这个仓库接入过本工作区吗。读不到库时按"没接入"处理 —— 那一侧不会起工作流。"""
+    from engine.db import async_session_factory
+    from engine.db.models import Tenant
+    from engine.projects.connect import resolve
+
+    try:
+        async with async_session_factory() as session:
+            tenant_id = await session.scalar(
+                select(Tenant.id).where(Tenant.slug == payload["tenant_slug"])
+            )
+            if tenant_id is None:
+                return False
+            return (
+                await resolve(
+                    session,
+                    tenant_id,
+                    str(payload.get("source_adapter") or "") or "github",
+                    str(payload.get("repo_full_name") or ""),
+                )
+            ) is not None
+    except Exception:  # noqa: BLE001 - 库出问题不能顺势去替陌生人起工作流
+        logger.warning("判定仓库接入状态失败,按未接入处理", exc_info=True)
+        return False
 
 
 async def _enqueue_workflow(prefix: str, workflow, delivery_id: str, payload: dict) -> dict:

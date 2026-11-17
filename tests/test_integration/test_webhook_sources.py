@@ -101,6 +101,10 @@ class TestCNBEvent:
         assert cnb_mod.normalize_pull_request_event({"type": "PushEvent"}) is None
 
 
+async def _always_connected(payload: dict) -> bool:
+    return True
+
+
 class TestSourceWebhookRoute:
     def _client(self, monkeypatch, source: str, captured: list):
         from engine.api.routes import webhook as webhook_mod
@@ -136,6 +140,9 @@ class TestSourceWebhookRoute:
         monkeypatch.setattr(webhook_mod, "source_adapter", lambda name: Adapter())
         monkeypatch.setattr(webhook_mod, "dedup_once", dedup)
         monkeypatch.setattr(webhook_mod, "_enqueue_workflow", enqueue)
+        # 仓库是人在仓库页接入的:这条路径只测"已接入的仓库投递会入队",
+        # 接入与否本身由 test_repo_connect 盯着。
+        monkeypatch.setattr(webhook_mod, "_connects_here", _always_connected)
 
         app = FastAPI()
         app.include_router(webhook_mod.router)

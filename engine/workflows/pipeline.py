@@ -79,43 +79,243 @@ async def _analyze_with_cache(payload: dict) -> dict:
     )
 
 
+def repo_slug(source: str, full_name: str) -> str:
+    """仓库在这棵树上的名字:`来源-仓库全名`,`/` 也压成 `-`。
+
+    规则与接入时用的是同一条(见 `engine/projects/connect.py`):投递时按它判
+    "这个仓库接入了没有",接入时按它建行。两处各写一遍,迟早有一处认错人。
+    """
+    from engine.projects.connect import repo_slug as _repo_slug
+
+    return _repo_slug(source, full_name)
+
+
+def project_slug_of(full_name: str) -> str:
+    """仓库全名所属的项目:第一段。规则同样只有一处(`connect.project_slug_of`)。"""
+    from engine.projects.connect import project_slug_of as _project_slug_of
+
+    return _project_slug_of(full_name)
+
+
+# 投递落在一个没接入的仓库上时给的答复。webhook 与工作流报告用的是同一句话:
+# 人看到的应该是"这个仓库还没接入",不是"出错了"。
+_NOT_CONNECTED = "这个仓库还没接入这个工作区:去仓库页接入它,投递才会被处理"
+
+
+async def _ingested_repo(session, tenant_id, payload: dict):
+    """这次投递说的是哪个已接入的仓库。**投递不建仓库。**
+
+    一次投递只说得清"哪份代码上发生了一件事",说不清"这道账要不要管它"。所以
+    仓库是人在仓库页接入的;没接入的来源在这里拿到 None,调用方据此如实报告,
+    而不是替陌生人建一行仓库、拉一份代码、跑一遍模型。
+    """
+    from engine.projects.connect import resolve
+
+    source = str(payload.get("source_adapter") or "") or "github"
+    full_name = str(payload.get("repo_full_name") or "")
+    if not full_name:
+        return None
+    return await resolve(session, tenant_id, source, full_name)
+
+
+async def _persist_pulled_impl(
+    source: str, tenant_slug: str, repo_full_name: str, numbers: list[int] | None = None
+) -> dict:
+    """把"仓库已有的议题"读一次 —— 接进来那一刻,或者人在仓库页点了一次。
+
+    这是**读**:落的是议题事实,不起模型、不回评。身份是 (仓库, 议题号),与投递
+    那条路径(`_find_issue`)用的是同一个键。
+
+    `numbers` 只给这一个话题用:它是"从界面发的第一轮"的入口,读回来的那一页里
+    没有这条时也要落 —— 人已经指定了话题,不该被一页分页结果挡住。
+
+    没有适配器、或者适配器列不出来,如实返回 `listed=False`:人不该被一个编出来的
+    0 骗成"这个仓库没有议题"。
+    """
+    from engine.ingest.source import list_issues_of, source_adapter
+    from engine.projects.connect import MAX_SYNC_PAGES, resolve
+
+    wanted = {int(n) for n in (numbers or []) if n is not None}
+    async with async_session_factory() as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
+        if tenant is None:
+            return {
+                "listed": False,
+                "added": 0,
+                "seen": 0,
+                "truncated": False,
+                "reason": f"工作区不存在:{tenant_slug}",
+            }
+        project = await resolve(session, tenant.id, source, repo_full_name)
+        if project is None:
+            return {
+                "listed": False,
+                "added": 0,
+                "seen": 0,
+                "truncated": False,
+                "reason": "这个仓库还没接入这个工作区",
+            }
+        try:
+            adapter = source_adapter(source)
+        except LookupError as exc:
+            return {
+                "listed": False,
+                "added": 0,
+                "seen": 0,
+                "truncated": False,
+                "reason": str(exc),
+            }
+
+        known = set(
+            (
+                await session.execute(select(Issue.number).where(Issue.project_id == project.id))
+            ).scalars()
+        )
+        missing = sorted(wanted - known)
+        added = seen = 0
+        cursor = ""
+        truncated = False
+        listed = True
+        reason = ""
+        for page_index in range(MAX_SYNC_PAGES):
+            try:
+                page = await list_issues_of(adapter, repo_full_name, cursor)
+            except LookupError as exc:
+                listed, reason = False, str(exc)
+                break
+            except Exception as exc:  # noqa: BLE001 - 来源拒了这一次读取:如实说,不假装读完
+                listed, reason = added > 0, f"{type(exc).__name__}: {exc}"
+                break
+            for ref in page.issues:
+                seen += 1
+                if ref.number in known:
+                    continue
+                known.add(ref.number)
+                session.add(
+                    Issue(
+                        github_id=0,
+                        project_id=project.id,
+                        number=int(ref.number),
+                        title=ref.title,
+                        body=ref.body,
+                        labels=[],
+                        status="OPEN",
+                    )
+                )
+                added += 1
+            cursor = page.cursor
+            if not cursor:
+                break
+            if page_index == MAX_SYNC_PAGES - 1:
+                truncated = True
+
+        if missing:
+            # 指名的这条读不到也照落:标题是它唯一能给的,反正原样给人看
+            for number in missing:
+                session.add(
+                    Issue(
+                        github_id=0,
+                        project_id=project.id,
+                        number=number,
+                        title=f"#{number}",
+                        body="",
+                        labels=[],
+                        status="OPEN",
+                    )
+                )
+                added += 1
+        await session.commit()
+        return {
+            "listed": listed,
+            "added": added,
+            "seen": seen,
+            "truncated": truncated,
+            "reason": reason,
+        }
+
+
+async def _find_issue(session, project_id, payload: dict) -> Issue | None:
+    """这个仓库里已有那条议题吗。
+
+    先按平台侧 id 找(能带 id 的来源最准);没有 id 或找不到时按议题号找 ——
+    议题号是仓库内唯一的,而它是所有来源都有的一栏。两条都不中就新建。
+    """
+    github_id = payload.get("issue_github_id")
+    if github_id is not None:
+        found = (
+            await session.execute(
+                select(Issue).where(
+                    Issue.project_id == project_id,
+                    Issue.github_id == github_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if found is not None:
+            return found
+    number = payload.get("issue_number")
+    if number is None:
+        return None
+    return (
+        await session.execute(
+            select(Issue).where(Issue.project_id == project_id, Issue.number == number)
+        )
+    ).scalar_one_or_none()
+
+
 async def _persist_triage_impl(payload: dict, analysis: dict, status: str) -> dict:
-    """按租户与 GitHub ID 幂等 upsert Tenant/Project/Issue,并新建 AgentSession。"""
+    """按已接入的仓库与平台侧 id 幂等 upsert Issue,并新建 AgentSession。
+
+    仓库的身份是 (租户, 来源, 仓库全名):数字 id 只在同一个来源里可比,没有 id
+    的来源(部分投递不带)不能拿它当身份,`github_id` 也可能根本不存在。
+
+    **这一版不再建仓库**:仓库是人在仓库页接入的。没接入就返回"没接入",不落库。
+    """
     async with async_session_factory() as session:
         try:
-            tenant = (
-                await session.execute(select(Tenant).where(Tenant.slug == payload["tenant_slug"]))
-            ).scalar_one_or_none()
+            tenant = await session.scalar(
+                select(Tenant).where(Tenant.slug == payload["tenant_slug"])
+            )
             if tenant is None:
-                tenant = Tenant(slug=payload["tenant_slug"], name=payload["tenant_slug"])
-                session.add(tenant)
-                await session.flush()
+                # 工作区不存在,这个仓库也就无处接入过。不替一个陌生 slug 建工作区。
+                return {"tenant_id": "", "repo": "", "reason": _NOT_CONNECTED}
 
-            project = (
-                await session.execute(
-                    select(Project).where(
-                        Project.tenant_id == tenant.id,
-                        Project.github_id == payload["repo_github_id"],
-                    )
-                )
-            ).scalar_one_or_none()
+            project = await _ingested_repo(session, tenant.id, payload)
             if project is None:
-                project = Project(
-                    tenant_id=tenant.id,
-                    github_id=payload["repo_github_id"],
-                    name=payload["repo_full_name"],
-                )
-                session.add(project)
-                await session.flush()
+                # 没接入:这条投递到此为止,不落库、不建工作区、不建仓库。
+                return {
+                    "tenant_id": str(tenant.id),
+                    "repo": str(payload.get("repo_full_name") or ""),
+                    "reason": _NOT_CONNECTED,
+                }
 
-            issue = (
-                await session.execute(
-                    select(Issue).where(
-                        Issue.project_id == project.id,
-                        Issue.github_id == payload["issue_github_id"],
+            if not payload.get("pulled"):
+                # 别人替你排进来的那条议题(见 `harvest_workflow`):这条路径只写行、
+                # 不起模型 —— 补的是议题事实,不是替人跑一次。
+                fresh = await _find_issue(session, project.id, payload)
+                if fresh is None:
+                    session.add(
+                        Issue(
+                            github_id=payload.get("issue_github_id") or 0,
+                            project_id=project.id,
+                            number=payload["issue_number"],
+                            title=payload.get("title") or "",
+                            body=payload.get("body") or "",
+                            labels=[],
+                            status="OPEN",
+                        )
                     )
-                )
-            ).scalar_one_or_none()
+                await session.commit()
+                return {
+                    "tenant_id": str(tenant.id),
+                    "project_id": str(project.id),
+                    "repo": str(payload.get("repo_full_name") or ""),
+                    "pulled": True,
+                }
+            if project.github_id is None and payload.get("repo_github_id") is not None:
+                # 头一次投递没带 id、后来带了:补上。已经有了就不动,改身份比缺身份更危险。
+                project.github_id = payload["repo_github_id"]
+
+            issue = await _find_issue(session, project.id, payload)
             if issue is None:
                 issue = Issue(
                     github_id=payload["issue_github_id"],
@@ -286,6 +486,11 @@ async def _apply_effects_impl(
     parsed = parse_intent(intent)
     tenant = payload.get("tenant_slug", "")
     binding = binding or config.settings.default_binding
+    # 这一轮的效果作用在哪个仓库上。不填的话,"只被授了 acme/api 的人"与
+    # "能放行整个工作区的人"在账本上看不出区别 —— 判权限时没有东西可判。
+    repo = repo_slug(
+        str(payload.get("source_adapter") or ""), payload.get("repo_full_name") or ""
+    )
     ledger = create_ledger()
 
     # 先把每个候选拆成"能做"或"为什么不做";放弃的候选也写进同一轮的 intent
@@ -366,6 +571,7 @@ async def _apply_effects_impl(
             intent=intent_record,
             effect=plan["decl"].to_effect(plan["args"]),
             tenant=tenant,
+            repo=repo,
             binding=binding,
             incident_id=incident_id,
             idempotency_key=f"{idem_base}:effect:{plan['index']}",
@@ -398,6 +604,11 @@ async def analyze_issue_step(payload: dict) -> dict:
 @DBOS.step()
 async def persist_triage_step(payload: dict, analysis: dict, status: str) -> dict:
     return await _persist_triage_impl(payload, analysis, status)
+
+
+@DBOS.step()
+async def persist_pulled_step(source: str, tenant_slug: str, repo_full_name: str) -> dict:
+    return await _persist_pulled_impl(source, tenant_slug, repo_full_name)
 
 
 @DBOS.step()
@@ -724,6 +935,65 @@ async def alert_triage_workflow(payload: dict) -> dict:
         "intent": intent.get("summary", ""),
         "applied": applied,
     }
+
+
+@DBOS.workflow()
+async def harvest_workflow(payload: dict) -> dict:
+    """把一个仓库已有的议题读一次,再让每一条都回到正常那条路上。
+
+    接进来那一刻(或人在仓库页点了一次"再读一遍")跑这一支。两件事分开:
+
+    1. 读一次,落议题事实(`persist_pulled_step`)—— 这件事不跑模型、不回评;
+    2. 每一条补进来的议题排一发 `issue_triage_workflow`(带 `pulled=True`,
+       那条路径只落行),让它们和投递进来的议题落在同一个身份上。
+
+    第 2 步**只落行,不生成分析**:一次接入补进来几十条旧议题,每条都跑一遍模型
+    是拿人的额度换一堆没人要的评论。真正的分析等那条议题上有事发生、或者人从
+    界面上发一轮。判据:接入之后议题板上多的是事实,账本上不多出条目。
+    """
+    source = source_of(payload)
+    tenant_slug = payload["tenant_slug"]
+    repo = payload["repo_full_name"]
+    record = await persist_pulled_step(source, tenant_slug, repo)
+    triaged: list[str] = []
+    if record.get("added"):
+        from engine.workflows.queue import enqueue_workflow
+
+        async with async_session_factory() as session:
+            tenant = await session.scalar(select(Tenant).where(Tenant.slug == tenant_slug))
+            project = (
+                await _ingested_repo(session, tenant.id, payload) if tenant is not None else None
+            )
+            numbers = []
+            if project is not None:
+                numbers = list(
+                    (
+                        await session.execute(
+                            select(Issue.number)
+                            .where(Issue.project_id == project.id, Issue.github_id == 0)
+                            .order_by(Issue.number)
+                        )
+                    ).scalars()
+                )
+        for number in numbers:
+            queued = await enqueue_workflow(
+                "gwei-triage",
+                issue_triage_workflow,
+                f"pull-{repo_slug(source, repo)}-{number}",
+                {
+                    **payload,
+                    "pulled": True,
+                    "is_pull": False,
+                    "issue_number": number,
+                    "issue_github_id": 0,
+                    "topic": f"{repo}#{number}",
+                    "title": "",
+                    "body": "",
+                    "source": "issue",
+                },
+            )
+            triaged.append(queued["workflow_id"])
+    return {"record": record, "triaged": triaged}
 
 
 @DBOS.workflow()

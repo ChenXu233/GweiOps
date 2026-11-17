@@ -17,7 +17,7 @@ from engine.auth import hash_password
 from engine.auth import registration as policy_mod
 from engine.shared.config import config as app_config
 from engine.auth import registration_store as reg
-from engine.db.models import User, UserActivation, UserContact, VerificationCode
+from engine.db.models import Person, UserActivation, UserContact, VerificationCode
 from engine.quota import store as quota_store
 
 pytestmark = pytest.mark.skipif(
@@ -227,7 +227,7 @@ def test_a_pending_activation_is_not_a_user(policy):
         from sqlalchemy import func, select
 
         async with async_session_factory() as session:
-            users = await session.scalar(select(func.count()).select_from(User))
+            users = await session.scalar(select(func.count()).select_from(Person))
             pending = await session.scalar(select(func.count()).select_from(UserActivation))
         assert users == 1  # 只有那个 owner
         assert pending == 1
@@ -235,12 +235,12 @@ def test_a_pending_activation_is_not_a_user(policy):
     asyncio.run(run())
 
 
-async def _user(email: str) -> User:
+async def _user(email: str) -> Person:
     from engine.db import async_session_factory
     from sqlalchemy import select
 
     async with async_session_factory() as session:
-        return await session.scalar(select(User).where(User.email == email))
+        return await session.scalar(select(Person).where(Person.email == email))
 
 
 def test_quota_counts_only_inside_the_window(policy):

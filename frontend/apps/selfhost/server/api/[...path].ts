@@ -3,6 +3,9 @@
 //
 // 这里**不注入任何凭据**:浏览器带的是自己的会话 cookie,原样转给引擎,
 // 由引擎判断你是谁。以前这里替浏览器塞一个 operate 令牌,那样登录页就没有意义了。
+//
+// 工作区也不在这里补:它在路径里(`/api/workspaces/{slug}/…`),前端调用点
+// (packages/core/api/typed.ts 的 scopePath)自己带上,代理一字节都不该动它。
 const allowedMethods = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 
 export default defineEventHandler(async (event) => {

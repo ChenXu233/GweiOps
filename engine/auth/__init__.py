@@ -20,7 +20,7 @@ import base64
 import hashlib
 import hmac
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------
@@ -86,6 +86,19 @@ DEFAULT_ROLES: tuple[dict, ...] = (
 READ_PERMISSIONS = frozenset(
     {"changes.read", "settings.read", "users.read", "audit.read", "plugins.read", "keys.read"}
 )
+
+# 可以只授给某几个仓库或项目的权限。**只有会落到具体仓库上的动作**进这张表:
+# 放行、撤销、执行都作用在一个仓库上;管人与管密钥是工作区级的事,收窄到仓库
+# 没有意义 —— 一个仓库没有自己的用户表。
+#
+# 不在这张表里的权限没法收窄:角色里给 `changes.read` 收窄到 acme/api,那个人
+# 会**看不到任何**东西(包括 acme/api 的账),而不是看到一部分。这是保守那一侧:
+# 收窄没生效时不该多给,只该少给。
+#
+# 范围写的是 `projects` 表里的 slug,那一列在 (租户, slug) 上唯一,**项目与仓库
+# 共用同一个名字空间**:所以 `changes.approve@acme` 是项目授权,覆盖它下面每一个
+# 仓库(含以后新增);`changes.approve@github-acme-api` 是仓库授权,只管那一个。
+SCOPED_PERMISSIONS = frozenset({"changes.read", "changes.execute", "changes.approve", "changes.rollback"})
 
 WRITE_PREFIXES = ("changes.approve", "changes.rollback", "settings.write")
 
@@ -187,20 +200,64 @@ def session_expiry(days: int = SESSION_DAYS) -> datetime:
 
 @dataclass(frozen=True)
 class Identity:
-    """一次请求背后的人。token_id 只用于日志,不回显。"""
+    """一次请求背后的人,以及他这次落在哪个工作区里。
+
+    `user_id` 是**成员关系**的 id(这个工作区里的这个人),`person_id` 才是跨工作区
+    的那个人。会话、审计、`UserRole`、"谁点的头"问的一直是前者:同一个人在两个
+    工作区里做的两件事,不该被读成同一件。
+
+    一次请求只在一个工作区里算权限。几个工作区的权限并起来,是越权的起点,所以
+    `permissions` 只对 `tenant` 那一个算数。
+    """
 
     user_id: str
     name: str
     tenant: str
+    # 工作区级的权限:没有范围限制,处处算数
     permissions: frozenset[str]
     parent_id: str = ""
+    # 只对某几个仓库生效的权限:{权限: {仓库 slug…}}
+    scoped_permissions: dict[str, frozenset[str]] = field(default_factory=dict)
+    # 这个人本身。跨工作区不变;会话属于它,不属于成员关系
+    person_id: str = ""
+    person_email: str = ""
+    # 不属于任何工作区时为空:能登录不等于能看账
+    membership_id: str = ""
 
     @property
     def can_write(self) -> bool:
-        return any(is_write_permission(p) for p in self.permissions)
+        """会不会改世界。只授给某几个仓库的写权限也算 —— 界面上他要看得见那些按钮。"""
+        return any(is_write_permission(p) for p in self.permissions) or any(
+            is_write_permission(p) for p in self.scoped_permissions
+        )
 
     def has(self, permission: str) -> bool:
+        """工作区级的权限。带范围的不算:它得指名道姓地说要哪个仓库或项目。"""
         return permission in self.permissions
+
+    def has_scope(self, permission: str) -> bool:
+        return permission in self.scoped_permissions
+
+    def allows(
+        self,
+        permission: str,
+        scope: str | None = None,
+        project: str | None = None,
+    ) -> bool:
+        """这次判定算不算数。`scope` 空 = 整个工作区。判据只此一处。
+
+        `scope` 是仓库 slug,`project` 是它所属项目的 slug。授在项目上的授权
+        对项目下每一个仓库都算数,**包括登录之后才加进来的那个** —— 所以这一档
+        不能在建身份时展开成仓库,只能在判定时带上项目问一次。
+        """
+        if permission in self.permissions:
+            return True
+        if not permission:
+            return False
+        granted = self.scoped_permissions.get(permission, frozenset())
+        if scope and scope in granted:
+            return True
+        return bool(project and project in granted)
 
 
 def effective_permissions(
@@ -222,6 +279,72 @@ def effective_permissions(
     return frozenset(granted)
 
 
+def split_scoped(
+    entries: list[str] | set[str] | None,
+) -> tuple[set[str], dict[str, set[str]]]:
+    """把 "changes.approve" 与 "changes.approve@github-acme-api" 拆成两份。
+
+    前者是工作区级的授权,后者只对一个范围生效(范围用 slug 指名,见
+    `engine/workflows/pipeline.py` 的 `repo_slug`)。同一个权限两边都可能有:
+    工作区级那份管别的仓库,带范围那份只管这几个。
+    """
+    whole: set[str] = set()
+    scoped: dict[str, set[str]] = {}
+    for entry in entries or ():
+        text = str(entry or "").strip()
+        if not text:
+            continue
+        permission, sep, scope = text.partition("@")
+        if not sep:
+            whole.add(permission)
+            continue
+        scope = scope.strip()
+        if not scope or permission not in SCOPED_PERMISSIONS:
+            # 收窄了一个不能收窄的权限(或没写收窄到哪):丢掉,不猜。
+            # 按不收窄处理会多给,按收窄处理会少给 —— 少给那一侧才是安全的那侧。
+            continue
+        scoped.setdefault(permission, set()).add(scope)
+    return whole, scoped
+
+
+def effective_permissions(
+    own: set[str] | list[str] | None,
+    roles: list[list[str]],
+    parent: set[str] | None = None,
+    parent_scoped: dict[str, set[str]] | None = None,
+) -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    """角色并集 + 个人追加;有父用户时再与父的交集。
+
+    返回 (工作区级权限, 带范围的权限)。parent=None 表示没有父(顶级用户);
+    空集合表示父被停了或没有权限——那种情况下子用户也该是空,不能因为"没传"
+    就放开。
+
+    带范围的权限与父取交集时按仓库逐个算:父有的仓库才留下,父没有的删掉。
+    """
+    own_whole, own_scoped = split_scoped(own)
+    whole: set[str] = set(own_whole)
+    scoped: dict[str, set[str]] = {k: set(v) for k, v in own_scoped.items()}
+    for role_permissions in roles:
+        role_whole, role_scoped = split_scoped(role_permissions)
+        whole |= role_whole
+        for permission, scopes in role_scoped.items():
+            scoped.setdefault(permission, set()).update(scopes)
+    whole &= set(ALL_PERMISSIONS)
+    for permission in list(scoped):
+        if permission not in SCOPED_PERMISSIONS:
+            del scoped[permission]
+    if parent is not None:
+        whole &= set(parent)
+        allowed = parent_scoped or {}
+        for permission in list(scoped):
+            kept = scoped[permission] & set(allowed.get(permission, ()))
+            if kept:
+                scoped[permission] = kept
+            else:
+                del scoped[permission]
+    return frozenset(whole), {k: frozenset(v) for k, v in scoped.items()}
+
+
 __all__ = [
     "ALL_PERMISSIONS",
     "DEFAULT_ROLES",
@@ -229,8 +352,10 @@ __all__ = [
     "PERMISSIONS",
     "READ_PERMISSIONS",
     "SESSION_COOKIE",
+    "SCOPED_PERMISSIONS",
     "SESSION_DAYS",
     "effective_permissions",
+    "split_scoped",
     "hash_password",
     "hash_session_token",
     "is_write_permission",

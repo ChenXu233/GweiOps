@@ -26,9 +26,16 @@ from engine.db.models import *  # noqa: F401, F403
 target_metadata = Base.metadata
 
 # Read database URL from project Settings
+#
+# 环境变量优先:`alembic -x` 与 `DATABASE_URL=… alembic upgrade head` 是同一个东西,
+# 都表示"这一次连这一份库"。之前只认 `Settings()`,而没有 `.env` 的调用方(单测、
+# 一次性脚本、CI 里临时建的库)设了 `DATABASE_URL` 也不生效 —— 迁移照样打到
+# 配置里那一份,建出来的是一个空库。
+import os
+
 from engine.shared.config import Settings
 settings = Settings()
-database_url = settings.database_url
+database_url = os.environ.get("DATABASE_URL") or settings.database_url
 
 
 def run_migrations_offline() -> None:

@@ -377,13 +377,16 @@ effects:
 
 效果提供者实现 `execute` / `undo` / `window` / `verify` 四个方法;声明的解释权在核心(`registry.effect_decl`)。进程外插件同样实现这四个方法,协议层负责把阶段分派过去,见[效果四方法](#效果四方法与进程内提供者同名同语义);不实现也能用,`execute_task` 会收到带 `phase` 的 `params`。
 
-适配器还负责代码从哪来,三件事各有各的方法:
+适配器还负责代码从哪来,四件事各有各的方法:
 
 | 方法 | 谁在用 | 拿不到时 |
 | --- | --- | --- |
 | `workspace_source(repo) -> harness.workspace.Source` | 交给 harness 之前把代码铺进工作区 | 抛错,本次运行如实报告"没开工" |
 | `read_pull(repo, number)` | 话题上已有 PR 时接着改它(要分支与地址) | 抛错,当成"没有 PR" |
+| `list_issues(repo, cursor="") -> IssuePage` | 仓库接进来时读一次它已有的议题 | 抛 `LookupError`,入口如实说"这个来源列不出来" |
 | `mentions` | 评论里算不算叫了平台 | 空 = 不接评论触发 |
+
+`list_issues` 是**可选**能力,不声明就是列不出来 —— 入口不会退回到"那就当它没有议题":两种 0 条在答复里分得开(`listed` 那一栏)。一页返回 `IssuePage(issues, cursor)`,游标不透明,核心只把它原样交还给同一个适配器;`cursor` 为空表示没有下一页。超时与 5xx 不能报成空页:那会让"读到一半"看起来像"读完了"。GitHub 与 CNB 内置适配器都实现了这一格。
 
 `Source` 是 `archive_url` / `token` / `branch` 三样:一个能下整棵树的归档地址(不走 git 协议——有些网络里 `github.com` 连不上,API 还在)、一份只在平台这一侧用一次的凭证、一条基线分支。代码由**这条投递的来源**给:CNB 的议题进来,工作区里就是 CNB 的仓库,不会拿 GitHub App 去拉一个同名仓库。它不是能力、不进出口菜单,容器永远拿不到凭证。
 

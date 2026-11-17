@@ -2,6 +2,7 @@
 import { useSettings } from '@gwei/core/composables/useSettings'
 import { useTheme } from '@gwei/core/composables/useTheme'
 import { SettingsScopesApi, ReleaseSettingsApi } from '@gwei/core/api/client'
+import { scopePath } from '@gwei/core/api/typed'
 
 interface ScopeField {
   name: string
@@ -189,7 +190,8 @@ const quotaMsg = ref('')
 async function loadQuota() {
   try {
     const [usage, scopes] = await Promise.all([
-      $fetch<{ tenant: string, items: QuotaItem[] }>('/api/quota', { query: { tenant: 'default' } }).catch(() => null),
+      // 工作区在路径里(scopePath 补),查询串不再说一次
+      $fetch<{ tenant: string, items: QuotaItem[] }>(scopePath('/api/quota')).catch(() => null),
       SettingsScopesApi.list().catch(() => [] as unknown[]),
     ])
     quota.value = usage

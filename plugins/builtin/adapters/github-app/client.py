@@ -178,6 +178,46 @@ class GitHubAppClient:
         )
         return [comment.model_dump() for comment in response.parsed_data]
 
+    async def list_issues(
+        self, repo: str, state: str = "open", cursor: str = "", per_page: int = 50
+    ) -> dict[str, Any]:
+        """仓库里已有的一页议题,以及下一页从哪继续。
+
+        PR 也走同一个端点(GitHub 上 PR 就是议题),这里照实说是哪一种 —— 筛选是
+        调用方的事,猜错了会把一条 PR 当成议题落库。
+
+        下一页判据用"这页满了没有",不用 Link 头:满了才可能还有,不满足就不再请求
+        一次换一个空数组回来。`sort=created&direction=asc` 是这件事的前提 —— 翻页
+        过程中上游新建的议题会落在最后一页之后,不会把中间一条挤到已翻过的位置上。
+        """
+        owner, repo_name = self._parse_repo(repo)
+        try:
+            page = int(cursor) if cursor else 1
+        except ValueError:
+            raise ValueError(f"不认识的翻页游标:{cursor!r}") from None
+        response = await self.github.rest.issues.async_list_for_repo(
+            owner,
+            repo_name,
+            state=state,
+            sort="created",
+            direction="asc",
+            per_page=per_page,
+            page=page,
+        )
+        items = [item.model_dump() for item in response.parsed_data]
+        return {
+            "items": [
+                {
+                    "number": item.get("number"),
+                    "title": item.get("title") or "",
+                    "body": item.get("body") or "",
+                    "is_pull": bool(item.get("pull_request")),
+                }
+                for item in items
+            ],
+            "cursor": str(page + 1) if len(items) >= per_page else "",
+        }
+
     # -- PR:VCS 操作在平台这一侧做 ----------------------------------
     #
     # 容器里不放 git 凭据。agent 改的是工作区里的文件,平台用 App 安装令牌

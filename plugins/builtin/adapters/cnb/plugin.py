@@ -17,6 +17,7 @@ from typing import Any, Dict
 from engine.change_unit import EffectNotApplied
 from engine.harness.workspace import Source as WorkspaceSource
 from engine.ingest.events import EventError, event as normalized_event, header_value
+from engine.ingest.source import IssuePage, IssueRef
 from engine.plugin_manager.base import PluginBase
 
 from .client import CNBClient, CNBError
@@ -95,6 +96,23 @@ class CNBAdapter(PluginBase):
             "state": pull.get("state") or "",
             "head": {"ref": head.get("ref") or pull.get("head_ref") or ""},
         }
+
+    async def list_issues(self, repo: str, cursor: str = "") -> IssuePage:
+        """仓库里已有的议题。接进来的时候读一次,列不到就照原样抛。"""
+        client = self._client()
+        data = await client.list_issues(repo, cursor=cursor)
+        return IssuePage(
+            issues=[
+                IssueRef(
+                    number=int(item["number"]),
+                    title=str(item.get("title") or ""),
+                    body=str(item.get("body") or ""),
+                )
+                for item in data["items"]
+                if item.get("number") is not None
+            ],
+            cursor=str(data.get("cursor") or ""),
+        )
 
     # -- 工作区:代码从哪来 -----------------------------------------
 

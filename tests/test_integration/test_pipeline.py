@@ -6,6 +6,7 @@
 门控（例如指向 docker compose 启动的 gwei-postgres-dev）。
 """
 
+from urllib.parse import quote
 import asyncio
 import importlib
 import json
@@ -366,6 +367,9 @@ def _make_fake_session_factory():
             return False
 
         execute = AsyncMock(return_value=_FakeResult(None))
+        # `scalar` 是同一件事的短语形态(取一个值,不是一行):
+        # 工作区/仓库这类"查到了就往下走"的判定用的是它。
+        scalar = AsyncMock(return_value=None)
         flush = AsyncMock()
         commit = AsyncMock()
         rollback = AsyncMock()
@@ -424,6 +428,9 @@ class TestWorkflowEndToEnd:
                 )
                 mock_get_sensor.return_value = sensor
 
+                # 仓库是接入进来的:生产里这条投递只会在仓库页接入之后才被处理
+                # (`/webhook/{source}` 先判"接入了没有")。这里直接跑工作流,所以要
+                # 自己把"工作区那一行"和"仓库那一行"喂给假会话。
                 payload = {
                     "tenant_slug": "default",
                     "repo_full_name": "my-org/my-repo",
@@ -433,7 +440,22 @@ class TestWorkflowEndToEnd:
                     "title": "Test Bug",
                     "body": "Steps to reproduce...",
                     "source": "issue",
+                    "source_adapter": "github",
                 }
+                from engine.db.models import Project as _Project
+                from engine.db.models import Tenant as _Tenant
+
+                tenant_row = _Tenant(slug="default", name="default")
+                tenant_row.id = uuid.uuid4()
+                repo_row = _Project(
+                    tenant_id=tenant_row.id,
+                    parent_id=uuid.uuid4(),
+                    slug="github-my-org-my-repo",
+                    source="github",
+                    name="my-org/my-repo",
+                )
+                repo_row.id = uuid.uuid4()
+                session.scalar = AsyncMock(side_effect=[tenant_row, repo_row])
 
                 workflow_id = f"gwei-triage-{uuid.uuid4()}"
                 with SetWorkflowID(workflow_id):
@@ -451,7 +473,9 @@ class TestWorkflowEndToEnd:
                 )
 
                 assert result["record"]["tenant_id"]
-                assert len(added) == 4  # Tenant + Project + Issue + AgentSession
+                # Issue + AgentSession:工作区与仓库已经在库里(投递不建仓库),
+                # 这条投递只在这两样之上写两行。
+                assert len(added) == 2
                 # 本地兜底 intent 把结论转成一条 comment.create;测试环境没有效果
                 # 提供者,如实记 blocked——绝不假装发过评论。
                 effects = result["applied"]["applied"]
@@ -674,3 +698,40 @@ class TestReplyOnTheTopic:
 
         assert out["posted"] is False
         assert "已经回过话" in out["reason"]
+
+
+# ============================================================================
+# 仓库的身份与它的项目:slug 在租户内唯一,项目是它上面那一级
+# ============================================================================
+
+
+class TestRepoProjectLayer:
+    """这两件事一旦错了,多仓库就只是把一锅粥分成几碗。"""
+
+    def test_slug_is_source_prefixed(self):
+        """同一仓库名在两个来源上是两份代码,slug 因此要带来源前缀。"""
+        from engine.workflows.pipeline import project_slug_of, repo_slug
+
+        assert repo_slug("github", "acme/api") == "github-acme-api"
+        assert repo_slug("cnb", "acme/api") == "cnb-acme-api"
+        assert repo_slug("github", "acme/api") != repo_slug("cnb", "acme/api")
+        # 没有来源时就没有前缀,不凭空造一个
+        assert repo_slug("", "acme/api") == "acme-api"
+        # 默认归属的项目是路径第一段
+        assert project_slug_of("acme/api") == "acme"
+        assert project_slug_of("acme") == "acme"
+        assert project_slug_of("") == ""
+
+    def test_slug_only_uses_url_safe_characters(self):
+        """slug 会出现在查询串里,所以只用 `-` 一个分隔符:`/` 和 `:` 都不留。"""
+        from engine.workflows.pipeline import repo_slug
+
+        for slug in (repo_slug("github", "acme/api"), repo_slug("", "acme/api")):
+            assert ":" not in slug and "/" not in slug
+            assert slug == quote(slug, safe=""), f"{slug} 进查询串会被转义"
+
+    def test_two_sources_with_same_repo_name_stay_apart(self):
+        """github 上的 acme/api 与 cnb 上的 acme/api 是两份代码,slug 不同。"""
+        from engine.workflows.pipeline import repo_slug
+
+        assert repo_slug("github", "acme/api") != repo_slug("cnb", "acme/api")

@@ -41,7 +41,12 @@ class CNBClient:
         return f"{self._config.base_url}{path}"
 
     async def _request(
-        self, method: str, path: str, *, json: dict[str, Any] | None = None
+        self,
+        method: str,
+        path: str,
+        *,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> httpx.Response:
         if not self._config.token:
             raise CNBError("没配 CNB_TOKEN:回评、开 PR、读仓库都要它", status_code=0)
@@ -50,7 +55,11 @@ class CNBClient:
         ) as client:
             try:
                 response = await client.request(
-                    method, self._url(path), headers=self._headers(), json=json
+                    method,
+                    self._url(path),
+                    headers=self._headers(),
+                    json=json,
+                    params=params,
                 )
             except httpx.HTTPError as exc:
                 raise CNBError(f"CNB 请求失败:{exc}") from exc
@@ -139,6 +148,38 @@ class CNBClient:
         if isinstance(data, dict):
             return str(data.get("sha") or data.get("object", {}).get("sha") or "") or None
         return None
+
+    # -- 议题 ------------------------------------------------------------
+
+    async def list_issues(
+        self, repo: str, cursor: str = "", per_page: int = 50
+    ) -> dict[str, Any]:
+        """仓库里已有的一页议题,以及下一页从哪继续。
+
+        CNB 的分页是 `page` / `page_size`,所以游标就是页码;下一页的判据是"这页满了
+        没有" —— 满了才可能还有。CNB 的议题里没有 PR,GitHub 那种"议题端点混着 PR"
+        的情况在这里不存在,不需要再筛。
+        """
+        try:
+            page = int(cursor) if cursor else 1
+        except ValueError:
+            raise CNBError(f"不认识的翻页游标:{cursor!r}") from None
+        data = await self._json(
+            "GET", f"/{repo}/-/issues", params={"page": page, "page_size": per_page}
+        )
+        items = data if isinstance(data, list) else (data or {}).get("items") or []
+        return {
+            "items": [
+                {
+                    "number": item.get("number") or item.get("iid") or item.get("id"),
+                    "title": item.get("title") or "",
+                    "body": item.get("body") or item.get("description") or "",
+                }
+                for item in items
+                if isinstance(item, dict)
+            ],
+            "cursor": str(page + 1) if len(items) >= per_page else "",
+        }
 
     # -- 工作区 ----------------------------------------------------------
 

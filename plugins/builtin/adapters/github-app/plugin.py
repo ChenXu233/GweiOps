@@ -6,6 +6,7 @@ from typing import Any, Dict
 from engine.change_unit import Effect, EffectNotApplied, Window
 from engine.harness.workspace import Source as WorkspaceSource
 from engine.ingest.events import EventError, header_value
+from engine.ingest.source import IssuePage, IssueRef
 from engine.plugin_manager.base import PluginBase
 from .config import GitHubAppConfig
 from .client import GitHubAppClient
@@ -277,6 +278,30 @@ class GitHubAppAdapter(PluginBase):
             archive_url=f"https://api.github.com/repos/{repo}/tarball/{branch}",
             token=await self.client.installation_token(),
             branch=branch,
+        )
+
+    async def list_issues(self, repo: str, cursor: str = "") -> IssuePage:
+        """仓库里已有的议题 —— 接进来的那一刻,把已经发生的事读一次。
+
+        只读议题不读 PR:PR 走的是另一条路(合并事件、接着改),把它们混进议题板会
+        让"这条议题是谁提的"变成两个答案。列不到就照原样抛,入口如实说"列不了"。
+        """
+        if not await self._ensure_ready():
+            raise RuntimeError(
+                "GitHub App 客户端还没建起来(app_id / private_key / installation_id)"
+            )
+        data = await self.client.list_issues(repo, cursor=cursor)
+        return IssuePage(
+            issues=[
+                IssueRef(
+                    number=int(item["number"]),
+                    title=str(item.get("title") or ""),
+                    body=str(item.get("body") or ""),
+                )
+                for item in data["items"]
+                if not item.get("is_pull") and item.get("number") is not None
+            ],
+            cursor=str(data.get("cursor") or ""),
         )
 
     async def read_pull(self, repo: str, number: int) -> Dict[str, Any] | None:

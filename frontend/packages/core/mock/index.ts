@@ -1,5 +1,5 @@
 import type { IssueBoard, IssueTimeline } from '../types/issues'
-import type { Repo, Plugin, TeamSettings } from '../types/repos'
+import type { Plugin, Project, Repo, TeamSettings } from '../types/repos'
 import type { PluginWidget } from '../types/plugin'
 import type { ChangeRow } from '../types/changes'
 
@@ -9,9 +9,14 @@ export function makeLedgerEffect(capability: string, task: string) {
 }
 
 export const mockRepos: Repo[] = [
-  { id: '1', name: 'acme/api-gateway', icon: '📦', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
-  { id: '2', name: 'acme/auth-service', icon: '📦', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
-  { id: '3', name: 'acme/frontend', icon: '📦', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
+  { id: '1', name: 'acme/api-gateway', slug: 'github:acme/api-gateway', project: 'acme', projectName: 'Acme', icon: '📦', source: 'github', status: 'running', issueCount: 12, activeAgents: 3, lastSyncAt: '2 分钟前' },
+  { id: '2', name: 'acme/auth-service', slug: 'github:acme/auth-service', project: 'acme', projectName: 'Acme', icon: '📦', source: 'github', status: 'running', issueCount: 5, activeAgents: 1, lastSyncAt: '5 分钟前' },
+  { id: '3', name: 'acme/frontend', slug: 'cnb:acme/frontend', project: 'acme', projectName: 'Acme', icon: '📦', source: 'cnb', status: 'configuring', issueCount: 0, activeAgents: 0, lastSyncAt: '—' },
+]
+
+/** 演示数据:项目是仓库上面那一级,数与 mockRepos 对得上。 */
+export const mockProjects: Project[] = [
+  { id: 'p1', slug: 'acme', name: 'Acme', repos: 3, issues: 17, visibility: 'workspace' },
 ]
 
 /** 演示数据:形状照 GET /api/plugins 来,enabled 与 reason 都是引擎会真的给出的字段。 */
