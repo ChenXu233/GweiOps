@@ -1,0 +1,10 @@
+# 安全扫描忽略规则：以下路径的 key/token/密码均为测试假值或占位符，非真实凭据（见 Issue #32）
+
+# 测试夹具：假 SHA、假 API key，用于验证密钥脱敏显示
+tests/**
+
+# 前端 mock：演示用假 key
+frontend/packages/core/mock/**
+
+# 示例配置：占位符密码，如 POSTGRES_PASSWORD=changeme_please
+*.example
