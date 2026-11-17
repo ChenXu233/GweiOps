@@ -40,7 +40,10 @@ class Policy:
     requires_verification: bool
     default_role: str
     trust_invited: bool
+    # 空 = 自助注册的人自己建一个工作区;给了 slug = 落进那一个(单租户自部署那台)
     target_tenant: str
+    # 自助注册建工作区时给什么角色。落到 `target_tenant` 时用的是 `default_role`。
+    signup_role: str
     code_ttl_minutes: int
     reset_ttl_minutes: int
     test_code: str
@@ -101,6 +104,7 @@ def policy_for(tenant: str = "") -> Policy:
         "registration_default_role": s.registration_default_role,
         "registration_trust_invited": s.registration_trust_invited,
         "registration_tenant": s.registration_tenant,
+        "registration_signup_role": s.registration_signup_role,
         "registration_code_ttl_minutes": s.registration_code_ttl_minutes,
         "registration_reset_ttl_minutes": s.registration_reset_ttl_minutes,
         "registration_test_code": s.registration_test_code,
@@ -123,6 +127,7 @@ def policy_for(tenant: str = "") -> Policy:
         default_role=str(merged["registration_default_role"] or "viewer"),
         trust_invited=_flag(merged["registration_trust_invited"]),
         target_tenant=str(merged["registration_tenant"] or ""),
+        signup_role=str(merged["registration_signup_role"] or "owner"),
         code_ttl_minutes=max(1, _int(merged["registration_code_ttl_minutes"], 15)),
         reset_ttl_minutes=max(1, _int(merged["registration_reset_ttl_minutes"], 30)),
         test_code=str(merged["registration_test_code"] or ""),

@@ -1403,6 +1403,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspaces/{slug}/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Onboarding
+         * @description 这个工作区走到"第一条工作流"还差什么。
+         *
+         *     开通不该是一份要人读的文档:陌生人自己走一遍,每一步都要说得出下一步做什么。
+         *     读接口,不改任何东西 —— 状态从来源配置、仓库数、议题与账本现算。
+         */
+        get: operations["onboarding_api_workspaces__slug__onboarding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp": {
         parameters: {
             query?: never;
@@ -5465,6 +5488,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceListDTO"];
+                };
+            };
+        };
+    };
+    onboarding_api_workspaces__slug__onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

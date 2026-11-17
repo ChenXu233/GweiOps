@@ -23,6 +23,7 @@ from engine.api.auth import identity_of
 from engine.auth import store as auth_store
 from engine.db import async_session_factory
 from engine.db.models import Membership, Person, Role, Tenant, UserRole
+from engine.shared.config import config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -150,6 +151,30 @@ async def me_dto(person_id: str, workspace: str = "") -> dict[str, Any]:
         "workspaces": items,
         "is_sub_user": bool(current.parent_id) if current else False,
     }
+
+
+@router.get("/api/workspaces/{slug}/onboarding")
+async def onboarding(request: Request) -> dict:
+    """这个工作区走到"第一条工作流"还差什么。
+
+    开通不该是一份要人读的文档:陌生人自己走一遍,每一步都要说得出下一步做什么。
+    读接口,不改任何东西 —— 状态从来源配置、仓库数、议题与账本现算。
+    """
+    from engine.api.auth import require, workspace_access
+
+    require(request, "settings.read")
+    workspace = workspace_access(request)
+    if not workspace:
+        raise HTTPException(status_code=400, detail="工作区写在路径里:/api/workspaces/{工作区}/onboarding")
+    from engine.db import connecting
+    from engine.db.models import Tenant
+    from engine.projects.onboarding import onboarding_status
+
+    async with connecting(workspace) as session:
+        tenant_id = await session.scalar(select(Tenant.id).where(Tenant.slug == workspace))
+        if tenant_id is None:
+            raise HTTPException(status_code=404, detail=f"工作区不存在:{workspace}")
+        return await onboarding_status(session, tenant_id, settings=config.settings)
 
 
 @router.get("/api/auth/status")

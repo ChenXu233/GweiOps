@@ -90,6 +90,36 @@ async def _tenant_id_for(session, slug: str) -> uuid.UUID:
     return tenant_id
 
 
+def _workspace_slug_for(email: str) -> str:
+    """邮箱 → 工作区 slug。可读、可分享、不撞名。
+
+    slug 进 URL(`/workspaces/{slug}/issues`),所以只留 `[a-z0-9-]`。同一份邮箱
+    在整个部署里只有一条 person,所以它天然唯一;真撞上了(有人手工建了同名工作区),
+    `_create_workspace` 会加一段随机后缀,而不是让注册失败。
+    """
+    local = (email or "").split("@")[0].lower()
+    cleaned = "".join(ch if ch.isalnum() or ch == "-" else "-" for ch in local)
+    cleaned = "-".join(part for part in cleaned.split("-") if part)[:48]
+    return cleaned or "workspace"
+
+
+async def _create_workspace(session, slug: str, *, owner_name: str = "") -> uuid.UUID:
+    """建一个工作区,连同三个预设角色。
+
+    预设角色必须在这一步就建出来 —— 后面挂角色是按 (租户, key) 找的,少了这一步,
+    新工作区的所有者会是一个"有成员关系但没有角色"的人:登录进去什么都看不见,
+    而且没有任何报错。
+    """
+    taken = await session.scalar(select(Tenant.id).where(Tenant.slug == slug))
+    if taken is not None:
+        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+    tenant = Tenant(slug=slug, name=(owner_name or slug)[:255], settings={})
+    session.add(tenant)
+    await session.flush()
+    await auth_store.ensure_default_roles(session, tenant.id)
+    return tenant.id
+
+
 async def _role_id(session, tenant_id: uuid.UUID, key: str) -> uuid.UUID | None:
     return await session.scalar(
         select(Role.id).where(Role.tenant_id == tenant_id, Role.key == key)
@@ -296,6 +326,17 @@ async def create_user(
     邮箱是必填的身份,手机号是可选的第二联系方式。`persons.email` 在整个部署里
     唯一:同一个邮箱再来一次不是"第二个人",是同一个人有了第二条成员关系 ——
     那种情况在这里直接拒绝,邀请走 `admin.create_user`。
+
+    **进哪个工作区由这次注册决定,不由配置决定**:
+
+    | 情形 | 落在哪 | 什么角色 |
+    | --- | --- | --- |
+    | 配了 `registration_tenant` | 那一个(单租户自部署,别人不该从这儿进) | `default_role` |
+    | 没配 | **他自己新建的那一个**,slug 从他的邮箱取 | `signup_role`(缺省 owner) |
+
+    第二行是共享部署的准入条件:一个陌生人拿到部署地址,注册完就有自己的账,
+    不用别人替他改库建租户。第一行留着,是因为单租户那台机器上"注册"本来
+    就是"成为这台机器的人",给他建一个新工作区反而把他隔在外面。
     """
     email = normalize_email(email) if email else ""
     if not email:
@@ -304,12 +345,23 @@ async def create_user(
         if not phone:
             raise RegistrationError("至少要有邮箱或者手机号")
         email = f"{phone}@phone.local"
-    slug = policy.target_tenant or tenant_slug or auth_store.DEFAULT_TENANT_SLUG
+    fixed_tenant = policy.target_tenant or tenant_slug
+    slug = fixed_tenant or ""
+    created_workspace = False
 
     async with async_session_factory() as session:
-        tenant_id = await _tenant_id_for(session, slug)
+        # 查重放在**建工作区之前**:下面那个插入也可能撞上唯一键,但那时用户看到的
+        # 是一句 Postgres 的约束名,不是"这个邮箱已经注册过了"。
         if await session.scalar(select(Person.id).where(Person.email == email)):
             raise RegistrationError("这个邮箱已经注册过了")
+        if slug:
+            tenant_id = await _tenant_id_for(session, slug)
+        else:
+            # 没有指定的工作区:给他建一个。slug 由邮箱来 —— 同一份邮箱在整个
+            # 部署里只有一条 person,所以这个 slug 不会因为重复注册而撞名。
+            slug = _workspace_slug_for(email)
+            tenant_id = await _create_workspace(session, slug, owner_name=display_name or email)
+            created_workspace = True
         person = Person(
             email=email,
             display_name=(display_name or email.split("@")[0])[:128],
@@ -335,7 +387,15 @@ async def create_user(
         )
         session.add(membership)
         await session.flush()
-        await _attach_default_role(session, membership, tenant_id, role_key)
+        # 自己建的那个工作区里,他是所有者;别人指定的那个工作区里,是 `default_role`。
+        # 判据是"这次注册有没有建工作区",不是"角色字符串是否为空":空角色会落进
+        # `signup_role`,在那台单租户机器上等于把新来的人升成 owner。
+        await _attach_default_role(
+            session,
+            membership,
+            tenant_id,
+            role_key or (policy.signup_role if created_workspace else ""),
+        )
         await session.commit()
         await session.refresh(membership)
         identity = await auth_store.identity_of(session, membership, person)

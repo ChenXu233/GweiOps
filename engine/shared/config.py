@@ -478,8 +478,12 @@ class Settings(BaseSettings):
     registration_default_role: str = "viewer"
     # 已经实名核验过的人再拉进来的人,还核不核验
     registration_trust_invited: bool = True
-    # 自助注册进哪个租户:空 = 落在 default_tenant_slug
+    # 自助注册进哪个租户:空 = **他自己建一个**(共享部署的默认),
+    # 给了 slug = 落进那一个(单租户自部署那台,别人不该从这儿进)。
     registration_tenant: str = ""
+    # 自己建工作区的人在**自己那个**工作区里是什么角色。
+    # 只对"建了那个工作区"这一种情形生效;落进别人的工作区时用的是 registration_default_role。
+    registration_signup_role: str = "owner"
     registration_code_ttl_minutes: int = 15
     registration_reset_ttl_minutes: int = 30
     registration_test_code: str = ""  # 空 = 不公开验证码;配了就固定用它,只在自部署联调时用

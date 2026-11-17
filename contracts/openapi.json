@@ -5740,6 +5740,27 @@
         "summary": "List Workspaces"
       }
     },
+    "/api/workspaces/{slug}/onboarding": {
+      "get": {
+        "description": "这个工作区走到\"第一条工作流\"还差什么。\n\n开通不该是一份要人读的文档:陌生人自己走一遍,每一步都要说得出下一步做什么。\n读接口,不改任何东西 —— 状态从来源配置、仓库数、议题与账本现算。",
+        "operationId": "onboarding_api_workspaces__slug__onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Onboarding Api Workspaces  Slug  Onboarding Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Onboarding"
+      }
+    },
     "/mcp": {
       "get": {
         "description": "MCP 只有一条 POST 通道;GET 只用来告诉人\"这里是什么\"。",
