@@ -41,6 +41,29 @@ def client():
     return TestClient(app)
 
 
+def _drop_tenant_rows(slug: str) -> None:
+    """删掉这条用例建的那几行。
+
+    库上要是开着策略(跑过迁移的那个库),读完不清会让下一条用例读到别人的行:
+    几条用例都建"名字一样"的仓库,断言按名字数数就会数多。
+    """
+    import sqlalchemy as sa
+
+    engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "DELETE FROM projects WHERE tenant_id IN "
+                    "(SELECT id FROM tenants WHERE slug = :slug)"
+                ),
+                {"slug": slug},
+            )
+            conn.execute(sa.text("DELETE FROM tenants WHERE slug = :slug"), {"slug": slug})
+    finally:
+        engine.dispose()
+
+
 @requires_postgres
 class TestConsole:
     def test_repos_and_settings(self, client):
@@ -78,14 +101,17 @@ class TestConsole:
                             tenant_id=tenant.id,
                             source=source,
                             name=name,
-                            slug=f"{source}:{name}",
+                            slug=f"{source}-{name.replace('/', '-')}",
                         )
                     )
                 db.commit()
         finally:
             engine.dispose()
 
-        data = client.get("/api/workspaces").json()
+        try:
+            data = client.get("/api/workspaces").json()
+        finally:
+            _drop_tenant_rows(slug)
         row = next(w for w in data["items"] if w["slug"] == slug)
         assert row["repos"] == 2
         assert row["sources"] == ["cnb", "github"]
@@ -108,13 +134,21 @@ class TestConsole:
                 db.add(tenant)
                 db.flush()
                 # 来源不同的两行,名字一样;id 都没有(有的来源根本不给)
-                db.add(Project(tenant_id=tenant.id, source="github", name=name, slug=f"github:{name}"))
-                db.add(Project(tenant_id=tenant.id, source="gitlab", name=name, slug=f"gitlab:{name}"))
+                # 来源不同的两行、名字一样;slug 的写法是 `来源-仓库全名`(`/` 压成 `-`,
+                # 见 engine/workflows/pipeline.py 的 repo_slug)。它是 (租户, slug) 上的
+                # 唯一键 —— 也就是"名字撞了仍然是两个仓库"这件事在库里的表达。
+                # 仓库挂在项目下面(`parent_id` 非空),仓库列表只列这一种行。
+                parent = Project(tenant_id=tenant.id, parent_id=None, slug=f"p-{slug}", source="", name="同名仓库")
+                db.add(parent)
+                db.flush()
+                db.add(Project(tenant_id=tenant.id, parent_id=parent.id, source="github", name=name, slug=f"github-{name.replace('/', '-')}"))
+                db.add(Project(tenant_id=tenant.id, parent_id=parent.id, source="gitlab", name=name, slug=f"gitlab-{name.replace('/', '-')}"))
                 db.commit()
         finally:
             engine.dispose()
 
         repos = client.get(f"/api/workspaces/{slug}/repos").json()
+        _drop_tenant_rows(slug)
         assert sorted(r["source"] for r in repos) == ["github", "gitlab"]
 
     def test_repos_carry_their_project(self, client):
@@ -143,7 +177,7 @@ class TestConsole:
                     Project(
                         tenant_id=tenant.id,
                         parent_id=parent.id,
-                        slug=f"github:{project}/api",
+                        slug=f"github-{project}-api",
                         source="github",
                         name=f"{project}/api",
                     )
@@ -153,11 +187,16 @@ class TestConsole:
             engine.dispose()
 
         repos = client.get(f"/api/workspaces/{slug}/repos").json()
+        # 项目列表与仓库列表分开取自:**先**取仓库。`/repos` 已经在这个客户端上
+        # 跑过一遍时,再跑 `/projects` 会撞上 asyncpg "attached to a different loop"
+        # (两条读取各自的连接池与事件循环对不上)。这条顺序不是这个用例要证的东西,
+        # 但换了顺序它就红得很响、且与它要证的事无关。
+        projects = client.get(f"/api/workspaces/{slug}/projects").json()["items"]
+        _drop_tenant_rows(slug)
         # 项目行不是仓库:列表里只该有那个子仓
         assert [r["name"] for r in repos] == [f"{project}/api"]
         assert repos[0]["project"] == project
         assert repos[0]["projectName"] == "Acme"
 
-        projects = client.get(f"/api/workspaces/{slug}/projects").json()["items"]
         row = next(p for p in projects if p["slug"] == project)
         assert row["repos"] == 1

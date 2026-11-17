@@ -73,6 +73,25 @@ def _reset_release_settings_rows():
 
 
 @pytest.fixture(autouse=True)
+def _reset_tenant_context():
+    """每个测试前后把"这条连接属于哪个工作区"复位。
+
+    缺省是"一个工作区都不属于"(见 engine/db/engine.py)。这不是把哪个用例的
+    方便让出来 —— 前一个用例设过的租户要是漏到这里,后一个用例就会在别人的账上
+    跑;那种串台比"表不存在"更难看见。
+    """
+    from engine.db import reset_person, reset_tenant, use_person, use_tenant
+
+    def _reset():
+        reset_tenant(use_tenant(None))
+        reset_person(use_person(None))
+
+    _reset()
+    yield
+    _reset()
+
+
+@pytest.fixture(autouse=True)
 def _dispose_async_engine():
     """每个测试后释放全局 async 引擎连接池。
 

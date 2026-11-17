@@ -50,6 +50,17 @@ async def lifespan(app: FastAPI):
     from engine.harness import build_env  # noqa: F401 — 导入即注册 harness-env scope
     from engine.shared.settings_store import create_settings_store, ensure_schema as ensure_settings_schema
 
+    # 隔离这件事先问一遍:清单里的表在库里都得有策略。saas 档缺一张就不启动 ——
+    # 一个不知道隔离有没有生效的共享部署,比一个起不来的部署更贵。
+    from engine.db.engine import enforce_isolation
+
+    try:
+        await enforce_isolation()
+    except RuntimeError:
+        raise
+    except Exception:  # noqa: BLE001 - 库还没起来/还没迁移:交给下面的迁移去说
+        logger.warning("隔离策略这一遍没查成", exc_info=True)
+
     if config.settings.change_ledger_backend != "file":
         try:
             await ensure_settings_schema()

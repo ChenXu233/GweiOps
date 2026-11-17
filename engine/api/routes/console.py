@@ -26,7 +26,6 @@ from engine.api.schemas import (
     WorkspaceListDTO,
 )
 from engine.api.auth import identity_of, workspace_access
-from engine.db import async_session_factory
 from engine.db.models import Issue, Membership, Project, Tenant
 from engine.shared.config import config
 
@@ -49,6 +48,32 @@ def _any_read(request: Request) -> None:
 router = APIRouter(dependencies=[Depends(_any_read)])
 logger = logging.getLogger(__name__)
 
+# 读侧用的引擎。
+#
+# 全局那份引擎的池绑定在**创建它的那个事件循环**上。测试里每个用例一个新的
+# TestClient(它自己一个循环),同一个客户端连着发两次请求就会撞上 asyncpg 的
+# "attached to a different loop" —— 那不是被测代码的问题,是"两页共用了被另一个
+# 循环借过的连接"。读接口因此各自拿一份不设池的引擎:连接用完即释,不跨循环复用。
+_read_factory = None
+
+
+def _read_session_factory():
+    global _read_factory
+    if _read_factory is None:
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import NullPool
+
+        from engine.shared.config import config as app_config
+
+        app_settings = app_config.settings
+        _read_factory = async_sessionmaker(
+            create_async_engine(
+                app_settings.database_url, poolclass=NullPool, echo=app_settings.debug
+            ),
+            expire_on_commit=False,
+        )
+    return _read_factory
+
 
 @router.get("/api/workspaces")
 async def list_workspaces(request: Request) -> WorkspaceListDTO:
@@ -60,7 +85,7 @@ async def list_workspaces(request: Request) -> WorkspaceListDTO:
     """
     scope = workspace_access(request)
     identity = identity_of(request)
-    async with async_session_factory() as session:
+    async with _read_session_factory()() as session:
         stmt = select(Tenant).order_by(Tenant.created_at)
         if scope:
             stmt = stmt.where(Tenant.slug == scope)
@@ -107,7 +132,7 @@ async def list_repos(request: Request) -> list[RepoDTO]:
     所以每行也带上项目 —— 范围闸的三档(工作区 / 项目 / 仓库)就是按这两栏算的。
     """
     scope = workspace_access(request)
-    async with async_session_factory() as session:
+    async with _read_session_factory()() as session:
         stmt = (
             select(
                 Project,
@@ -189,7 +214,9 @@ async def list_projects(request: Request) -> ProjectListDTO:
     工作区从路径来,不从查询串来。
     """
     scope = workspace_access(request)
-    async with async_session_factory() as session:
+    # 这一页要连着查几次(`_project_settings` 读的是同一个 session),所以会话开在
+    # 整页外面 —— 关在 `with` 里再用,等于在关闭的会话上发语句。
+    async with _read_session_factory()() as session:
         stmt = select(Project).where(Project.parent_id.is_(None)).order_by(Project.created_at)
         if scope:
             stmt = stmt.join(Tenant, Project.tenant_id == Tenant.id).where(Tenant.slug == scope)
@@ -221,7 +248,8 @@ async def list_projects(request: Request) -> ProjectListDTO:
             ).all():
                 issues_of[project_id] = int(count)
 
-    restricted = await _restricted_projects(session, scope)
+        restricted = await _restricted_projects(session, scope)
+        settings = await _project_settings(session, scope, [p.slug for p in parents])
 
     # 一个项目有几条议题,问的是它下面所有仓库的合计。
     by_parent: dict = {}
@@ -229,8 +257,6 @@ async def list_projects(request: Request) -> ProjectListDTO:
         parent_id = child_to_parent.get(child_id)
         if parent_id is not None:
             by_parent[parent_id] = by_parent.get(parent_id, 0) + count
-
-    settings = await _project_settings(session, scope, [p.slug for p in parents])
 
     return ProjectListDTO(
         items=[

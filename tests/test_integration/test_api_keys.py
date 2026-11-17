@@ -210,19 +210,67 @@ def test_the_db_store_round_trips(monkeypatch):
 
     sync_engine = sa.create_engine(os.environ["GWEI_TEST_DATABASE_URL"])
     Base.metadata.create_all(sync_engine, tables=[ApiKey.__table__])
+    # `create_all` 建出来的表没有策略(策略是迁移给的),但有策略的库上这一条得能跑。
+    # 两张情况下"谁读得到这把密钥"都由 `resolve_key` 明确声明不限,见 engine/auth/keys.py。
     sync_engine.dispose()
 
     monkeypatch.setattr(config.settings, "change_ledger_backend", "db")
-    store = key_store.DbKeyStore()
+
+    async def scenario():
+        store = key_store.DbKeyStore()
+        record, plaintext = await key_store.create_key(
+            tenant="acme", name="db-key", permissions=["changes.read"]
+        )
+        found = await key_store.resolve_key(plaintext)
+        out = {"found": found, "record": record, "plaintext": plaintext}
+        # 库里是哈希,不是明文。这次查的是"某个工作区里的那一把",所以带租户上下文。
+        from engine.db import connecting
+
+        async with connecting("acme"):
+            out["by_hash"] = await store.find(key_store.hash_key(plaintext))
+            out["by_plaintext"] = await store.find(plaintext)
+            out["revoked"] = await key_store.revoke_key("acme", record.id)
+        out["after_revoke"] = await key_store.resolve_key(plaintext)
+        return out
+
+    seen = asyncio.run(scenario())
+    assert seen["found"] is not None and seen["found"].id == seen["record"].id
+    assert seen["by_hash"] is not None
+    assert seen["by_plaintext"] is None
+    assert seen["revoked"] is True
+    assert seen["after_revoke"] is None
+
+
+@requires_postgres
+def test_resolving_a_key_still_works_on_an_isolated_database():
+    """开了策略的库上,认凭据那一步也必须认得出来。
+
+    `api_keys` 是按工作区隔离的,而认凭据时还不知道是哪个工作区 —— 这一步必须
+    显式声明"不限"。不声明就什么都查不到,所有密钥会被判成"不认",而且没有任何
+    报错(策略是静默地少给行)。这条用例盯的就是那个静默。
+    """
+    import os
+
+    import sqlalchemy as sa
+
+    from engine.db import connecting_any
+    from engine.db.base import Base
+    from engine.db.models.api_key import ApiKey
+
+    url = os.environ["GWEI_TEST_DATABASE_URL"]
+    engine = sa.create_engine(url)
+    Base.metadata.create_all(engine, tables=[ApiKey.__table__])
+    if not engine.dialect.has_table(engine.connect(), "tenancy_policy_manifest"):
+        pytest.skip("这个库没跑过迁移,没有策略可验")
+    engine.dispose()
 
     record, plaintext = asyncio.run(
-        key_store.create_key(tenant="acme", name="db-key", permissions=["changes.read"])
+        key_store.create_key(tenant="acme", name="iso-key", permissions=["changes.read"])
     )
-    found = asyncio.run(key_store.resolve_key(plaintext))
-    assert found is not None and found.id == record.id
-    # 库里是哈希,不是明文
-    assert asyncio.run(store.find(key_store.hash_key(plaintext))) is not None
-    assert asyncio.run(store.find(plaintext)) is None
+    assert asyncio.run(key_store.resolve_key(plaintext)) is not None
+    async def _rows():
+        async with connecting_any() as session:
+            from sqlalchemy import select
 
-    assert asyncio.run(key_store.revoke_key("acme", record.id)) is True
-    assert asyncio.run(key_store.resolve_key(plaintext)) is None
+            return list((await session.execute(select(ApiKey.id))).scalars())
+    assert record.id in asyncio.run(_rows())

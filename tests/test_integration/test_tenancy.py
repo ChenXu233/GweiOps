@@ -64,8 +64,13 @@ requires_postgres = pytest.mark.skipif(
 
 @requires_postgres
 class TestCompositeUnique:
-    def test_same_repo_two_tenants_ok_same_tenant_rejected(self):
-        """同仓库可被两个租户分别安装;同租户重复被拒。(幂等:随机标识,可重复运行)"""
+    def test_same_project_slug_two_tenants_ok_same_tenant_rejected(self):
+        """同一个项目 slug 可被两个工作区分别建;同一个工作区里重复被拒。
+
+        唯一键是 (tenant_id, slug)(见 engine/db/models/project.py)。它比原来那对
+        (tenant_id, github_id) 更严:slug 是"仓库在这棵树上的名字",github_id 有的
+        来源根本不给,拿它当身份在接第二个来源那天就会坏。
+        """
         import uuid as uuid_mod
 
         from engine.db.base import Base
@@ -96,25 +101,25 @@ class TestCompositeUnique:
                 {"id": tenant_b, "slug": f"b-{run}", "name": "B"},
             )
 
-        def _try_insert_project(tenant_id: str, github_id: int) -> bool:
+        def _try_insert_project(tenant_id: str, slug: str) -> bool:
             """成功返回 True;唯一冲突返回 False。"""
             try:
                 with engine.begin() as conn:
                     conn.execute(
                         sa.text(
-                            "INSERT INTO projects (id, tenant_id, github_id, name) "
-                            "VALUES (gen_random_uuid(), :tenant_id, :github_id, 'n')"
+                            "INSERT INTO projects (id, tenant_id, slug, name) "
+                            "VALUES (gen_random_uuid(), :tenant_id, :slug, 'n')"
                         ),
-                        {"tenant_id": tenant_id, "github_id": github_id},
+                        {"tenant_id": tenant_id, "slug": slug},
                     )
                 return True
             except sa.exc.IntegrityError:
                 return False
 
-        assert _try_insert_project(tenant_a, 900 + int(run[:2], 16)) is True
-        # 同租户同 github_id → 拒绝
-        assert _try_insert_project(tenant_a, 900 + int(run[:2], 16)) is False
-        # 不同租户同 github_id → 允许
-        assert _try_insert_project(tenant_b, 900 + int(run[:2], 16)) is True
+        assert _try_insert_project(tenant_a, f"github-acme-api-{run}") is True
+        # 同租户同一个 slug → 拒绝
+        assert _try_insert_project(tenant_a, f"github-acme-api-{run}") is False
+        # 不同租户同 slug → 允许
+        assert _try_insert_project(tenant_b, f"github-acme-api-{run}") is True
 
         engine.dispose()

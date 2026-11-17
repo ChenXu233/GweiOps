@@ -452,7 +452,9 @@ class TestWorkflowEndToEnd:
                 )
 
                 assert result["record"]["tenant_id"]
-                assert len(added) == 4  # Tenant + Project + Issue + AgentSession
+                # Tenant + 项目 + 仓库 + Issue + AgentSession:项目和仓库是两行
+                # (见 engine/db/models/project.py),一条投递会把项目那一级补齐。
+                assert len(added) == 5
                 # 本地兜底 intent 把结论转成一条 comment.create;测试环境没有效果
                 # 提供者,如实记 blocked——绝不假装发过评论。
                 effects = result["applied"]["applied"]

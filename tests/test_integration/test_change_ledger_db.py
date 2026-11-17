@@ -24,7 +24,7 @@ from engine.change_unit import (
     Effect,
 )
 from engine.db.change_ledger import DbLedger, ensure_schema
-from engine.db.engine import async_session_factory
+from engine.db.engine import async_session_factory, reset_tenant as _reset, use_tenant
 from engine.db.models.change_event import ChangeEvent
 
 pytestmark = pytest.mark.skipif(
@@ -59,9 +59,15 @@ def _on_clean_ledger(scenario: Callable[[DbLedger], Awaitable]):
 
     async def wrapped():
         await ensure_schema()
-        async with async_session_factory() as session:
-            await session.execute(delete(ChangeEvent))
-            await session.commit()
+        # 清表这件事跨工作区,得明确声明不限:缺省的会话"一个工作区都不属于",
+        # 开了策略的库上它连自己的行都删不到(策略是静默地少给行)。
+        token = use_tenant("*")
+        try:
+            async with async_session_factory() as session:
+                await session.execute(delete(ChangeEvent))
+                await session.commit()
+        finally:
+            _reset(token)
         return await scenario(DbLedger())
 
     return asyncio.run(wrapped())
@@ -163,17 +169,30 @@ def test_api_reads_the_db_ledger(monkeypatch):
 
     async def scenario():
         await ensure_schema()
-        async with async_session_factory() as session:
-            await session.execute(delete(ChangeEvent))
-            await session.commit()
+        # 清表这件事跨工作区,得明确声明不限:缺省的会话"一个工作区都不属于",
+        # 开了策略的库上它连自己的行都删不到(策略是静默地少给行)。
+        token = use_tenant("*")
+        try:
+            async with async_session_factory() as session:
+                await session.execute(delete(ChangeEvent))
+                await session.commit()
+        finally:
+            _reset(token)
         await DbLedger().append(_unit(unit_id="u9", tenant="t1"))
 
         app = FastAPI()
+        # 这条用例直接挂路由,没有经过 app.py 那套中间件 —— 折路径与定工作区都在
+        # `make_middleware` 里(`/api/workspaces/{slug}/…` → `/api/…`),这里补上。
+        from engine.api.auth import make_middleware
+
+        app.middleware("http")(make_middleware({}))
         app.include_router(changes_mod.router)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            mine = (await client.get("/api/changes?tenant=t1")).json()
-            other = (await client.get("/api/changes?tenant=t2")).json()
+            # 工作区走路径(见 engine/api/auth.py 的 workspace_access):
+            # 查询串的 `tenant` 不再生效,写了会被 400 顶回来。
+            mine = (await client.get("/api/workspaces/t1/changes")).json()
+            other = (await client.get("/api/workspaces/t2/changes")).json()
         return mine, other
 
     mine, other = asyncio.run(scenario())

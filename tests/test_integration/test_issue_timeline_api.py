@@ -63,6 +63,10 @@ def _seed_issue(title: str = "打开就崩") -> tuple[str, str]:
             db.flush()
             project = Project(
                 tenant_id=tenant.id,
+                # slug 是 (租户, slug) 上的唯一键,也是"仓库在这棵树上的名字"
+                # (见 engine/db/models/project.py):建行时不能空着。
+                slug=f"github-acme-web-{uuid.uuid4().hex[:6]}",
+                source="github",
                 github_id=uuid.uuid4().int % 10**9,
                 name="acme/web",
             )

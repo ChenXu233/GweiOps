@@ -289,9 +289,23 @@ class JsonlKeyStore:
 
 
 class DbKeyStore:
-    """业务库。与其它表同一种做法:启动时 checkfirst 建一次。"""
+    """业务库。与其它表同一种做法:启动时 checkfirst 建一次。
+
+    读密钥有两种场合,隔离强度不同:
+
+    - **认凭据那一步**(`resolve_key`):还不知道是谁,只能拿哈希去全库找。
+      它跑在 `for_authentication()` 上 —— 一条明确声明"不限工作区"的会话。
+    - **日常工作**(列、改、吊销):范围是某个工作区,所以走带租户的会话。
+    """
 
     def _factory(self):
+        from engine.db import async_session_factory
+
+        return async_session_factory
+
+    @staticmethod
+    def for_authentication():
+        """认凭据用的会话:此时还不知道是哪个工作区的密钥。"""
         from engine.db import async_session_factory
 
         return async_session_factory
@@ -466,9 +480,15 @@ async def resolve_key(plaintext: str) -> KeyRecord | None:
     """
     if not looks_like_key(plaintext):
         return None
+    from engine.db import connecting_any
+
     store = create_key_store()
     try:
-        row = await store.find(hash_key(plaintext))
+        # 认凭据那一步还不知道是哪个工作区,而密钥表本身也是按租户隔离的 ——
+        # 这里显式声明"不限"。不声明的话会话带着缺省的"一个工作区都不属于",
+        # 策略把每一行都挡在外面,所有密钥都会被判成"不认"。
+        async with connecting_any():
+            row = await store.find(hash_key(plaintext))
     except Exception:  # noqa: BLE001 - 库不可用不等于"这把密钥有效"
         logger.warning("密钥查询失败", exc_info=True)
         return None
@@ -476,7 +496,8 @@ async def resolve_key(plaintext: str) -> KeyRecord | None:
         return None
     if row.get("status") != STATUS_ACTIVE or _expired(str(row.get("expires_at") or "")):
         return None
-    await _touch(store, row)
+    async with connecting_any():
+        await _touch(store, row)
     return _record(row)
 
 

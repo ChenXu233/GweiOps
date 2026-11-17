@@ -187,7 +187,29 @@ def upgrade() -> None:
 
     # 4) 旧表退场:它现在只剩"人"与"成员关系"两半,两半都搬走了。
     #    user_roles.user_id 指向 memberships —— 先把外键改指再删表,否则删表会带走它。
-    op.drop_constraint("user_roles_user_id_fkey", "user_roles", type_="foreignkey")
+    #   名字按改名之前的形状找,不写死:006 建约束时用的是 metadata 的命名约定
+    #   (`fk_user_roles_user_id_users`),006 之后这张表又被 create_all 建过一次的地方
+    #   会是 Postgres 的默认名(`user_roles_user_id_fkey`)。写死其中一个,另一种库上
+    #   这一版就升不上去 —— 迁移只该认"user_id 这一列上指向 users 的那个外键"。
+    op.execute(
+        """
+        DO $$
+        DECLARE found text;
+        BEGIN
+            FOR found IN
+                SELECT con.conname
+                  FROM pg_constraint con
+                  JOIN pg_class rel ON rel.oid = con.conrelid
+                  JOIN pg_class ref ON ref.oid = con.confrelid
+                 WHERE rel.relname = 'user_roles'
+                   AND con.contype = 'f'
+                   AND ref.relname = 'users'
+            LOOP
+                EXECUTE format('ALTER TABLE user_roles DROP CONSTRAINT %I', found);
+            END LOOP;
+        END $$;
+        """
+    )
     op.create_foreign_key(
         "fk_user_roles_membership", "user_roles", "memberships", ["user_id"], ["user_id"], ondelete="CASCADE"
     )
