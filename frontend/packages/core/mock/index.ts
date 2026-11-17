@@ -16,7 +16,7 @@ export const mockRepos: Repo[] = [
 
 /** 演示数据:项目是仓库上面那一级,数与 mockRepos 对得上。 */
 export const mockProjects: Project[] = [
-  { id: 'p1', slug: 'acme', name: 'Acme', repos: 3, issues: 17 },
+  { id: 'p1', slug: 'acme', name: 'Acme', repos: 3, issues: 17, visibility: 'workspace' },
 ]
 
 /** 演示数据:形状照 GET /api/plugins 来,enabled 与 reason 都是引擎会真的给出的字段。 */

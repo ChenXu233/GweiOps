@@ -11,12 +11,14 @@ interface Permission { key: string, description: string }
 interface Role { id: string, key: string, name: string, description: string, permissions: string[], is_system: boolean, user_count?: number }
 interface Member { id: string, email: string, display_name: string, status: string, is_sub_user: boolean, permissions: string[], scoped_permissions?: Record<string, string[]>, roles: { id: string, key: string, name: string }[], created_at: string, last_login_at: string }
 interface AuditEntry { id: number, actor_name: string, action: string, target: string, detail: Record<string, unknown>, created_at: string }
+interface Invite { id: string, email: string, state: 'pending' | 'accepted' | 'revoked' | 'expired', note: string, roles?: { id: string, key: string, name: string }[], created_at: string, expires_at: string }
 
 const tab = ref<'members' | 'roles' | 'audit'>('members')
 const permissions = ref<Permission[]>([])
 const roles = ref<Role[]>([])
 const members = ref<Member[]>([])
 const audit = ref<AuditEntry[]>([])
+const invites = ref<Invite[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -63,6 +65,9 @@ async function loadAll() {
     members.value = u.users
     repos.value = repoList.items
     projects.value = projectList.items
+    if (can('users.read')) {
+      invites.value = (await $fetch<{ items: Invite[] }>(scopePath('/api/invitations'))).items
+    }
     if (can('audit.read')) {
       audit.value = (await $fetch<{ entries: AuditEntry[] }>(scopePath('/api/audit'))).entries
     }
@@ -76,7 +81,7 @@ async function loadAll() {
 
 // ---- 新建成员 -----------------------------------------------------------
 const inviteOpen = ref(false)
-const invite = reactive({ email: '', password: '', display_name: '', role_ids: [] as string[] })
+const invite = reactive({ email: '', display_name: '', role_ids: [] as string[] })
 const inviteError = ref('')
 const inviteBusy = ref(false)
 
@@ -86,31 +91,57 @@ function toggleInviteRole(id: string) {
   else invite.role_ids.push(id)
 }
 
+// 发一条邀请。**不替他设密码**:密码是那个人自己的事,管理员替他想的那个
+// 只能靠带外通道告诉他,还得在两处维护 —— 邀请链接把这两件事一起拿掉。
+const inviteLink = ref('')
 async function submitInvite() {
   inviteBusy.value = true
   inviteError.value = ''
+  inviteLink.value = ''
   try {
-    await $fetch(scopePath('/api/users'), {
-      method: 'POST',
-      body: {
-        email: invite.email,
-        password: invite.password,
-        display_name: invite.display_name,
-        role_ids: invite.role_ids,
-      },
-    })
-    inviteOpen.value = false
+    const res = await $fetch<{ invitation: Invite, token: string }>(
+      scopePath('/api/invitations'),
+      { method: 'POST', body: { email: invite.email, role_ids: invite.role_ids } },
+    )
+    // 链接拼在界面上,不靠发信:部署没配发信通道时这条路照样能用
+    const base = import.meta.client ? window.location.origin : ''
+    inviteLink.value = `${base}/invite?token=${encodeURIComponent(res.token)}`
     invite.email = ''
-    invite.password = ''
-    invite.display_name = ''
     invite.role_ids = []
     await loadAll()
   } catch (e) {
     const err = e as { data?: { detail?: string } }
-    inviteError.value = err.data?.detail || '建不出来'
+    inviteError.value = err.data?.detail || '发不出去'
   } finally {
     inviteBusy.value = false
   }
+}
+
+async function copyInviteLink() {
+  if (!import.meta.client || !inviteLink.value) return
+  try {
+    await navigator.clipboard.writeText(inviteLink.value)
+    inviteError.value = '链接已复制'
+  } catch {
+    inviteError.value = '复制不了,手动选中上面的链接'
+  }
+}
+
+async function revokeInvite(row: Invite) {
+  try {
+    await $fetch(scopePath(`/api/invitations/${row.id}`), { method: 'DELETE' })
+    await loadAll()
+  } catch (e) {
+    const err = e as { data?: { detail?: string } }
+    inviteError.value = err.data?.detail || '撤不回来'
+  }
+}
+
+const STATE_LABEL: Record<Invite['state'], string> = {
+  pending: '等对方接',
+  accepted: '已接受',
+  revoked: '已撤销',
+  expired: '已过期',
 }
 
 // ---- 角色编辑 -----------------------------------------------------------
@@ -192,12 +223,26 @@ async function createRole() {
 // ---- 成员操作:停用 / 删除 / 改角色 --------------------------------------
 const memberForRoles = ref<Member | null>(null)
 const memberRoleIds = ref<string[]>([])
+const memberScoped = ref<Record<string, string[]>>({})
 const memberError = ref('')
 
 function openMemberRoles(m: Member) {
   memberForRoles.value = m
   memberRoleIds.value = m.roles.map((r) => r.id)
+  // 成员这一行自己的范围授权:与角色里那份是两栏,这里改的是他这一份
+  memberScoped.value = {}
+  for (const key of SCOPED_KEYS) {
+    const picked = m.permissions.filter((p) => p.startsWith(`${key}@`)).map((p) => p.split('@')[1] ?? '')
+    if (picked.length) memberScoped.value[key] = picked
+  }
   memberError.value = ''
+}
+
+function toggleMemberScope(key: string, slug: string) {
+  const picked = memberScoped.value[key] ?? (memberScoped.value[key] = [])
+  const i = picked.indexOf(slug)
+  if (i >= 0) picked.splice(i, 1)
+  else picked.push(slug)
 }
 
 function toggleMemberRole(id: string) {
@@ -209,9 +254,15 @@ function toggleMemberRole(id: string) {
 async function saveMemberRoles() {
   if (!memberForRoles.value) return
   try {
+    // 工作区级那份照旧;带范围的那份拼成 `权限@范围`,与角色里的写法一致
+    const whole = memberForRoles.value.permissions.filter((p) => !p.includes('@'))
+    const scoped: string[] = []
+    for (const key of SCOPED_KEYS) {
+      for (const slug of memberScoped.value[key] ?? []) scoped.push(`${key}@${slug}`)
+    }
     await $fetch(scopePath(`/api/users/${memberForRoles.value.id}`), {
       method: 'PUT',
-      body: { role_ids: memberRoleIds.value },
+      body: { role_ids: memberRoleIds.value, permissions: [...whole, ...scoped] },
     })
     memberForRoles.value = null
     await loadAll()
@@ -316,10 +367,12 @@ onMounted(loadAll)
             <span class="mb-1 block text-[11.5px] text-ink-soft">名字</span>
             <input v-model="invite.display_name" type="text" class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong">
           </label>
-          <label class="block">
-            <span class="mb-1 block text-[11.5px] text-ink-soft">初始密码</span>
-            <input v-model="invite.password" type="password" required minlength="8" class="w-full rounded-card border border-line bg-well px-3 py-2 text-[12.5px] outline-none focus:border-line-strong">
-          </label>
+          <div class="block">
+            <span class="mb-1 block text-[11.5px] text-ink-soft">密码</span>
+            <p class="rounded-card border border-line/70 bg-well/50 px-3 py-2 text-[11.5px] text-ink-soft">
+              由他自己设 —— 邀请链接里不存密码
+            </p>
+          </div>
         </div>
         <div>
           <span class="mb-1.5 block text-[11.5px] text-ink-soft">角色</span>
@@ -336,14 +389,32 @@ onMounted(loadAll)
             </button>
           </div>
         </div>
-        <p v-if="inviteError" class="text-[11.5px] text-coral">{{ inviteError }}</p>
+        <p v-if="inviteError" class="text-[11.5px]" :class="inviteError === '链接已复制' ? 'text-ink-soft' : 'text-coral'">{{ inviteError }}</p>
+        <div v-if="inviteLink" class="flex flex-col gap-1.5">
+          <p class="text-[11.5px] text-ink-soft">把这条链接交给对方,他自己设密码。链接只能用一次。</p>
+          <code class="block break-all rounded-card border border-line bg-well px-3 py-2 text-[11px]">{{ inviteLink }}</code>
+          <button type="button" class="btn-outline h-7 w-fit px-2.5 text-[11.5px]" @click="copyInviteLink">复制链接</button>
+        </div>
         <div class="flex items-center gap-2">
           <button type="submit" class="btn-solid h-8 px-3 text-[12px]" :disabled="inviteBusy">
-            {{ inviteBusy ? '创建中…' : '创建' }}
+            {{ inviteBusy ? '发送中…' : '发出邀请' }}
           </button>
-          <button type="button" class="btn-outline h-8 px-3 text-[12px]" @click="inviteOpen = false">取消</button>
+          <button type="button" class="btn-outline h-8 px-3 text-[12px]" @click="inviteOpen = false; inviteLink = ''">关闭</button>
         </div>
       </form>
+
+      <!-- 发出去还没接的邀请。用它回答"我上礼拜明明发了邀请"。 -->
+      <div v-if="invites.filter((i) => i.state === 'pending').length" class="panel flex flex-col divide-y divide-line/60">
+        <div class="px-3.5 py-2 text-[11.5px] text-ink-soft">还没接的邀请</div>
+        <div v-for="i in invites.filter((x) => x.state === 'pending')" :key="i.id" class="flex items-center gap-3 px-3.5 py-2.5">
+          <span class="min-w-0 flex-1 truncate text-[12.5px]">{{ i.email }}</span>
+          <span class="chip">{{ STATE_LABEL[i.state] }}</span>
+          <span class="hidden text-[11px] text-ink-faint sm:block">{{ when(i.expires_at) }} 到期</span>
+          <button v-if="canManageUsers" class="btn-outline h-7 px-2 text-[11.5px] text-coral" @click="revokeInvite(i)">
+            撤销
+          </button>
+        </div>
+      </div>
 
       <div v-for="m in members" :key="m.id" class="panel flex items-center gap-3 p-3.5">
         <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ink text-[12px] font-semibold text-paper">
@@ -432,6 +503,43 @@ onMounted(loadAll)
             {{ r.name }}
           </button>
         </div>
+
+        <!-- 这一行自己的范围授权。与角色里那份是两栏:角色说"他大概是运维",
+             这里说"他在这一个项目上能放行"。 -->
+        <div class="mt-4 flex flex-col gap-2 border-t border-line/60 pt-3">
+          <p class="text-[11.5px] text-ink-soft">只对某几个项目 / 仓库生效的权限</p>
+          <div v-for="key in SCOPED_KEYS" :key="key" class="flex flex-col gap-1">
+            <span class="font-mono text-[11px] text-ink-faint">{{ key }}</span>
+            <span class="flex flex-wrap gap-1">
+              <button
+                v-for="project in projects"
+                :key="`p-${project.slug}`"
+                type="button"
+                class="chip text-[10.5px]"
+                :class="(memberScoped[key] ?? []).includes(project.slug) ? 'border-ink bg-ink text-paper' : ''"
+                :title="`只在这个项目上给 ${key}(含以后新增的仓库)`"
+                @click="toggleMemberScope(key, project.slug)"
+              >
+                {{ project.name }} · {{ project.repos }} 仓
+              </button>
+              <button
+                v-for="repo in repos"
+                :key="`r-${repo.slug}`"
+                type="button"
+                class="chip text-[10.5px]"
+                :class="(memberScoped[key] ?? []).includes(repo.slug) ? 'border-ink bg-ink text-paper' : ''"
+                :title="`只在这个仓库上给 ${key}`"
+                @click="toggleMemberScope(key, repo.slug)"
+              >
+                {{ repo.name }}
+              </button>
+            </span>
+          </div>
+          <p class="text-[10.5px] text-ink-faint">
+            都不勾就是这个工作区都能用。勾了就只在那里算数 —— 项目档覆盖它下面每个仓库,包括以后新加的。
+          </p>
+        </div>
+
         <p v-if="memberError" class="mt-2 text-[11.5px] text-coral">{{ memberError }}</p>
         <div class="mt-4 flex items-center gap-2">
           <button class="btn-solid h-8 px-3 text-[12px]" @click="saveMemberRoles">保存</button>

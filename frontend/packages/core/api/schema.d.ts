@@ -673,6 +673,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitations */
+        get: operations["list_invitations_api_invitations_get"];
+        put?: never;
+        /**
+         * Create Invitation
+         * @description 发一条邀请。响应里的 `token` 只出现这一次 —— 拼成链接交给被邀请人。
+         */
+        post: operations["create_invitation_api_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Invitation */
+        delete: operations["revoke_invitation_api_invitations__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invitations/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Invitation
+         * @description 这条链接现在什么情况。不要求登录:链接本身就是凭据。
+         *
+         *     过期、用过、撤销过都正常返回状态,由页面给下一步 —— 404 只会让被邀请人
+         *     以为链接坏了。
+         */
+        get: operations["preview_invitation_api_invitations__token__get"];
+        put?: never;
+        /**
+         * Accept Invitation
+         * @description 接邀请。成功之后这个人就已经登录了 —— 顺手发一个会话,少一步。
+         */
+        post: operations["accept_invitation_api_invitations__token__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/issues/{issue_id}/continue": {
         parameters: {
             query?: never;
@@ -998,6 +1063,50 @@ export interface paths {
          */
         get: operations["list_projects_api_projects_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{slug}/credentials/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Project Credential
+         * @description 写一条项目级凭据。值进密钥仓库,库里只留键与说明。
+         *
+         *     空值等于删掉:凭据没有"空着"这种状态 —— 空着和没设是同一件事,分成两种会让
+         *     "设了没有"永远有两种答案。
+         */
+        put: operations["put_project_credential_api_projects__slug__credentials__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{slug}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Settings */
+        get: operations["get_project_settings_api_projects__slug__settings_get"];
+        /**
+         * Put Project Settings
+         * @description 可见性与默认发布参数。两者都在这一行里,整份写、不担心字段级 diff。
+         */
+        put: operations["put_project_settings_api_projects__slug__settings_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1618,6 +1727,24 @@ export interface components {
             /** Workflow Id */
             workflow_id: string;
         };
+        /**
+         * CredentialDTO
+         * @description 一条项目级凭据。`value` 只写不读 —— 读回来的响应里没有这一栏。
+         */
+        CredentialDTO: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Key */
+            key: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+        };
         /** DecisionDTO */
         DecisionDTO: {
             /** Allow */
@@ -1770,6 +1897,29 @@ export interface components {
             items: components["schemas"]["IncidentDTO"][];
             /** Total */
             total: number;
+        };
+        /**
+         * InviteAcceptDTO
+         * @description 接邀请时他要设的密码。这个邮箱已经有人时不需要 —— 给了也不改他的。
+         */
+        InviteAcceptDTO: {
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Password
+             * @default
+             */
+            password: string;
+        };
+        /** InviteCreateDTO */
+        InviteCreateDTO: {
+            /** Email */
+            email: string;
+            /** Role Ids */
+            role_ids?: string[];
         };
         /**
          * IssueBoardDTO
@@ -2307,6 +2457,11 @@ export interface components {
             repos: number;
             /** Slug */
             slug: string;
+            /**
+             * Visibility
+             * @default workspace
+             */
+            visibility: string;
         };
         /** ProjectListDTO */
         ProjectListDTO: {
@@ -2315,6 +2470,15 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["ProjectDTO"][];
+        };
+        /** ProjectSettingsDTO */
+        ProjectSettingsDTO: {
+            /** Defaults */
+            defaults?: {
+                [key: string]: string;
+            } | null;
+            /** Visibility */
+            visibility?: string | null;
         };
         /** QuotaDTO */
         QuotaDTO: {
@@ -3964,6 +4128,166 @@ export interface operations {
             };
         };
     };
+    list_invitations_api_invitations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_invitation_api_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreateDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invitation_api_invitations__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_invitation_api_invitations__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invitation_api_invitations__token__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAcceptDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     continue_issue_api_issues__issue_id__continue_post: {
         parameters: {
             query?: never;
@@ -4414,6 +4738,114 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectListDTO"];
+                };
+            };
+        };
+    };
+    put_project_credential_api_projects__slug__credentials__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_settings_api_projects__slug__settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_project_settings_api_projects__slug__settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSettingsDTO"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

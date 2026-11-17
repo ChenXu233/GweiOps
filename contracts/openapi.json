@@ -384,6 +384,34 @@
         "title": "ContinuedDTO",
         "type": "object"
       },
+      "CredentialDTO": {
+        "description": "一条项目级凭据。`value` 只写不读 —— 读回来的响应里没有这一栏。",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 255,
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "CredentialDTO",
+        "type": "object"
+      },
       "DecisionDTO": {
         "properties": {
           "allow": {
@@ -587,6 +615,47 @@
           "total"
         ],
         "title": "IncidentListDTO",
+        "type": "object"
+      },
+      "InviteAcceptDTO": {
+        "description": "接邀请时他要设的密码。这个邮箱已经有人时不需要 —— 给了也不改他的。",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "password": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "title": "InviteAcceptDTO",
+        "type": "object"
+      },
+      "InviteCreateDTO": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InviteCreateDTO",
         "type": "object"
       },
       "IssueBoardDTO": {
@@ -1423,6 +1492,11 @@
           "slug": {
             "title": "Slug",
             "type": "string"
+          },
+          "visibility": {
+            "default": "workspace",
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -1445,6 +1519,37 @@
           }
         },
         "title": "ProjectListDTO",
+        "type": "object"
+      },
+      "ProjectSettingsDTO": {
+        "properties": {
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "title": "ProjectSettingsDTO",
         "type": "object"
       },
       "QuotaDTO": {
@@ -3999,6 +4104,198 @@
         "summary": "Get Incident"
       }
     },
+    "/api/invitations": {
+      "get": {
+        "operationId": "list_invitations_api_invitations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Invitations Api Invitations Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Invitations"
+      },
+      "post": {
+        "description": "发一条邀请。响应里的 `token` 只出现这一次 —— 拼成链接交给被邀请人。",
+        "operationId": "create_invitation_api_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCreateDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Invitation Api Invitations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invitation"
+      }
+    },
+    "/api/invitations/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_invitation_api_invitations__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revoke Invitation Api Invitations  Invite Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invitation"
+      }
+    },
+    "/api/invitations/{token}": {
+      "get": {
+        "description": "这条链接现在什么情况。不要求登录:链接本身就是凭据。\n\n过期、用过、撤销过都正常返回状态,由页面给下一步 —— 404 只会让被邀请人\n以为链接坏了。",
+        "operationId": "preview_invitation_api_invitations__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Invitation Api Invitations  Token  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invitation"
+      },
+      "post": {
+        "description": "接邀请。成功之后这个人就已经登录了 —— 顺手发一个会话,少一步。",
+        "operationId": "accept_invitation_api_invitations__token__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteAcceptDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Invitation Api Invitations  Token  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invitation"
+      }
+    },
     "/api/issues/{issue_id}/continue": {
       "post": {
         "description": "从界面发起新一轮:话题不变、分支不变、PR 不新开。\n\n权限借用 `changes.approve`:两件事是一类——此刻有人在场,允许平台再动一次手。\n真要细分的话是加一条新权限,不是在这里各自判断。",
@@ -4541,6 +4838,158 @@
           }
         },
         "summary": "List Projects"
+      }
+    },
+    "/api/projects/{slug}/credentials/{key}": {
+      "put": {
+        "description": "写一条项目级凭据。值进密钥仓库,库里只留键与说明。\n\n空值等于删掉:凭据没有\"空着\"这种状态 —— 空着和没设是同一件事,分成两种会让\n\"设了没有\"永远有两种答案。",
+        "operationId": "put_project_credential_api_projects__slug__credentials__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Project Credential Api Projects  Slug  Credentials  Key  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Project Credential"
+      }
+    },
+    "/api/projects/{slug}/settings": {
+      "get": {
+        "operationId": "get_project_settings_api_projects__slug__settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Project Settings Api Projects  Slug  Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Project Settings"
+      },
+      "put": {
+        "description": "可见性与默认发布参数。两者都在这一行里,整份写、不担心字段级 diff。",
+        "operationId": "put_project_settings_api_projects__slug__settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSettingsDTO"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Project Settings Api Projects  Slug  Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Project Settings"
       }
     },
     "/api/quota": {
