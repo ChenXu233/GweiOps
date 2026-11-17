@@ -48,12 +48,17 @@ async def tenant_slug_of(session: AsyncSession, tenant_id: uuid.UUID) -> str:
 
 
 async def _role_permissions(session: AsyncSession, user_id: uuid.UUID) -> list[list[str]]:
-    rows = await session.execute(
-        select(Role.permissions).join(UserRole, UserRole.role_id == Role.id).where(
-            UserRole.user_id == user_id
+    # 注意取的是**标量**列:`rows.all()` 给的是 Row 对象,`list(Row)` 得到的是
+    # [权限列表] 而不是权限字符串,权限会被静默吃空。这条判据在
+    # `tests/test_integration/test_rbac_admin.py` 里有用例盯着。
+    rows = (
+        await session.execute(
+            select(Role.permissions).join(UserRole, UserRole.role_id == Role.id).where(
+                UserRole.user_id == user_id
+            )
         )
-    )
-    return [list(r or []) for r in rows.all()]
+    ).scalars()
+    return [list(r or []) for r in rows]
 
 
 async def membership_permissions(
