@@ -18,7 +18,7 @@ exec 9>"$STATE_DIR/lock"
 flock -n 9 || { echo "上一次还在跑,这次跳过"; exit 0; }
 
 digest_of() {
-  docker manifest inspect -v "$1" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);x=d.get('Descriptor') or {};print(x.get('digest',''))" 2>/dev/null || true
+  docker manifest inspect -v "$1" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);x=d[0] if isinstance(d,list) else d;print((x.get('Descriptor') or {}).get('digest',''))" 2>/dev/null || true
 }
 
 WANT=$(digest_of "$REGISTRY/$SLUG:$TAG")

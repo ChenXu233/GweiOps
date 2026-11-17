@@ -1,0 +1,3 @@
+# 脚本保持 LF:CRLF 的 shebang 在 Linux 上会变成 env: 'bash\r': No such file
+*.sh text eol=lf
+deploy/ci/gwei-watch-deploy text eol=lf
