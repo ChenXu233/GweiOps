@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# 目标机自取部署:看 :stable 变了没有,变了就跑真正的切换脚本。
+#
+# 方向是"目标机出去看制品库",所以不需要任何入站端口,也不依赖构建侧能连上这台机器。
+# 健康检查与回滚仍在 remote-deploy.sh 里,和以前一样在目标机上执行。
+set -euo pipefail
+
+REGISTRY=${GWEI_REGISTRY:-docker.cnb.cool}
+SLUG=${GWEI_SLUG:-chenxu233/gweiops}
+TAG=${GWEI_CHANNEL:-stable}
+PROJECT_DIR=${GWEI_PROJECT_DIR:-/opt/gwei}
+DEPLOY=${GWEI_DEPLOY_SCRIPT:-$PROJECT_DIR/deploy/remote-deploy.sh}
+STATE_DIR=${GWEI_STATE_DIR:-/var/lib/gwei-deploy}
+RETRY_AFTER=${GWEI_RETRY_AFTER:-1800}
+
+mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/lock"
+flock -n 9 || { echo "上一次还在跑,这次跳过"; exit 0; }
+
+digest_of() {
+  docker manifest inspect -v "$1" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);x=d.get('Descriptor') or {};print(x.get('digest',''))" 2>/dev/null || true
+}
+
+WANT=$(digest_of "$REGISTRY/$SLUG:$TAG")
+if [ -z "$WANT" ]; then echo "读不到 $TAG 的 digest(制品库不可达,或这个 tag 还没建)"; exit 0; fi
+
+# 现在跑的是哪个 digest:从运行中容器的镜像上取
+RUNNING=$(docker inspect gwei-engine --format "{{.Image}}" 2>/dev/null || true)
+CUR=""
+if [ -n "$RUNNING" ]; then
+  CUR=$(docker image inspect "$RUNNING" --format "{{range .RepoDigests}}{{println .}}{{end}}" 2>/dev/null | grep -F "$REGISTRY/$SLUG@" | head -1 | cut -d@ -f2 || true)
+fi
+if [ "$CUR" = "$WANT" ]; then exit 0; fi
+
+# 同一个版本刚失败过,先别每 60 秒撞一次
+if [ -f "$STATE_DIR/state" ]; then
+  # shellcheck disable=SC1091
+  . "$STATE_DIR/state"
+  if [ "${failed_digest:-}" = "$WANT" ] && [ -n "${failed_at:-}" ]; then
+    if [ $(( $(date +%s) - failed_at )) -lt "$RETRY_AFTER" ]; then
+      echo "同一版本刚刚失败过,$((RETRY_AFTER/60)) 分钟内不重试: $WANT"; exit 0
+    fi
+  fi
+fi
+
+echo "发现新版本:$TAG -> $WANT(当前 ${CUR:-未知})"
+if TAG="$TAG" REPO_SLUG="$SLUG" bash "$DEPLOY" >>"$STATE_DIR/deploy.log" 2>&1; then
+  printf "digest=%s\ndeployed_at=%s\n" "$WANT" "$(date +%s)" > "$STATE_DIR/state"
+  echo "部署成功:$WANT"
+else
+  printf "digest=%s\nfailed_digest=%s\nfailed_at=%s\n" "${CUR:-}" "$WANT" "$(date +%s)" > "$STATE_DIR/state"
+  echo "部署失败,详见 $STATE_DIR/deploy.log(回滚由 remote-deploy.sh 负责)" >&2
+  exit 1
+fi

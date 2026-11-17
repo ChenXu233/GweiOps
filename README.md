@@ -58,51 +58,55 @@ pnpm install
 pnpm dev:selfhost
 ```
 
-## 部署 CI（dogfood）
+## 部署
 
-`master` 上有发布制品，真正把服务切到服务器上靠一次手动部署：给 tag 在仓库页面点
-「部署到 dogfood」（环境定义在 `.cnb/tag_deploy.yml`），触发 `.cnb.yml` 的
-`tag_deploy.dogfood`。它拉制品库里该 tag 的两个镜像，在目标机上 `docker compose up`，
-验 `/api/health` 不过就自动回滚到切换前的镜像。目标是“正确接入 dogfood 之前”的
-初始自动化部署：tag 人工挑、脚本自动跑，不需要登录服务器敲命令。
+推一个 `v*` tag 只是发布制品；**真正切到目标机由目标机自己取**：目标机上有个 timer
+每分钟看一眼 `:stable` 的 digest，变了就跑 `remote-deploy.sh`——拉镜像、切流、
+验 `/api/health`，不过就按 `.deploy-before.env` 回滚。
 
-### 目标机准备
+方向是目标机出站。以前是构建侧 SSH 进来，目标机的防火墙（或云厂商的主机安全）把
+构建节点当成可疑来源时，整条路会断在 `Connection refused`；现在没有任何入站连接。
 
+<<<<<<< HEAD
 一台能跑 Docker + Compose 的 Linux 机器（腾讯内网机器也行）。仓库里的编排是
 [deploy/docker-compose.deploy.yml](deploy/docker-compose.deploy.yml)，首次在上面执行：
+=======
+### 发布一个版本
+
+1. `git tag v0.1.2 && git push cnb v0.1.2` —— 构建并推 `v0.1.2` 与 `v0.1.2-web`，不动 stable
+2. 仓库页面给这个 tag 点「部署到 dogfood」——流水线只做一件事：把 `:stable` 与
+   `:stable-web` 指过去（`.cnb.yml` 的 `tag_deploy.dogfood`）
+3. 目标机一分钟内自己切过去
+
+**回滚** = 给上一个 tag 再点一次部署，stable 指回去，同样一分钟内生效。
+
+### 目标机准备（一次性）
+>>>>>>> 238bf9b (feat(deploy): 目标机自己取,不再由构建侧连进来)
 
 ```bash
-sudo mkdir -p /opt/gwei && sudo chown "$USER" /opt/gwei
+sudo mkdir -p /opt/gwei/deploy && sudo chown "$USER" /opt/gwei
 cd /opt/gwei
+<<<<<<< HEAD
 # 把仓库里的 deploy/docker-compose.deploy.yml 放进来，再写 .env.prod（chmod 600）：
 #   POSTGRES_PASSWORD / API_TOKENS —— 必填
 #   CNB_REGISTRY / CNB_REGISTRY_USER / CNB_REGISTRY_TOKEN —— 拉制品库镜像用
 # 其余 LLM_* / *_WEBHOOK_* 等按运行时参考配置，详见 .env.prod.example。
+=======
+# 放两个文件:docker-compose.deploy.yml 与 deploy/remote-deploy.sh(从仓库拷)
+# 写 .env.prod(chmod 600):POSTGRES_PASSWORD / API_TOKENS / HARNESS_TOKEN /
+#   CNB_REGISTRY / CNB_REGISTRY_USER / CNB_REGISTRY_TOKEN
+sudo install -m 755 deploy/ci/gwei-watch-deploy /usr/local/bin/gwei-watch-deploy
+sudo install -m 644 deploy/ci/gwei-watch-deploy.service /etc/systemd/system/
+sudo install -m 644 deploy/ci/gwei-watch-deploy.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now gwei-watch-deploy.timer
+>>>>>>> 238bf9b (feat(deploy): 目标机自己取,不再由构建侧连进来)
 ```
 
-`.env.prod` 只在目标机上，不进仓库、不过流水线。CI 每次部署把本次镜像地址写回它的
-`GWEI_ENGINE_IMAGE` / `GWEI_WEB_IMAGE`，切换前的镜像留在 `.deploy-before.env`。
+状态在 `/var/lib/gwei-deploy/`：`state` 记已部署的 digest，`deploy.log` 是切换日志。
+同一个版本失败后 30 分钟内不重试，避免每分钟撞一次坏镜像。
 
-### 密钥仓库
-
-CNB 没有 `from_secret`，敏感值放密钥仓库，用 `imports` 注入。模板见
-[deploy/ci/secret.example.yml](deploy/ci/secret.example.yml)。在密钥仓库（如
-`ChenXu233/secrets`）的 Web 界面建一个 `gwei-deploy.yml`，把私钥、目标机地址填进去，
-并保证文件里的 `allow_events` 含 `tag_deploy.*`，`.cnb.yml` 的 imports 路径指向它。
-
-### 内网能不能访问
-
-**默认连不进**：CNB SaaS 的构建节点在公网，腾讯内网服务器没有公网入站时，SSH 不通。
-两条路都能走：
-
-| 方式 | 怎么配 | 适合 |
-| --- | --- | --- |
-| 跳板机 | 密钥里给 `PROXY_HOST` / `PROXY_PORT` / `PROXY_USER` / `PROXY_KEY`，流水线经跳板机 SSH 进内网 | 已有 JumpServer / 跳板机，改动最小 |
-| 自定义 Runner | 把一台能通内网、且能出网访问 CNB 站点的机器接成根组织构建节点，流水线加 `runner.namespace: group` + `runner.tags` | 长期、需要对内网多机部署 |
-
-部署方向是「构建侧主动连目标机」，目标机不用开放公网端口。详见
-[官方文档：自定义构建节点](https://docs.cnb.cool/zh/build/build-node.md)与
-[企业版 VPC 互通](https://docs.cnb.cool/zh/enterprise.md)。
+制品库凭据：CNB 个人设置里建一个只读令牌（`registry-package:read`），填进
+`.env.prod` 的 `CNB_REGISTRY_TOKEN`，用户名固定 `cnb`。
 
 ## 发布制品
 

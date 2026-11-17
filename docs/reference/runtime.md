@@ -444,14 +444,15 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 ## 部署
 
-一次部署 = 给 tag 在仓库页面点「部署到 dogfood」（`.cnb/tag_deploy.yml`），
-触发 `.cnb.yml` 的 `tag_deploy.dogfood`：目标机拉制品库里该 tag 的 engine/web 镜像，
-compose 切流，验 `/api/health`，失败自动回滚。目标机的编排是
-[`deploy/docker-compose.deploy.yml`](../../deploy/docker-compose.deploy.yml)（自包含，拉现成镜像、不 build），凭据在目标机的
-`.env.prod`，SSH 与内网跳板配置在密钥仓库。
+一次部署由**目标机发起**：目标机上的 timer 每分钟查一次制品库里 `:stable` 的
+digest，变了就跑 `deploy/ci/remote-deploy.sh`（compose 切流 → 验 `/api/health` →
+失败按 `.deploy-before.env` 回滚）。编排是
+[`deploy/docker-compose.deploy.yml`](../../deploy/docker-compose.deploy.yml)（自包含，
+拉现成镜像、不 build），凭据在目标机的 `.env.prod`。构建侧只推镜像，不连目标机。
 
-目标机准备、密钥仓库字段与内网连通方式见[根 README · 部署 CI](../../README.md#部署-cidogfood)；
-密钥文件格式模板见 `deploy/ci/secret.example.yml`。
+「部署到 dogfood」按钮做的是挪指针：`.cnb.yml` 的 `tag_deploy.dogfood` 把
+`:stable` / `:stable-web` 指到选中的 tag。目标机准备与回滚步骤见
+[根 README · 部署](../../README.md#部署)。
 
 ## 插件
 

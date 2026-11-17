@@ -1,0 +1,11 @@
+[Unit]
+Description=每分钟看一眼 stable 通道
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=gwei-watch-deploy.service
+
+[Install]
+WantedBy=timers.target
