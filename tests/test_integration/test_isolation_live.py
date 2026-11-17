@@ -65,10 +65,7 @@ def _ensure_schema() -> str:
     return fresh
 
 
-@pytest.mark.skipif(
-    not os.environ.get("GWEI_TEST_DATABASE_URL"),
-    reason="需要 GWEI_TEST_DATABASE_URL 指向可写的 Postgres",
-)
+@requires_postgres
 def test_a_session_sees_only_its_own_workspace():
     import sqlalchemy as sa
 
@@ -126,6 +123,7 @@ def test_a_session_sees_only_its_own_workspace():
             drop.dispose()
 
 
+@requires_postgres
 def test_the_manifest_reaches_the_database():
     """清单里的每一张表在库里都真有策略。缺一张,启动那条检查会拒绝起来。"""
     import sqlalchemy as sa
