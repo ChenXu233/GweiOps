@@ -93,6 +93,20 @@ snapshot_images
 echo "==> 拉取镜像"
 compose pull
 
+# 迁移只进不退:引擎容器的 entrypoint 会 alembic upgrade head,回滚镜像不会把
+# schema 退回去。所以切换之前先留一份库,失败时至少能按它重建。
+echo "==> 迁移前备份"
+mkdir -p "$PROJECT_DIR/backups"
+BACKUP="$PROJECT_DIR/backups/gwei-$(date +%Y%m%d-%H%M%S).sql.gz"
+if compose exec -T postgres pg_dump -U gwei gwei 2>/dev/null | gzip > "$BACKUP"; then
+  echo "    $BACKUP ($(du -h "$BACKUP" | cut -f1))"
+else
+  # 备份失败不拦部署:它不在恢复目标里,但要说出来,不能悄悄没有。
+  echo "    备份失败,继续部署(这份备份不是部署的前置)" >&2
+fi
+# 只留最近 10 份
+ls -1t "$PROJECT_DIR"/backups/*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
+
 # 不 force-recreate:compose 只重建镜像变了的服务(engine/web),
 # postgres/redis 镜像没变就不动,避免每次部署都把数据库重启一遍。
 echo "==> 切换容器"
