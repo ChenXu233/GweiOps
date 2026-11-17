@@ -39,6 +39,9 @@ READ_ONLY_POST_PREFIXES = ("/api/console/session",)
 EXEMPT_PATHS = frozenset({"/api/health", "/openapi.json", "/docs", "/redoc"})
 # 登录接口本身,以及自带共享密钥的 webhook 入口
 EXEMPT_PREFIXES = ("/api/webhook/", "/api/auth/")
+# 接邀请的一条口:被邀请的人那时还没有账号,不该为了接一条邀请先有权限。
+# 只有 GET/POST 这一个 token 路径豁免,列表与发邀请仍然要登录与 users.manage。
+INVITE_PATH = re.compile(r"^/api/invitations/[^/]+$")
 TOKEN_HEADER = "x-gwei-token"
 # 工作区就这么带:`/api/workspaces/{slug}/...`。写在前缀里的那一段,而不是一个
 # 查询参数或请求头 —— 资源要有 URL,链接、分享、日志、审计都自带"这是哪一道账"。
@@ -220,6 +223,7 @@ def make_middleware(tokens: dict[str, Actor]) -> Callable[..., Any]:
             not (path.startswith("/api/") or is_mcp)
             or path in EXEMPT_PATHS
             or path.startswith(EXEMPT_PREFIXES)
+            or bool(INVITE_PATH.match(path))
         )
 
         # 1) 先认人:有会话 cookie 就用它。豁免路径也要认——/api/auth/me 靠它回答"我是谁"
