@@ -56,8 +56,32 @@ snapshot_images() {
   } > "$ROLLBACK_FILE"
 }
 
+# 部署失败要能被看见。这条必须由部署脚本发,不能由引擎发:失败时它可能正不可用,
+# 或者正在被换成新版本。
+report_alert() {
+  local title="$1"
+  local detail="$2"
+  local token="${ALERTMANAGER_WEBHOOK_TOKEN:-}"
+  local url="${DEPLOY_ALERT_URL:-http://127.0.0.1:8000/webhook/alertmanager}"
+  if [ -z "$token" ]; then
+    echo "    没配 ALERTMANAGER_WEBHOOK_TOKEN,这条失败不会变成议题" >&2
+    return 0
+  fi
+  local now
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  curl -fsS -m 5 -X POST "$url" \
+    -H "Content-Type: application/json" \
+    -H "X-Gwei-Token: $token" \
+    -d "{\"alerts\":[{\"status\":\"firing\",\"fingerprint\":\"deploy-$TAG\",\"labels\":{\"alertname\":\"deploy_failed\",\"service\":\"gwei-engine\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"$title\",\"description\":\"$detail\"},\"startsAt\":\"$now\"}]}" \
+    >/dev/null 2>&1 \
+    && echo "    已报成议题(见议题板的\"等我\")" \
+    || echo "    上报失败:引擎可能也不可用,去看 .deploy-before.env 与 compose logs" >&2
+}
+
 rollback() {
   echo "==> 部署未通过,开始回滚" >&2
+  report_alert "部署 $TAG 失败,已回滚" \
+    "健康检查未通过或部署中断;上一版镜像已恢复。切换前的镜像记在 .deploy-before.env"
   if [[ -f $ROLLBACK_FILE ]]; then
     # shellcheck disable=SC1090
     set -a; source "$ROLLBACK_FILE"; set +a

@@ -1,0 +1,14 @@
+name: selfcheck-agent
+version: 0.1.0
+type: agent
+class_name: SelfCheckAgent
+description: 平台自检:到点查工作区余量与工作流队列积压,查出问题就开一条议题
+
+capabilities:
+  - self.check
+
+triggers:
+  # 10 分钟一次。周期必须整除所在档位(分钟),否则按整点对齐时会忽长忽短。
+  - type: schedule
+    every: 10m
+    capability: self.check
