@@ -94,6 +94,10 @@ master:
             docker push "${IMAGE}:${CNB_BRANCH}-web"
             docker push "${IMAGE}:latest-web"
 
+.deploy-hooks: &deploy-hooks
+  imports:
+    - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
+
 # ---------------------------------------------------------------------------
 # 校验作业:PR 与 master 推送都跑,不合就红。
 # 这是合入门槛的唯一实现——GitHub 侧的 workflows 只构建、不校验。
@@ -153,7 +157,8 @@ master:
 # ---------------------------------------------------------------------------
 
   tag_deploy.dogfood:
-    - name: promote stable
+    - <<: *deploy-hooks
+      name: promote stable
       services:
         - docker
       env:
@@ -183,8 +188,11 @@ master:
         - name: 踢一下目标机
           script: |
             set -euo pipefail
-            # 目标机上的 /_deploy 只回答"现在再看一眼 :stable",不接受版本号:
+            # 目标机上的 /_deploy 只回答"再看一眼本环境通道",不接受版本号;
             # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
             # 同步等待:部署失败时这枚作业跟着变红,不必去别处看。
-            curl -fsS --max-time 300 -X POST "https://gwei.chenxu233.cn/_deploy"
+            curl -fsS --max-time 300 \
+              -X POST "${DEPLOY_HOOK_URL}" \
+              -H "X-Gwei-Channel: ${channel:-stable}" \
+              ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo

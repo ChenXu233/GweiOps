@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""部署触发口:CNB 的部署作业打一下它,立刻跑一次 gwei-watch-deploy。
+"""部署触发口：CNB 部署作业打一下它，立刻跑对应通道的 gwei-watch-deploy。
 
-为什么不接受参数:它只管"现在再看一眼 :stable",接受哪一版由制品库决定。
-就算被乱打,最坏也只是多查一次 manifest,所以这里只做限频,不做鉴权。
+为什么不接受版本号：它只管“现在再看一眼本环境通道”，接受哪一版由制品库决定。
+就算被乱打，最坏也只是多查一次 manifest，所以这里只做限频，不做强制鉴权。
 配了 /etc/gwei/deploy-hook.secret 就要求 X-Gwei-Token 与之相符。
 
-为什么同步等待:作业那边要把真实结果带回去——部署失败时这枚作业应当变红,
-而不是"踢一脚就跑"。目标机在换容器的过程中,这个进程不受影响(它在宿主上)。
+为什么同步等待：作业那边要把真实结果带回去——部署失败时这枚作业应当变红，
+而不是“踢一脚就跑”。目标机在换容器的过程中，这个进程不受影响（它在宿主上）。
 """
 
 import hmac
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -23,6 +24,7 @@ HOST = "127.0.0.1"
 PORT = 8099
 MIN_INTERVAL = 3.0
 RUN_TIMEOUT = 900
+ALLOWED_CHANNELS = {"stable", "test-stable"}
 
 _lock = threading.Lock()
 _state = {"running": False, "last": 0.0}
@@ -36,10 +38,33 @@ def _secret() -> str:
         return ""
 
 
-def run_watch():
+def _channel(headers) -> str:
+    channel = headers.get("X-Gwei-Channel", "stable").strip()
+    return channel if channel in ALLOWED_CHANNELS else ""
+
+
+def _env_for(channel: str):
+    env = os.environ.copy()
+    env["GWEI_CHANNEL"] = channel
+    suffix = "TEST_STABLE" if channel == "test-stable" else "STABLE"
+    mapping = {
+        "GWEI_PROJECT_DIR": f"GWEI_CHANNEL_{suffix}_PROJECT_DIR",
+        "GWEI_COMPOSE_PROJECT": f"GWEI_CHANNEL_{suffix}_COMPOSE_PROJECT",
+        "GWEI_STATE_DIR": f"GWEI_CHANNEL_{suffix}_STATE_DIR",
+        "GWEI_DEPLOY_SCRIPT": f"GWEI_CHANNEL_{suffix}_DEPLOY_SCRIPT",
+    }
+    for target, source in mapping.items():
+        value = os.environ.get(source, "")
+        if value:
+            env[target] = value
+    return env
+
+
+def run_watch(channel: str):
+    env = _env_for(channel)
     try:
-        proc = subprocess.run([
-            WATCH], capture_output=True, text=True, timeout=RUN_TIMEOUT
+        proc = subprocess.run(
+            [WATCH], capture_output=True, text=True, timeout=RUN_TIMEOUT, env=env
         )
     except subprocess.TimeoutExpired:
         return 1, "部署超时(%ds)" % RUN_TIMEOUT
@@ -72,6 +97,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"status": "not found"})
             return
 
+        channel = _channel(self.headers)
+        if not channel:
+            self._send(400, {"status": "invalid channel"})
+            return
+
         secret = _secret()
         if secret:
             given = self.headers.get("X-Gwei-Token", "")
@@ -91,14 +121,15 @@ class Handler(BaseHTTPRequestHandler):
             _state["last"] = now
 
         try:
-            code, out = run_watch()
+            code, out = run_watch(channel)
         finally:
             with _lock:
                 _state["running"] = False
 
         self._send(
             200 if code == 0 else 500,
-            {"status": "ok" if code == 0 else "failed", "exit": code, "log": out},
+            {"status": "ok" if code == 0 else "failed", "exit": code,
+             "channel": channel, "log": out},
         )
 
 

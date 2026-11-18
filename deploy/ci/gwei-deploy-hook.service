@@ -10,6 +10,15 @@ Restart=always
 RestartSec=3
 User=root
 Environment=PYTHONUNBUFFERED=1
+# 两个通道各自的 watcher 环境，供触发口按 X-Gwei-Channel 选择
+Environment=GWEI_CHANNEL_STABLE_PROJECT_DIR=/opt/gwei/prod
+Environment=GWEI_CHANNEL_STABLE_COMPOSE_PROJECT=gwei-prod
+Environment=GWEI_CHANNEL_STABLE_STATE_DIR=/var/lib/gwei-deploy/prod
+Environment=GWEI_CHANNEL_STABLE_DEPLOY_SCRIPT=/opt/gwei/prod/deploy/remote-deploy.sh
+Environment=GWEI_CHANNEL_TEST_STABLE_PROJECT_DIR=/opt/gwei/test
+Environment=GWEI_CHANNEL_TEST_STABLE_COMPOSE_PROJECT=gwei-test
+Environment=GWEI_CHANNEL_TEST_STABLE_STATE_DIR=/var/lib/gwei-deploy/test
+Environment=GWEI_CHANNEL_TEST_STABLE_DEPLOY_SCRIPT=/opt/gwei/test/deploy/remote-deploy.sh
 
 [Install]
 WantedBy=multi-user.target

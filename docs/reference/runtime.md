@@ -551,9 +551,10 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 ## 部署
 
-一次部署由**目标机发起**：目标机上的 timer 每分钟查一次制品库里 `:stable` 的
+一次部署由**目标机发起**：目标机上的 timer 每 15 秒查一次制品库里当前通道的
 digest，变了就跑 `deploy/ci/remote-deploy.sh`（compose 切流 → 验 `/api/health` →
-失败按 `.deploy-before.env` 回滚）。编排是
+失败按 `.deploy-before.env` 回滚）。部署作业还会同步 POST 目标机的 `/_deploy` 触发口，
+按 `X-Gwei-Channel` 立即检查对应通道，不等下一轮轮询。编排是
 [`deploy/docker-compose.deploy.yml`](../../deploy/docker-compose.deploy.yml)（自包含，
 拉现成镜像、不 build），凭据在目标机的 `.env.prod`。构建侧只推镜像，不连目标机。
 
