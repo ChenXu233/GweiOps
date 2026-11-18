@@ -3,6 +3,7 @@ import { useSettings } from '@gwei/core/composables/useSettings'
 import { useTheme } from '@gwei/core/composables/useTheme'
 import { SettingsScopesApi, ReleaseSettingsApi } from '@gwei/core/api/client'
 import { scopePath } from '@gwei/core/api/typed'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 interface ScopeField {
   name: string
@@ -25,6 +26,7 @@ interface Scope {
   owner?: string
 }
 
+const { hrefFor: scopedTo } = useWorkspaces()
 const { data, loading, error } = useSettings()
 const { mode, set } = useTheme()
 
@@ -881,7 +883,7 @@ const sections = computed(() => {
               演示模式没有引擎,也就没有可签的凭据。
             </p>
           </div>
-          <NuxtLink to="/mcp" class="btn-outline btn-sm shrink-0">
+          <NuxtLink :to="scopedTo('/mcp')" class="btn-outline btn-sm shrink-0">
             管理密钥
             <AppIcon name="arrow-right" :size="13" />
           </NuxtLink>

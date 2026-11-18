@@ -5,8 +5,10 @@
 // 仓库档仍然只是筛选,不改导航:用户真正的问题始终是"我现在要做什么"。
 import { useRepos } from '@gwei/core/composables/useRepos'
 import { useAuth } from '~/composables/useAuth'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const route = useRoute()
+const { hrefFor: scopedTo } = useWorkspaces()
 const { repos, loading } = useRepos()
 const { can } = useAuth()
 
@@ -37,10 +39,10 @@ const sourceLabel: Record<string, string> = {
       "
     >
       <template #actions>
-        <NuxtLink v-if="repo" :to="`/issues?repo=${encodeURIComponent(repo.slug)}`" class="btn-outline btn-sm">
+        <NuxtLink v-if="repo" :to="scopedTo(`/issues?repo=${encodeURIComponent(repo.slug)}`)" class="btn-outline btn-sm">
           只看它的议题
         </NuxtLink>
-        <NuxtLink to="/repos" class="btn-ghost btn-sm">返回仓库</NuxtLink>
+        <NuxtLink :to="scopedTo('/repos')" class="btn-ghost btn-sm">返回仓库</NuxtLink>
       </template>
     </PageHeader>
 

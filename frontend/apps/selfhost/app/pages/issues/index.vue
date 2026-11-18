@@ -6,8 +6,10 @@
 import { useIssueBoard } from '@gwei/core/composables/useIssueBoard'
 import type { IssueCard } from '@gwei/core/types/issues'
 import { actionLabel, outcomeChip, since } from '@gwei/core/utils/verdict'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const { data, loading, error, refresh } = useIssueBoard()
+const { hrefFor: scopedTo } = useWorkspaces()
 
 const q = ref('')
 
@@ -135,7 +137,7 @@ const counts = computed(() => data.value?.counts ?? {})
         <ul v-else class="divide-y divide-line/60">
           <li v-for="card in s.items" :key="card.id">
             <NuxtLink
-              :to="'/issues/' + encodeURIComponent(card.id)"
+              :to="scopedTo('/issues/' + encodeURIComponent(card.id))"
               class="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-well/40"
             >
               <div class="min-w-0 flex-1">

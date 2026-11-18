@@ -7,8 +7,11 @@
 import { useIssueTimeline } from '@gwei/core/composables/useIssueTimeline'
 import type { SegmentKind, TimelineEvidence, TimelineSegment } from '@gwei/core/types/issues'
 import { outcomeChip, stateMeta, verdictLabel } from '@gwei/core/utils/verdict'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const route = useRoute()
+// 页面里的每个链接都带上工作区那一段:链接点了、刷新、转发出去都还是同一道账。
+const { hrefFor: scopedTo } = useWorkspaces()
 const id = computed(() => String(route.params.id || ''))
 const { data, loading, error, busy, refresh, act, continueRound } = useIssueTimeline(id.value)
 
@@ -237,7 +240,7 @@ const needsHuman = computed(() =>
 <template>
   <div class="space-y-5">
     <NuxtLink
-      to="/issues"
+      :to="scopedTo('/issues')"
       class="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink"
     >
       <AppIcon name="arrow-right" :size="13" class="rotate-180" />
@@ -466,7 +469,7 @@ const needsHuman = computed(() =>
                     </template>
 
                     <template v-else-if="verdictOf(seg) === 'unknown'">
-                      <NuxtLink to="/changes" class="btn-outline btn-sm">
+                      <NuxtLink :to="scopedTo('/changes')" class="btn-outline btn-sm">
                         <AppIcon name="scroll-text" :size="12" />
                         去账本核对
                       </NuxtLink>
@@ -596,7 +599,7 @@ const needsHuman = computed(() =>
               <NuxtLink
                 v-for="c in conclusions"
                 :key="unitOf(c.seg)"
-                to="/changes"
+                :to="scopedTo('/changes')"
                 class="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-well/40"
               >
                 <span class="mt-0.5 shrink-0 font-mono text-[11px] text-ink-faint">R{{ c.round }}</span>
@@ -631,7 +634,7 @@ const needsHuman = computed(() =>
                 <span class="min-w-0 break-all font-mono text-[11.5px] text-ink-soft">{{ round.key || '—' }}</span>
               </div>
               <NuxtLink
-                to="/changes"
+                :to="scopedTo('/changes')"
                 class="mt-1 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-faint transition-colors hover:text-ink"
               >
                 <AppIcon name="scroll-text" :size="11" />

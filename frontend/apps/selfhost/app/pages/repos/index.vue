@@ -6,7 +6,7 @@ import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const { repos, loading, error, refresh } = useRepoList()
 // 仓库属于一个工作区:同一个仓库名在别的平台上不是同一份代码,所以列表上带来源。
-const { current } = useWorkspaces()
+const { current, hrefFor: scopedTo } = useWorkspaces()
 
 // 按项目分组,但不给项目单独一条导航:项目是范围,不是目的地。
 const grouped = computed(() => {
@@ -211,7 +211,7 @@ onMounted(loadSources)
           <span class="font-mono text-[11.5px] text-ink-faint">{{ group.rows.length }} 个仓库</span>
           <NuxtLink
             v-if="group.slug"
-            :to="`/issues?project=${encodeURIComponent(group.slug)}`"
+            :to="scopedTo(`/issues?project=${encodeURIComponent(group.slug)}`)"
             class="ml-auto text-[11.5px] text-ink-soft hover:underline"
           >
             只看这个项目的议题
