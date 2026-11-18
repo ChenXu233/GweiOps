@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # 远端部署:在目标机上把服务切到本次 tag 的镜像,验健康;失败自动回滚。
 #
-# 本脚本由 CI 经 SSH stdin 送入目标机执行,不在 CI 容器里跑,也不存在目标机上。
-# TAG / REPO_SLUG 由调用方(deploy-via-ssh.sh)在脚本头部注入。
-# 凭据(.env.prod)始终留在目标机,不经过流水线。
+# 本脚本放在目标机上，由 gwei-watch-deploy 调起，不在 CI 容器里跑。
+# TAG / REPO_SLUG / COMPOSE_PROJECT_NAME 由 watcher 注入。
+# 凭据(.env.prod)始终留在目标机，不经过流水线。
 #
 # 切换前把当前 engine/web 的镜像记到 ROLLBACK_FILE,失败时按它还原。
 set -euo pipefail
 
 PROJECT_DIR="${DEPLOY_PROJECT_DIR:-/opt/gwei}"
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-gwei}"
 COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.deploy.yml}"
 ROLLBACK_FILE="${DEPLOY_ROLLBACK_FILE:-$PROJECT_DIR/.deploy-before.env}"
 ENV_FILE="${DEPLOY_ENV_FILE:-$PROJECT_DIR/.env.prod}"
-HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:8000/api/health}"
+HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:${GWEI_ENGINE_PORT:-8000}/api/health}"
 HEALTH_ATTEMPTS="${DEPLOY_HEALTH_ATTEMPTS:-30}"
 HEALTH_INTERVAL="${DEPLOY_HEALTH_INTERVAL:-2}"
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Gwei 跟着 stable 通道自动部署
+Description=Gwei 跟随通道自动部署（通道由 GWEI_CHANNEL 指定）
 Wants=network-online.target
 After=network-online.target docker.service
 

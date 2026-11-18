@@ -9,6 +9,7 @@ REGISTRY=${GWEI_REGISTRY:-docker.cnb.cool}
 SLUG=${GWEI_SLUG:-chenxu233/gweiops}
 TAG=${GWEI_CHANNEL:-stable}
 PROJECT_DIR=${GWEI_PROJECT_DIR:-/opt/gwei}
+COMPOSE_PROJECT_NAME=${GWEI_COMPOSE_PROJECT:-gwei}
 DEPLOY=${GWEI_DEPLOY_SCRIPT:-$PROJECT_DIR/deploy/remote-deploy.sh}
 STATE_DIR=${GWEI_STATE_DIR:-/var/lib/gwei-deploy}
 RETRY_AFTER=${GWEI_RETRY_AFTER:-1800}
@@ -25,7 +26,7 @@ WANT=$(digest_of "$REGISTRY/$SLUG:$TAG")
 if [ -z "$WANT" ]; then echo "读不到 $TAG 的 digest(制品库不可达,或这个 tag 还没建)"; exit 0; fi
 
 # 现在跑的是哪个 digest:从运行中容器的镜像上取
-RUNNING=$(docker inspect gwei-engine --format "{{.Image}}" 2>/dev/null || true)
+RUNNING=$(docker inspect "${COMPOSE_PROJECT_NAME}-engine-1" --format "{{.Image}}" 2>/dev/null || true)
 CUR=""
 if [ -n "$RUNNING" ]; then
   CUR=$(docker image inspect "$RUNNING" --format "{{range .RepoDigests}}{{println .}}{{end}}" 2>/dev/null | grep -F "$REGISTRY/$SLUG@" | head -1 | cut -d@ -f2 || true)
@@ -44,7 +45,7 @@ if [ -f "$STATE_DIR/state" ]; then
 fi
 
 echo "发现新版本:$TAG -> $WANT(当前 ${CUR:-未知})"
-if TAG="$TAG" REPO_SLUG="$SLUG" bash "$DEPLOY" >>"$STATE_DIR/deploy.log" 2>&1; then
+if TAG="$TAG" REPO_SLUG="$SLUG" COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" bash "$DEPLOY" >>"$STATE_DIR/deploy.log" 2>&1; then
   printf "digest=%s\ndeployed_at=%s\n" "$WANT" "$(date +%s)" > "$STATE_DIR/state"
   echo "部署成功:$WANT"
 else

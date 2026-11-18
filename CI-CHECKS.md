@@ -6,6 +6,8 @@
 
 校验只有一处实现:`.cnb.yml` 末尾的校验作业,PR 与 master 推送都跑。
 GitHub 上的 workflows 只构建镜像、部署、发 release,**不跑测试**。
+CI 部署通道由 `.cnb/tag_deploy.yml` 定义:生产 `stable`,测试 `test-stable`;
+两者分别触发 `.cnb.yml` 里的 `tag_deploy.dogfood` 与 `tag_deploy.test` 镜像指针流水线。
 
 ## 跑什么
 

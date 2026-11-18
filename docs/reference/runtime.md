@@ -551,16 +551,22 @@ OIDC(`OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`,可选 `OIDC_SCOPES
 
 ## 部署
 
-一次部署由**目标机发起**：目标机上的 timer 每 15 秒查一次制品库里当前通道的
-digest，变了就跑 `deploy/ci/remote-deploy.sh`（compose 切流 → 验 `/api/health` →
-失败按 `.deploy-before.env` 回滚）。部署作业还会同步 POST 目标机的 `/_deploy` 触发口，
-按 `X-Gwei-Channel` 立即检查对应通道，不等下一轮轮询。编排是
+一次部署由**目标机发起**：每个环境有自己的 timer、项目目录、compose project 与状态目录，
+按 `GWEI_CHANNEL` 查制品通道的 digest——生产 `stable`，测试 `test-stable`。变了就跑
+`deploy/ci/remote-deploy.sh`（compose 切流 → 验 `/api/health` → 失败按 `.deploy-before.env`
+回滚）。部署作业还会同步 POST 目标机的 `/_deploy` 触发口，按 `X-Gwei-Channel` 立即检查
+对应通道，不等下一轮轮询；轮询 15 秒一次作兜底。编排是
 [`deploy/docker-compose.deploy.yml`](../../deploy/docker-compose.deploy.yml)（自包含，
-拉现成镜像、不 build），凭据在目标机的 `.env.prod`。构建侧只推镜像，不连目标机。
+拉现成镜像、不 build），凭据在目标机各自的 env 文件里。构建侧只推镜像，不连目标机。
 
-「部署到 dogfood」按钮做的是挪指针：`.cnb.yml` 的 `tag_deploy.dogfood` 把
-`:stable` / `:stable-web` 指到选中的 tag。目标机准备与回滚步骤见
+`.cnb/tag_deploy.yml` 定义 `dogfood` 与 `test` 两个环境；对应按钮触发 `.cnb.yml` 的
+`tag_deploy.dogfood` / `tag_deploy.test`，把所选通道的 engine/web 两个镜像 tag 指到选中
+版本。目标机准备、隔离参数与回滚步骤见
 [根 README · 部署](../../README.md#部署)。
+
+NPC 进哪套部署由接收 `/webhook/cnb` 的实例决定：测试部署要配独立的
+`CNB_WEBHOOK_TOKEN`、`CNB_TOKEN`、`API_TOKENS`、`HARNESS_TOKEN`；走 CNB 沙箱时还要配
+`SANDBOX=cnb` 与 `GWEI_SANDBOX_CNB_*`。
 
 ## 插件
 

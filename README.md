@@ -62,63 +62,113 @@ pnpm dev:selfhost
 
 ## 部署
 
-推一个 `v*` tag 只是发布制品；**真正切到目标机由目标机自己取**：目标机上有个 timer
-每分钟看一眼 `:stable` 的 digest，变了就跑 `remote-deploy.sh`——拉镜像、切流、
-验 `/api/health`，不过就按 `.deploy-before.env` 回滚。
-
-方向是目标机出站。以前是构建侧 SSH 进来，目标机的防火墙（或云厂商的主机安全）把
-构建节点当成可疑来源时，整条路会断在 `Connection refused`；现在没有任何入站连接。
+推一个 `v*` tag 只是发布制品；**真正切到目标机由目标机自己取**：每套部署各有一个
+timer 看自己的制品通道——生产看 `stable`，测试看 `test-stable`。digest 变了就跑
+`remote-deploy.sh`——拉镜像、切流、验 `/api/health`，不过就按 `.deploy-before.env`
+回滚。方向是目标机出站，构建侧不连目标机。
 
 ### 发布一个版本
 
-1. `git tag v0.1.2 && git push cnb v0.1.2` —— 构建并推 `v0.1.2` 与 `v0.1.2-web`，不动 stable
-2. 仓库页面给这个 tag 点「部署到 dogfood」——流水线只做一件事：把 `:stable` 与
-   `:stable-web` 指过去（`.cnb.yml` 的 `tag_deploy.dogfood`）
-3. 目标机一分钟内自己切过去
+1. `git tag v0.1.2 && git push cnb v0.1.2` —— 构建并推 `v0.1.2` 与 `v0.1.2-web`，不动部署通道
+2. 页面给这个 tag 点「部署到 dogfood」或「部署到 test」——流水线把对应通道的两个镜像 tag
+   指过去（`.cnb.yml` 的 `tag_deploy.dogfood` / `tag_deploy.test`）
+3. 部署作业最后会打一下目标机触发口，立即切过去；轮询 15 秒一次只作兜底
 
-**回滚** = 给上一个 tag 再点一次部署，stable 指回去，同样一分钟内生效。
+**回滚** = 给上一个 tag 再点一次同一环境的部署，通道指回去，立即生效。
 
-### 目标机准备（一次性）
+### 生产与测试分开
 
-一台能跑 Docker + Compose 的 Linux 机器（腾讯内网机器也行）。仓库里的编排是
-[deploy/docker-compose.deploy.yml](deploy/docker-compose.deploy.yml)，首次在上面执行：
+两套部署用不同的目录、compose project、端口和状态目录；凭据也各用一套，尤其
+`CNB_WEBHOOK_TOKEN`、`CNB_TOKEN`、`API_TOKENS`、`HARNESS_TOKEN` 不要复用。
+
+| 部署 | 通道 | 目录 | compose project | 端口 | 状态目录 |
+| --- | --- | --- | --- | --- | --- |
+| 生产 | `stable` | `/opt/gwei/prod` | `gwei-prod` | 8000 / 3000 | `/var/lib/gwei-deploy/prod` |
+| 测试 | `test-stable` | `/opt/gwei/test` | `gwei-test` | 18000 / 13000 | `/var/lib/gwei-deploy/test` |
+
+目标机上准备两套文件：
 
 ```bash
-sudo mkdir -p /opt/gwei/deploy && sudo chown "$USER" /opt/gwei
-cd /opt/gwei
-# 把仓库里的 deploy/docker-compose.deploy.yml 放到 /opt/gwei/deploy/，
-# deploy/ci/remote-deploy.sh 放到 /opt/gwei/deploy/remote-deploy.sh
-# 写 .env.prod(chmod 600):POSTGRES_PASSWORD / API_TOKENS / HARNESS_TOKEN /
-#   CNB_REGISTRY / CNB_REGISTRY_USER / CNB_REGISTRY_TOKEN —— 拉制品库镜像用
-# 其余 LLM_* / *_WEBHOOK_* 等按运行时参考配置，详见 .env.prod.example。
-sudo install -m 755 deploy/ci/gwei-watch-deploy /usr/local/bin/gwei-watch-deploy
-sudo install -m 644 deploy/ci/gwei-watch-deploy.service /etc/systemd/system/
-sudo install -m 644 deploy/ci/gwei-watch-deploy.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now gwei-watch-deploy.timer
+sudo mkdir -p /opt/gwei/prod/deploy /opt/gwei/test/deploy && sudo chown "$USER" /opt/gwei
+# 每个目录各放一份 deploy/docker-compose.deploy.yml 与 deploy/ci/remote-deploy.sh，
+# 再各写一份 .env.prod / .env.test(chmod 600)，详见 .env.prod.example。
+# 生产 .env.prod: COMPOSE_PROJECT_NAME=gwei-prod / GWEI_CHANNEL=stable
+# 测试 .env.test: COMPOSE_PROJECT_NAME=gwei-test / GWEI_CHANNEL=test-stable
+#               GWEI_ENGINE_PORT=18000 / GWEI_WEB_PORT=13000
 ```
 
-状态在 `/var/lib/gwei-deploy/`：`state` 记已部署的 digest，`deploy.log` 是切换日志。
+两个 watcher 单元只在变量上不同：
+
+```ini
+# /etc/systemd/system/gwei-watch-prod.service 追加
+[Service]
+Environment=GWEI_CHANNEL=stable
+Environment=GWEI_PROJECT_DIR=/opt/gwei/prod
+Environment=GWEI_COMPOSE_PROJECT=gwei-prod
+Environment=GWEI_STATE_DIR=/var/lib/gwei-deploy/prod
+Environment=GWEI_DEPLOY_SCRIPT=/opt/gwei/prod/deploy/remote-deploy.sh
+
+# /etc/systemd/system/gwei-watch-test.service 追加
+[Service]
+Environment=GWEI_CHANNEL=test-stable
+Environment=GWEI_PROJECT_DIR=/opt/gwei/test
+Environment=GWEI_COMPOSE_PROJECT=gwei-test
+Environment=GWEI_STATE_DIR=/var/lib/gwei-deploy/test
+Environment=GWEI_DEPLOY_SCRIPT=/opt/gwei/test/deploy/remote-deploy.sh
+```
+
+然后启用两个 timer：
+
+```bash
+sudo cp deploy/ci/gwei-watch-deploy.timer /etc/systemd/system/gwei-watch-prod.timer
+sudo cp deploy/ci/gwei-watch-deploy.timer /etc/systemd/system/gwei-watch-test.timer
+# timer 里 Unit= 分别改成 gwei-watch-prod.service / gwei-watch-test.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now gwei-watch-prod.timer gwei-watch-test.timer
+```
+
+状态在各自的 `GWEI_STATE_DIR`：`state` 记已部署的 digest，`deploy.log` 是切换日志。
 同一个版本失败后 30 分钟内不重试，避免每分钟撞一次坏镜像。
 
-想让「点完按钮就开始」而不等下一轮，装一个本机触发口。触发口按通道选 watcher 环境；
+想让「点完按钮就开始」而不等下一轮，装一个本机触发口。两个环境共用一个入口，
+按 `X-Gwei-Channel` 选对应的 watcher 环境：
 
 ```bash
 sudo install -m 755 deploy/ci/gwei-deploy-hook /usr/local/bin/gwei-deploy-hook
 sudo install -m 644 deploy/ci/gwei-deploy-hook.service /etc/systemd/system/
+# 按实际目录改 service 里的 GWEI_CHANNEL_* 变量，再启用：
 sudo systemctl daemon-reload && sudo systemctl enable --now gwei-deploy-hook
-# Caddy 里给站点加一条路由（`caddy validate` 后再 reload）：
+# 每个环境的站点各加一条路由（`caddy validate` 后再 reload）：
+# 生产域名：
 #   handle /_deploy {
 #       reverse_proxy 127.0.0.1:8099
 #   }
+# 测试域名同样加 /_deploy，反代到测试机的 127.0.0.1:8099
 ```
 
-`.cnb.yml` 的部署作业最后一步会 `POST /_deploy` 并带 `X-Gwei-Channel`，同步等结果：
-部署失败这枚作业跟着变红。触发口不收版本号（接受哪一版由制品通道决定），只做 3 秒限频；
-放一个 `/etc/gwei/deploy-hook.secret` 就变成要 `X-Gwei-Token`。`DEPLOY_HOOK_URL` /
-`DEPLOY_HOOK_TOKEN` 从密钥仓库 `deploy-hooks.yml` 注入。轮询 15 秒一次作兜底。
+`.cnb.yml` 的部署作业最后一步会 `POST /_deploy` 并带上 `X-Gwei-Channel`，同步等结果：
+部署失败这枚作业跟着变红。触发口不收版本号（接受哪一版由通道 digest 决定），只做
+3 秒限频；放一个 `/etc/gwei/deploy-hook.secret` 就变成要 `X-Gwei-Token`。
+`DEPLOY_HOOK_URL` / `DEPLOY_HOOK_TOKEN` 从密钥仓库 `deploy-hooks.yml` 注入，不写进仓库。
+轮询 15 秒一次作兜底。
 
 制品库凭据：CNB 个人设置里建一个只读令牌（`registry-package:read`），填进
-`.env.prod` 的 `CNB_REGISTRY_TOKEN`，用户名固定 `cnb`。
+两套 env 的 `CNB_REGISTRY_TOKEN`，用户名固定 `cnb`。
+
+### 让 NPC 用测试部署
+
+NPC 跑在 CNB 流水线里，它进哪套部署取决于哪个 `/webhook/cnb` 收到投递。把测试部署的
+`/webhook/cnb` 配到专用 webhook，`CNB_WEBHOOK_TOKEN` 用测试专用值，并在测试 env 里配：
+
+```bash
+SANDBOX=cnb
+GWEI_SANDBOX_CNB_REPO=<你的仓库>
+GWEI_SANDBOX_CNB_IMAGE=cnbcool/default-npc:latest
+GWEI_SANDBOX_CNB_EVENT=api_trigger_harness
+```
+
+`CNB_TOKEN` 要有触发该仓库 `api_trigger` 的权限；回评、拉代码都走测试部署自己的令牌。
+用 `@CodeBuddy` 触发一次，看评论落在哪个部署、账本写在哪套库即可确认。
 
 ## 发布制品
 

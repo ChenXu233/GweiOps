@@ -94,10 +94,6 @@ master:
             docker push "${IMAGE}:${CNB_BRANCH}-web"
             docker push "${IMAGE}:latest-web"
 
-.deploy-hooks: &deploy-hooks
-  imports:
-    - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
-
 # ---------------------------------------------------------------------------
 # 校验作业:PR 与 master 推送都跑,不合就红。
 # 这是合入门槛的唯一实现——GitHub 侧的 workflows 只构建、不校验。
@@ -140,21 +136,29 @@ master:
             corepack prepare pnpm@10.15.0 --activate
             bash .ci/web-checks.sh
 
+  .deploy-hooks: &deploy-hooks
+    imports:
+      - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# 部署 CI:目标机自己取。
+# 部署 CI：目标机自己取。
 #
-# 触发:在仓库页面给一个 tag 点「部署到 dogfood」(环境定义在 .cnb/tag_deploy.yml)。
-# 这里只做一件事——把 :stable 与 :stable-web 指到这个 tag。真正的切换在目标机:
-# 那边有个 timer 每分钟看一次 :stable 的 digest,变了就跑 remote-deploy.sh
-# (拉镜像、切流、验 /api/health,失败按 .deploy-before.env 回滚)。
+# 触发：在仓库页面给一个 tag 点「部署到 dogfood」或「部署到 test」
+# (环境定义在 .cnb/tag_deploy.yml)。这里只做一件事——把所选通道的 engine/web
+# 两个 tag 指到这个版本。真正的切换在目标机：每套部署各有一个 watcher，盯着自己的
+# 通道 digest，变了就跑 remote-deploy.sh（拉镜像、切流、验 /api/health，失败按
+# .deploy-before.env 回滚）。
 #
-# 方向是目标机出站,构建侧不连目标机。原先由构建侧 SSH 进来,云厂商的主机安全会
-# 把构建节点的出口 IP 当可疑来源封掉 22 端口,那条路会断在 Connection refused,
-# 而那一层是控制台策略,机器里改不干净。
-#
-# 发布与部署因此是两件事:推 v* tag 只发制品,点部署才挪指针。
+# 两套部署靠不同的制品通道隔离：生产看 stable，测试看 test-stable。
+# 构建侧不连目标机。原先由构建侧 SSH 进来，云厂商的主机安全会把构建节点的出口
+# IP 当可疑来源封掉 22 端口，那条路会断在 Connection refused，而那一层是控制台
+# 策略，机器里改不干净。
 # ---------------------------------------------------------------------------
+
+# 发布与部署因此是两件事：推 v* tag 只发制品，点部署才挪通道。
+# 点完按钮还要立即触发目标机 hook，省掉等待下一轮轮询；轮询仍保留作兜底。
+# DEPLOY_HOOK_URL / DEPLOY_HOOK_TOKEN 从密钥仓库 imports 注入，不写进仓库。
 
   tag_deploy.dogfood:
     - <<: *deploy-hooks
@@ -163,20 +167,21 @@ master:
         - docker
       env:
         IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+        CHANNEL: ${channel:-stable}
       stages:
         - name: docker login
           script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
-        - name: 把 stable 指到这个 tag
+        - name: 把通道指到这个 tag
           script: |
             set -euo pipefail
             TAG="${tag_name:-$CNB_BRANCH}"
-            # 部署方向反过来:目标机每分钟自己去看 :stable。这里只挪指针,不碰目标机。
-            # 走 pull/tag/push 而不是 buildx imagetools:后者在目标 tag 已存在时的行为
-            # 随 registry 而异,同一个 tag 重复点部署会直接报错。这条路径不依赖 buildx,
+            # 部署方向反过来：目标机看通道 digest。这里只挪指针，不碰目标机。
+            # 走 pull/tag/push 而不是 buildx imagetools：后者在目标 tag 已存在时的行为
+            # 随 registry 而异，同一个 tag 重复点部署会直接报错。这条路径不依赖 buildx，
             # 重复执行也只是把同一个 digest 再写一遍。
             promote() {
               SRC="${IMAGE}:${TAG}$1"
-              DST="${IMAGE}:stable$1"
+              DST="${IMAGE}:${CHANNEL}$1"
               docker pull -q "$SRC" >/dev/null
               docker tag "$SRC" "$DST"
               docker push -q "$DST" >/dev/null
@@ -184,15 +189,50 @@ master:
             }
             promote ""
             promote "-web"
-            echo "stable -> ${TAG};目标机一分钟内自取"
+            echo "${CHANNEL} -> ${TAG}；对应目标机一分钟内自取"
         - name: 踢一下目标机
           script: |
             set -euo pipefail
-            # 目标机上的 /_deploy 只回答"再看一眼本环境通道",不接受版本号;
-            # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
-            # 同步等待:部署失败时这枚作业跟着变红,不必去别处看。
+            # 目标机上的 hook 只回答“再看一眼本环境通道”，不接受版本号；
+            # 接受哪一版由制品库决定，所以这个入口没有可利用的参数。
+            # 同步等待：部署失败时这枚作业跟着变红，不必去别处看。
             curl -fsS --max-time 300 \
               -X POST "${DEPLOY_HOOK_URL}" \
-              -H "X-Gwei-Channel: ${channel:-stable}" \
+              -H "X-Gwei-Channel: ${CHANNEL}" \
+              ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
+            echo
+
+  tag_deploy.test:
+    - <<: *deploy-hooks
+      name: promote test-stable
+      services:
+        - docker
+      env:
+        IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+        CHANNEL: ${channel:-test-stable}
+      stages:
+        - name: docker login
+          script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
+        - name: 把通道指到这个 tag
+          script: |
+            set -euo pipefail
+            TAG="${tag_name:-$CNB_BRANCH}"
+            promote() {
+              SRC="${IMAGE}:${TAG}$1"
+              DST="${IMAGE}:${CHANNEL}$1"
+              docker pull -q "$SRC" >/dev/null
+              docker tag "$SRC" "$DST"
+              docker push -q "$DST" >/dev/null
+              echo "  $DST <= $SRC"
+            }
+            promote ""
+            promote "-web"
+            echo "${CHANNEL} -> ${TAG}；测试目标机一分钟内自取"
+        - name: 踢一下目标机
+          script: |
+            set -euo pipefail
+            curl -fsS --max-time 300 \
+              -X POST "${DEPLOY_HOOK_URL}" \
+              -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
