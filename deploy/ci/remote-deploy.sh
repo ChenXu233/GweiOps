@@ -14,6 +14,8 @@ COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.deploy.yml}"
 ROLLBACK_FILE="${DEPLOY_ROLLBACK_FILE:-$PROJECT_DIR/.deploy-before.env}"
 ENV_FILE="${DEPLOY_ENV_FILE:-$PROJECT_DIR/.env.prod}"
 HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:${GWEI_ENGINE_PORT:-8000}/api/health}"
+# 前端也检查:只验引擎的话,"部署成功"之后用户可能撞上 3000 还没起来的空窗(502)。
+WEB_URL="${DEPLOY_WEB_URL:-http://127.0.0.1:${GWEI_WEB_PORT:-3000}/login}"
 HEALTH_ATTEMPTS="${DEPLOY_HEALTH_ATTEMPTS:-30}"
 HEALTH_INTERVAL="${DEPLOY_HEALTH_INTERVAL:-2}"
 
@@ -38,7 +40,8 @@ compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
 health() {
   local i
   for ((i=1; i<=HEALTH_ATTEMPTS; i++)); do
-    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+    if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1 \
+     && curl -fsS --max-time 3 "$WEB_URL" >/dev/null 2>&1; then
       return 0
     fi
     sleep "$HEALTH_INTERVAL"

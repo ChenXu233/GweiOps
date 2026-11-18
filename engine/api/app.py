@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI):
     from engine.auth import store as auth_store
 
     try:
-        has_users = await auth_store.users_exist()
+        has_users = await auth_store.persons_exist()
     except Exception:  # noqa: BLE001 - 表还没建好时按"没有用户"处理,setup 会再处理
         logger.warning("读不到用户表,鉴权先按令牌配置决定", exc_info=True)
         has_users = False
