@@ -30,7 +30,7 @@ CUR=""
 if [ -n "$RUNNING" ]; then
   CUR=$(docker image inspect "$RUNNING" --format "{{range .RepoDigests}}{{println .}}{{end}}" 2>/dev/null | grep -F "$REGISTRY/$SLUG@" | head -1 | cut -d@ -f2 || true)
 fi
-if [ "$CUR" = "$WANT" ]; then exit 0; fi
+if [ "$CUR" = "$WANT" ]; then echo "已经是最新:$WANT"; exit 0; fi
 
 # 同一个版本刚失败过,先别每 60 秒撞一次
 if [ -f "$STATE_DIR/state" ]; then

@@ -100,6 +100,22 @@ sudo systemctl daemon-reload && sudo systemctl enable --now gwei-watch-deploy.ti
 状态在 `/var/lib/gwei-deploy/`：`state` 记已部署的 digest，`deploy.log` 是切换日志。
 同一个版本失败后 30 分钟内不重试，避免每分钟撞一次坏镜像。
 
+轮询 15 秒一次。想让它「点完按钮就开始」而不等下一轮，再装一个本机触发口：
+
+```bash
+sudo install -m 755 deploy/ci/gwei-deploy-hook /usr/local/bin/gwei-deploy-hook
+sudo install -m 644 deploy/ci/gwei-deploy-hook.service /etc/systemd/system/
+sudo systemctl enable --now gwei-deploy-hook
+# Caddy 里给站点加一条路由（`caddy validate` 后再 reload）：
+#   handle /_deploy {
+#       reverse_proxy 127.0.0.1:8099
+#   }
+```
+
+`.cnb.yml` 的部署作业最后一步会 `POST /_deploy`，同步等结果：部署失败这枚作业跟着变红。
+触发口不收版本号（接受哪一版由 `:stable` 决定），只做 3 秒限频；放一个
+`/etc/gwei/deploy-hook.secret` 就变成要 `X-Gwei-Token`。轮询保留作兜底。
+
 制品库凭据：CNB 个人设置里建一个只读令牌（`registry-package:read`），填进
 `.env.prod` 的 `CNB_REGISTRY_TOKEN`，用户名固定 `cnb`。
 

@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""部署触发口:CNB 的部署作业打一下它,立刻跑一次 gwei-watch-deploy。
+
+为什么不接受参数:它只管"现在再看一眼 :stable",接受哪一版由制品库决定。
+就算被乱打,最坏也只是多查一次 manifest,所以这里只做限频,不做鉴权。
+配了 /etc/gwei/deploy-hook.secret 就要求 X-Gwei-Token 与之相符。
+
+为什么同步等待:作业那边要把真实结果带回去——部署失败时这枚作业应当变红,
+而不是"踢一脚就跑"。目标机在换容器的过程中,这个进程不受影响(它在宿主上)。
+"""
+
+import hmac
+import json
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+WATCH = "/usr/local/bin/gwei-watch-deploy"
+SECRET_FILE = "/etc/gwei/deploy-hook.secret"
+HOST = "127.0.0.1"
+PORT = 8099
+MIN_INTERVAL = 3.0
+RUN_TIMEOUT = 900
+
+_lock = threading.Lock()
+_state = {"running": False, "last": 0.0}
+
+
+def _secret() -> str:
+    try:
+        with open(SECRET_FILE, encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def run_watch():
+    try:
+        proc = subprocess.run([
+            WATCH], capture_output=True, text=True, timeout=RUN_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return 1, "部署超时(%ds)" % RUN_TIMEOUT
+    out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    return proc.returncode, out[-2000:]
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "gwei-deploy-hook"
+
+    def _send(self, code, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
+
+    def do_GET(self):
+        if self.path.rstrip("/") in ("/health", "/_deploy/health"):
+            self._send(200, {"status": "ok"})
+        else:
+            self._send(404, {"status": "not found"})
+
+    def do_POST(self):
+        if not self.path.startswith("/_deploy"):
+            self._send(404, {"status": "not found"})
+            return
+
+        secret = _secret()
+        if secret:
+            given = self.headers.get("X-Gwei-Token", "")
+            if not hmac.compare_digest(given, secret):
+                self._send(401, {"status": "invalid token"})
+                return
+
+        with _lock:
+            if _state["running"]:
+                self._send(202, {"status": "busy"})
+                return
+            now = time.time()
+            if now - _state["last"] < MIN_INTERVAL:
+                self._send(202, {"status": "throttled"})
+                return
+            _state["running"] = True
+            _state["last"] = now
+
+        try:
+            code, out = run_watch()
+        finally:
+            with _lock:
+                _state["running"] = False
+
+        self._send(
+            200 if code == 0 else 500,
+            {"status": "ok" if code == 0 else "failed", "exit": code, "log": out},
+        )
+
+
+def main():
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    has_token = "要求" if _secret() else "不要求"
+    sys.stderr.write("deploy-hook 监听 %s:%d(令牌:%s)\n" % (HOST, PORT, has_token))
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -180,3 +180,11 @@ master:
             promote ""
             promote "-web"
             echo "stable -> ${TAG};目标机一分钟内自取"
+        - name: 踢一下目标机
+          script: |
+            set -euo pipefail
+            # 目标机上的 /_deploy 只回答"现在再看一眼 :stable",不接受版本号:
+            # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
+            # 同步等待:部署失败时这枚作业跟着变红,不必去别处看。
+            curl -fsS --max-time 300 -X POST "https://gwei.chenxu233.cn/_deploy"
+            echo
