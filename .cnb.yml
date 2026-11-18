@@ -185,9 +185,9 @@ master:
     imports:
       - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
 
-# 内部部署入口:只被正式版 tag_push 经 cnb:apply 调用。
-# 显式复用 tag_deploy.dogfood 的部署作业,不在 tag_push 里另写一套。
-"$":
+  # 内部部署入口:只被正式版 tag_push 经 cnb:apply 调用。
+  # 显式复用 tag_deploy.dogfood 的部署作业,不在 tag_push 里另写一套。
+  # 必须待在同一个 "$" 块里:再写一个顶层 "$" 是重复键,平台直接判语法错。
   api_trigger_deploy_stable:
     - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
       name: promote stable
