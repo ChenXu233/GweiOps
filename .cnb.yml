@@ -323,9 +323,3 @@ master:
               -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
-
-  api_trigger_probe_sync:
-    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/github-sync.yml
-      stages:
-        - name: probe
-          script: 'echo ${GITHUB_USERNAME:+set}'
