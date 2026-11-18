@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { navGroups, useNavCounts, usePalette } from '~/composables/useNavigation'
 import { useSettings } from '@gwei/core/composables/useSettings'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -8,6 +9,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const route = useRoute()
 const { countFor } = useNavCounts()
 const { show: showPalette } = usePalette()
+const { hrefFor } = useWorkspaces()
 const { data: settings } = useSettings()
 // 谁在操作。首屏没有就拉一次;退出按钮走同一个 composable。
 const { user, load: loadUser, logout } = useAuth()
@@ -42,8 +44,13 @@ function sync() {
   isDesktop.value = mq?.matches ?? false
 }
 
+function scopedTo(to: string) {
+  return hrefFor(to)
+}
+
 function isActive(to: string) {
-  return route.path === to || route.path.startsWith(to + '/')
+  const full = scopedTo(to)
+  return route.path === full || route.path.startsWith(full + '/')
 }
 
 function toggleCollapsed() {
@@ -89,7 +96,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
       class="flex h-14 shrink-0 items-center gap-2 px-3"
       :class="rail ? 'lg:justify-center lg:px-0' : ''"
     >
-      <NuxtLink to="/issues" class="flex min-w-0 items-center gap-2.5" aria-label="既未 Gwei Ops">
+      <NuxtLink :to="scopedTo('/issues')" class="flex min-w-0 items-center gap-2.5" aria-label="既未 Gwei Ops">
         <span class="relative grid h-7 w-7 shrink-0 place-items-center rounded-[9px] bg-ink text-paper">
           <span class="font-mono text-[11.5px] font-semibold leading-none">未</span>
           <span class="absolute right-[3px] top-[3px] h-[5px] w-[5px] rounded-full bg-lime" />
@@ -142,7 +149,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
         <ul class="space-y-1">
           <li v-for="item in group.items" :key="item.to">
             <NuxtLink
-              :to="item.to"
+              :to="scopedTo(item.to)"
               class="nav-link"
               :class="[
                 isActive(item.to) ? 'nav-link-active' : '',

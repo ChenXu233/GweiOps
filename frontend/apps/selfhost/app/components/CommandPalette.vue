@@ -11,7 +11,12 @@ interface PaletteGroup {
   items: PaletteItem[]
 }
 
-const props = defineProps<{ items?: PaletteItem[]; groups?: PaletteGroup[] }>()
+const props = defineProps<{
+  items?: PaletteItem[]
+  groups?: PaletteGroup[]
+  /** 应用工作区前缀:侧边栏传 hrefFor,命令面板的跳转才留在当前工作区。 */
+  resolveTo?: (to: string) => string
+}>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const q = ref('')
@@ -46,7 +51,7 @@ onMounted(() => {
 function go(item?: PaletteItem) {
   if (!item) return
   emit('close')
-  navigateTo(item.to)
+  navigateTo(props.resolveTo ? props.resolveTo(item.to) : item.to)
 }
 
 function onKey(e: KeyboardEvent) {
