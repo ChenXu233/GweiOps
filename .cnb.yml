@@ -28,8 +28,13 @@ master:
             force: true
             push_tags: true
 
-# 打 tag 时两件事都要做:先同步镜像仓,再发制品。v* 这个事件下两个 tag_push 条目
-# 是并列的,不是覆盖——各自独立触发,一个红不拦另一个。
+# 打 tag 时三件事都要做:同步镜像仓、发制品、正式版自动部署。v* 这个事件下的
+# 每个 tag_push 条目都是并列的,不是覆盖——各自独立触发,一个红不拦另一个。
+#
+# "正式版"的判定只认 tag 名:$CNB_BRANCH 以 v 开头、且不带 - 后缀。v1.2.3 算,
+# v1.2.3-rc1 / v1.2.3-beta.1 / v1.2.3-anything 都不算:rc 这类预发布 tag 照常
+# 同步与发制品,但不碰 stable 通道,不会误上生产。判定在流水线里做,不放行给 tag
+# 名 glob——glob 只能写 v*,表达不了"v 开头但不能有连字符"。
 "v*":
   tag_push:
     - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/github-sync.yml
@@ -94,6 +99,46 @@ master:
             docker push "${IMAGE}:${CNB_BRANCH}-web"
             docker push "${IMAGE}:latest-web"
 
+    # 正式版 tag 自动部署:只做一次 CNB 内部事件调用,把 stable 指向这个 tag。
+    # 部署作业仍由 tag_deploy.dogfood 统一执行,凭据和踢目标机 hook 都留在那里。
+    # 这样构建侧不需要访问生产域名,不受 CNB 动态出口 IP 被目标机拦截的影响。
+    # 推 v* tag 即可上线,不必再去页面点「部署到 dogfood」。
+    #
+    # 只切 stable(生产);测试通道由页面「部署到 test」显式控制,不受这里影响。
+    # 推 tag 权限应收紧到负责人/管理员;若要人工闸口,删掉本作业,
+    # 退回 README 里「点部署」的半自动流程。
+    - name: auto deploy stable on release tag
+      stages:
+        # tag 名在 $CNB_BRANCH。正式版 = v 开头且无连字符;rc/beta 等预发布带 -,
+        # 这里导出 is_release=false,后面调用 stage 的 if 便整体跳过。
+        - name: 判定是否正式版 tag
+          # 默认 shell 是 sh(dash),不用 [[ ]] 这类 bash 语法。case 全 POSIX。
+          script: |
+            set -eu
+            case "$CNB_BRANCH" in
+              v*)
+                case "$CNB_BRANCH" in
+                  *-*) echo "预发布 tag($CNB_BRANCH),不自动部署"
+                       echo '##[set-output is_release=false]' ;;
+                  *)   echo "正式版 tag($CNB_BRANCH),自动部署 stable"
+                       echo '##[set-output is_release=true]' ;;
+                esac ;;
+              *) echo "非 v 前缀 tag($CNB_BRANCH),不自动部署"
+                 echo '##[set-output is_release=false]' ;;
+            esac
+          exports:
+            is_release: IS_RELEASE
+        # cnb:apply 只触发当前仓库的自定义事件,不访问目标机公网地址。
+        # sync: true 让部署失败时这枚 tag_push 作业一起变红。
+        - name: 调用 stable 部署流水线
+          if: '[ "$IS_RELEASE" = "true" ]'
+          type: cnb:apply
+          options:
+            event: api_trigger_deploy_stable
+            sync: true
+          exports:
+            lastJobExports.BUILD_LOG_URL: DEPLOY_BUILD_LOG_URL
+
 # ---------------------------------------------------------------------------
 # 校验作业:PR 与 master 推送都跑,不合就红。
 # 这是合入门槛的唯一实现——GitHub 侧的 workflows 只构建、不校验。
@@ -139,6 +184,48 @@ master:
   .deploy-hooks: &deploy-hooks
     imports:
       - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
+
+# 内部部署入口:只被正式版 tag_push 经 cnb:apply 调用。
+# 显式复用 tag_deploy.dogfood 的部署作业,不在 tag_push 里另写一套。
+"$":
+  api_trigger_deploy_stable:
+    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
+      name: promote stable
+      services:
+        - docker
+      env:
+        IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+        CHANNEL: stable
+      stages:
+        - name: docker login
+          script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
+        - name: 把通道指到这个 tag
+          script: |
+            set -euo pipefail
+            TAG="$CNB_BRANCH"
+            promote() {
+              SRC="${IMAGE}:${TAG}$1"
+              DST="${IMAGE}:${CHANNEL}$1"
+              docker pull -q "$SRC" >/dev/null
+              docker tag "$SRC" "$DST"
+              docker push -q "$DST" >/dev/null
+              echo "  $DST <= $SRC"
+            }
+            promote ""
+            promote "-web"
+            echo "${CHANNEL} -> ${TAG}；对应目标机一分钟内自取"
+            echo "##[set-output build_log_url=${CNB_BUILD_WEB_URL}]"
+          exports:
+            build_log_url: BUILD_LOG_URL
+        - name: 踢一下目标机
+          script: |
+            set -euo pipefail
+            curl -fsS --max-time 300 \
+              -X POST "${DEPLOY_HOOK_URL}" \
+              -H "X-Gwei-Channel: ${CHANNEL}" \
+              ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
+            echo
+
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------

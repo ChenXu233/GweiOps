@@ -62,19 +62,46 @@ pnpm dev:selfhost
 
 ## 部署
 
-推一个 `v*` tag 只是发布制品；**真正切到目标机由目标机自己取**：每套部署各有一个
-timer 看自己的制品通道——生产看 `stable`，测试看 `test-stable`。digest 变了就跑
-`remote-deploy.sh`——拉镜像、切流、验 `/api/health`，不过就按 `.deploy-before.env`
-回滚。方向是目标机出站，构建侧不连目标机。
+生产走全自动：推一个**正式版** `v*` tag 即发布制品并自动切到生产。切到目标机这一步
+仍是目标机自己取——每套部署各有一个 timer 看自己的制品通道——生产看 `stable`，测试看
+`test-stable`。digest 变了就跑 `remote-deploy.sh`——拉镜像、切流、验 `/api/health`，
+不过就按 `.deploy-before.env` 回滚。方向是目标机出站，构建侧不连目标机，因此不需要
+CNB 构建节点与生产机内网互通，也不用给动态出口 IP 加白名单。
+
+### 正式版 tag 怎么判
+
+`v` 开头且**不带连字符**算正式版（`v1.2.3`），带 `-` 的是预发布（`v1.2.3-rc1`、
+`v1.2.3-beta.1`）。判定在流水线里按 tag 名做：预发布照常同步镜像仓、发制品，但不碰
+`stable` 通道，不会误上生产。
 
 ### 发布一个版本
 
-1. `git tag v0.1.2 && git push cnb v0.1.2` —— 构建并推 `v0.1.2` 与 `v0.1.2-web`，不动部署通道
-2. 页面给这个 tag 点「部署到 dogfood」或「部署到 test」——流水线把对应通道的两个镜像 tag
-   指过去（`.cnb.yml` 的 `tag_deploy.dogfood` / `tag_deploy.test`）
-3. 部署作业最后会打一下目标机触发口，立即切过去；轮询 15 秒一次只作兜底
+1. `git tag v1.2.3 && git push cnb v1.2.3` —— 正式版：构建并推 `v1.2.3` 与
+   `v1.2.3-web`，自动把 `stable` 通道指过去，并打一下目标机触发口，立即切到生产
+2. 推 `v1.2.3-rc1` 这类预发布 tag —— 只发制品，不动 `stable`，不上生产
+3. 测试部署仍走页面：给任意 tag 点「部署到 test」，流水线把 `test-stable` 通道指过去
+   （`.cnb.yml` 的 `tag_deploy.test`），再打目标机触发口
 
-**回滚** = 给上一个 tag 再点一次同一环境的部署，通道指回去，立即生效。
+生产推送权限应收紧到 master/owner。若要「推 tag 后人工确认」的闸口，删掉 `.cnb.yml`
+里的 `auto deploy stable on release tag` 作业，改为页面给 tag 点「部署到 dogfood」
+（`.cnb.yml` 的 `tag_deploy.dogfood`）。轮询 15 秒一次只作兜底。
+
+**回滚** = 给上一个正式版 tag 再点一次「部署到 dogfood」，通道指回去，立即生效。
+
+### 构建侧要连目标机时（可选）
+
+当前链路是目标机主动出站拉制品，不需要构建侧连生产机。若确实要从构建侧远程执行命令
+（CNB SaaS 出口 IP 动态，不适合加白名单），官方给三条中转路子，选其一：
+
+- **私有代理**：自有代理服务器路由请求，用代理的固定 IP 访问目标机。
+- **SSH 跳板机**：`cnbcool/ssh` 插件的 `proxy_host` 系列参数经跳板机连内网机器，
+  示例见 [JumpServer 用法](https://cnb.cool/cnb/plugins/cnbcool/ssh)。
+- **腾讯云插件**：`tencentcom/tcloud-cmd` 借腾讯云自动化助手（TAT）远程执行命令，
+  实例开通「自动化助手」并给 API 密钥授 CVM/TAT 权限即可，无需开放入站端口，
+  见 [插件说明](https://cnb.cool/cnb/plugins/tencentcom/tcloud-cmd)。
+
+这三样都不是纯内网直连；要真正的 CNB 与企业内网双向互通，需用部署到自有腾讯云 VPC
+的企业版。凭据统一放密钥仓库用 imports 注入，不写进本仓库。
 
 重建容器时前端有约 **20–30 秒的空窗**（compose 先删旧容器再起新的），这期间访问站点会看到 502。健康检查已覆盖前端（`/login`），所以「部署成功」意味着前端也已经就绪；空窗内的失败会触发回滚。
 
