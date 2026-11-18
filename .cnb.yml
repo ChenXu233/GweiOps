@@ -323,9 +323,3 @@ master:
               -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
-
-  api_trigger_probe_imports:
-    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
-      stages:
-        - name: probe
-          script: 'echo ${DEPLOY_HOOK_URL:+set}'
