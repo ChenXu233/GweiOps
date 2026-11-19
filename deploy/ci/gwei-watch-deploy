@@ -37,7 +37,13 @@ CUR=""
 if [ -n "$RUNNING" ]; then
   CUR=$(docker image inspect "$RUNNING" --format "{{range .RepoDigests}}{{println .}}{{end}}" 2>/dev/null | grep -F "$REGISTRY/$SLUG@" | head -1 | cut -d@ -f2 || true)
 fi
-if [ "$CUR" = "$WANT" ]; then echo "已经是最新:$WANT"; exit 0; fi
+# 以状态文件为准。按 digest 部署之后,docker inspect .Image 拿到的是 digest 本身
+# 而不是本地镜像 id,沿着 RepoDigests 反查并不可靠——查不到就会每 15 秒重部署一次。
+if [ -f "$STATE_DIR/state" ]; then
+  # shellcheck disable=SC1091
+  . "$STATE_DIR/state"
+  if [ "${digest:-}" = "$WANT" ]; then echo "已经是最新:$WANT"; exit 0; fi
+fi
 
 # 同一个版本刚失败过,先别每 60 秒撞一次
 if [ -f "$STATE_DIR/state" ]; then
