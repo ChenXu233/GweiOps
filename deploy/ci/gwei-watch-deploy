@@ -23,7 +23,13 @@ digest_of() {
 }
 
 WANT=$(digest_of "$REGISTRY/$SLUG:$TAG")
-if [ -z "$WANT" ]; then echo "读不到 $TAG 的 digest(制品库不可达,或这个 tag 还没建)"; exit 0; fi
+if [ -z "$WANT" ]; then
+  # 读不到就退出非 0:昨今两次"制品库令牌过期"都是在这里静默放弃的,
+  # 监控看着每分钟都在跑,其实什么都没看。
+  echo "读不到 $TAG 的 digest:制品库不可达,或 .env.prod 里的 CNB_REGISTRY_TOKEN 已失效" >&2
+  echo "$(date -u +%FT%TZ) 读不到 $TAG 的 digest" >> "$STATE_DIR/deploy.log"
+  exit 2
+fi
 
 # 现在跑的是哪个 digest:从运行中容器的镜像上取
 RUNNING=$(docker inspect "${COMPOSE_PROJECT_NAME}-engine-1" --format "{{.Image}}" 2>/dev/null || true)

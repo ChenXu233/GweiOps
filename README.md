@@ -178,7 +178,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now gwei-deploy-hook
 `.cnb.yml` 的部署作业最后一步会 `POST /_deploy` 并带上 `X-Gwei-Channel`，同步等结果：
 部署失败这枚作业跟着变红。触发口不收版本号（接受哪一版由通道 digest 决定），只做
 3 秒限频；放一个 `/etc/gwei/deploy-hook.secret` 就变成要 `X-Gwei-Token`。
-`DEPLOY_HOOK_URL` / `DEPLOY_HOOK_TOKEN` 从密钥仓库 `deploy-hooks.yml` 注入，不写进仓库。
+`DEPLOY_HOOK_URL` 在 `.cnb.yml` 里有默认值（本机地址），不用额外配置；`DEPLOY_HOOK_TOKEN` 可选，配了要和服务器上的 `/etc/gwei/deploy-hook.secret` 一致。
 轮询 15 秒一次作兜底。
 
 制品库凭据：CNB 个人设置里建一个只读令牌（`registry-package:read`），填进
