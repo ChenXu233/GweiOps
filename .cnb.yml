@@ -112,7 +112,7 @@ master:
       env:
         IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
         CHANNEL: stable
-        DEPLOY_HOOK_URL: ${DEPLOY_HOOK_URL:-https://gwei.chenxu233.cn/_deploy}
+        DEPLOY_HOOK_URL: https://gwei.chenxu233.cn/_deploy
       stages:
         - name: 判定是否正式版 tag
           script: |
@@ -221,7 +221,7 @@ master:
       env:
         IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
         CHANNEL: ${channel:-stable}
-        DEPLOY_HOOK_URL: ${DEPLOY_HOOK_URL:-https://gwei.chenxu233.cn/_deploy}
+        DEPLOY_HOOK_URL: https://gwei.chenxu233.cn/_deploy
       stages:
         - name: docker login
           script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
