@@ -181,21 +181,18 @@ master:
             corepack prepare pnpm@10.15.0 --activate
             bash .ci/web-checks.sh
 
-  .deploy-hooks: &deploy-hooks
-    imports:
-      - https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
 
   # 内部部署入口:只被正式版 tag_push 经 cnb:apply 调用。
   # 显式复用 tag_deploy.dogfood 的部署作业,不在 tag_push 里另写一套。
   # 必须待在同一个 "$" 块里:再写一个顶层 "$" 是重复键,平台直接判语法错。
   api_trigger_deploy_stable:
-    - imports: https://cnb.cool/ChenXu233/secrets/-/blob/main/deploy-hooks.yml
-      name: promote stable
+    - name: promote stable
       services:
         - docker
       env:
         IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
         CHANNEL: stable
+        DEPLOY_HOOK_URL: ${DEPLOY_HOOK_URL:-https://gwei.chenxu233.cn/_deploy}
       stages:
         - name: docker login
           script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
@@ -220,8 +217,14 @@ master:
         - name: 踢一下目标机
           script: |
             set -euo pipefail
-            curl -fsS --max-time 300 \
-              -X POST "${DEPLOY_HOOK_URL}" \
+            # 目标机上的 hook 只回答"再看一眼本环境通道",不接受版本号:
+            # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
+            # 没配 URL 就跳过——轮询兜底,别让作业因此变红。
+            if [ -z "${DEPLOY_HOOK_URL:-}" ]; then
+              echo "没有配置 DEPLOY_HOOK_URL,交给目标机轮询"
+              exit 0
+            fi
+            curl -fsS --max-time 300 -X POST "${DEPLOY_HOOK_URL}" \
               -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
@@ -245,16 +248,16 @@ master:
 
 # 发布与部署因此是两件事：推 v* tag 只发制品，点部署才挪通道。
 # 点完按钮还要立即触发目标机 hook，省掉等待下一轮轮询；轮询仍保留作兜底。
-# DEPLOY_HOOK_URL / DEPLOY_HOOK_TOKEN 从密钥仓库 imports 注入，不写进仓库。
+# DEPLOY_HOOK_URL 有默认值(本机)；没配就跳过，作业不会因此变红。DEPLOY_HOOK_TOKEN 可选。
 
   tag_deploy.dogfood:
-    - <<: *deploy-hooks
-      name: promote stable
+    - name: promote stable
       services:
         - docker
       env:
         IMAGE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
         CHANNEL: ${channel:-stable}
+        DEPLOY_HOOK_URL: ${DEPLOY_HOOK_URL:-https://gwei.chenxu233.cn/_deploy}
       stages:
         - name: docker login
           script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
@@ -280,18 +283,20 @@ master:
         - name: 踢一下目标机
           script: |
             set -euo pipefail
-            # 目标机上的 hook 只回答“再看一眼本环境通道”，不接受版本号；
-            # 接受哪一版由制品库决定，所以这个入口没有可利用的参数。
-            # 同步等待：部署失败时这枚作业跟着变红，不必去别处看。
-            curl -fsS --max-time 300 \
-              -X POST "${DEPLOY_HOOK_URL}" \
+            # 目标机上的 hook 只回答"再看一眼本环境通道",不接受版本号:
+            # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
+            # 没配 URL 就跳过——轮询兜底,别让作业因此变红。
+            if [ -z "${DEPLOY_HOOK_URL:-}" ]; then
+              echo "没有配置 DEPLOY_HOOK_URL,交给目标机轮询"
+              exit 0
+            fi
+            curl -fsS --max-time 300 -X POST "${DEPLOY_HOOK_URL}" \
               -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
 
   tag_deploy.test:
-    - <<: *deploy-hooks
-      name: promote test-stable
+    - name: promote test-stable
       services:
         - docker
       env:
@@ -318,8 +323,14 @@ master:
         - name: 踢一下目标机
           script: |
             set -euo pipefail
-            curl -fsS --max-time 300 \
-              -X POST "${DEPLOY_HOOK_URL}" \
+            # 目标机上的 hook 只回答"再看一眼本环境通道",不接受版本号:
+            # 接受哪一版由制品库决定,所以这个入口没有可利用的参数。
+            # 没配 URL 就跳过——轮询兜底,别让作业因此变红。
+            if [ -z "${DEPLOY_HOOK_URL:-}" ]; then
+              echo "没有配置 DEPLOY_HOOK_URL,交给目标机轮询"
+              exit 0
+            fi
+            curl -fsS --max-time 300 -X POST "${DEPLOY_HOOK_URL}" \
               -H "X-Gwei-Channel: ${CHANNEL}" \
               ${DEPLOY_HOOK_TOKEN:+-H "X-Gwei-Token: ${DEPLOY_HOOK_TOKEN}"}
             echo
