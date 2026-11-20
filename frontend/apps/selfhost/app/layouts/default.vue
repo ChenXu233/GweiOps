@@ -7,7 +7,7 @@
 //
 // 一个只属于一个工作区的人不必每条链接都带那一段:不带也能打开,引擎按他最早的
 // 那条成员关系回答。
-import { navGroups, usePalette } from '~/composables/useNavigation'
+import { flattenNav, navGroups, usePalette } from '~/composables/useNavigation'
 import { useTheme } from '@gwei/core/composables/useTheme'
 import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
@@ -24,6 +24,12 @@ const mobileNavOpen = ref(false)
 const collapsed = useState<boolean>('gwei-nav-collapsed', () => false)
 
 const modeLabel = computed(() => (config.public.mode === 'saas' ? 'SaaS' : '单租户自部署'))
+
+// 不属于某一道账的页面(工作区管理):地址就是它自己,补上工作区段反而成了
+// "/workspaces/{slug}/workspaces" 这种念不通的地址。
+const globalPages = new Set(
+  flattenNav().filter((item) => item.global).map((item) => item.to),
+)
 
 // 地址里那一段工作区,没有就是空串。
 const scopedSlug = computed(() => {
@@ -47,7 +53,7 @@ onMounted(() => init())
 watch(
   () => current.value?.slug,
   (slug) => {
-    if (!slug || scopedSlug.value === slug) return
+    if (!slug || globalPages.has(route.path) || scopedSlug.value === slug) return
     if (items.value.some((w) => w.slug === scopedSlug.value)) return
     const parts = route.path.split('/').filter(Boolean)
     const rest = scopedSlug.value ? parts.slice(2) : parts

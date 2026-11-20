@@ -4,6 +4,8 @@ interface PaletteItem {
   label: string
   icon: string
   hint?: string
+  /** 全局页(工作区管理):跳转不补工作区段。 */
+  global?: boolean
 }
 
 interface PaletteGroup {
@@ -51,7 +53,8 @@ onMounted(() => {
 function go(item?: PaletteItem) {
   if (!item) return
   emit('close')
-  navigateTo(props.resolveTo ? props.resolveTo(item.to) : item.to)
+  const target = item.global || !props.resolveTo ? item.to : props.resolveTo(item.to)
+  navigateTo(target)
 }
 
 function onKey(e: KeyboardEvent) {

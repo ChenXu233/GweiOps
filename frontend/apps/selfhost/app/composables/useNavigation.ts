@@ -10,6 +10,8 @@ export interface NavItem {
   badge?: 'waiting'
   /** 一句话说明,鼠标悬停与命令面板里显示 */
   hint?: string
+  /** 不属于某一道账的页面(工作区管理):地址就是 `to`,不补工作区段。 */
+  global?: boolean
 }
 
 export interface NavGroup {
@@ -48,7 +50,7 @@ export const navGroups: NavGroup[] = [
   {
     title: '工作区管理',
     items: [
-      { to: '/workspaces', label: '工作区', icon: 'layers', hint: '这个账号能进的工作区与开通进度' },
+      { to: '/workspaces', label: '工作区', icon: 'layers', hint: '这个账号能进的工作区与开通进度', global: true },
       { to: '/observability', label: '指标观测', icon: 'observability', hint: '引擎与插件上报的实时指标' },
       { to: '/team', label: '成员', icon: 'users', hint: '谁在用、能做什么、做过什么' },
       { to: '/settings', label: '设置', icon: 'settings', hint: '这个工作区的接入、密钥与外观' },

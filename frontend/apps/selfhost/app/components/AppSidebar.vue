@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { navGroups, useNavCounts, usePalette } from '~/composables/useNavigation'
+import { navGroups, useNavCounts, usePalette, type NavItem } from '~/composables/useNavigation'
 import { useSettings } from '@gwei/core/composables/useSettings'
 import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
@@ -44,13 +44,22 @@ function sync() {
   isDesktop.value = mq?.matches ?? false
 }
 
+/** 站内路径补上当前工作区段。 */
 function scopedTo(to: string) {
   return hrefFor(to)
 }
 
-function isActive(to: string) {
-  const full = scopedTo(to)
-  return route.path === full || route.path.startsWith(full + '/')
+/** 导航项的目标:全局页(工作区管理)不补工作区段。 */
+function targetOf(item: NavItem) {
+  return item.global ? item.to : hrefFor(item.to)
+}
+
+function isActive(item: NavItem) {
+  const full = targetOf(item)
+  if (route.path === full) return true
+  // 全局页 /workspaces 不能按前缀算:/workspaces/default/issues 不是它。
+  if (item.global) return false
+  return route.path.startsWith(full + '/')
 }
 
 function toggleCollapsed() {
@@ -149,10 +158,10 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
         <ul class="space-y-1">
           <li v-for="item in group.items" :key="item.to">
             <NuxtLink
-              :to="scopedTo(item.to)"
+              :to="targetOf(item)"
               class="nav-link"
               :class="[
-                isActive(item.to) ? 'nav-link-active' : '',
+                isActive(item) ? 'nav-link-active' : '',
                 rail ? 'relative mx-auto h-9 w-9 justify-center px-0' : '',
               ]"
               :title="rail ? item.label : item.hint"
@@ -164,7 +173,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
                 <span
                   v-if="rail && mounted && countFor(item.badge)"
                   class="absolute -right-1 -top-0.5 h-[6px] w-[6px] rounded-full ring-2"
-                  :class="isActive(item.to) ? 'bg-amber ring-ink' : 'bg-amber ring-paper'"
+                  :class="isActive(item) ? 'bg-amber ring-ink' : 'bg-amber ring-paper'"
                 />
               </span>
               <template v-if="!rail">
@@ -172,7 +181,7 @@ onUnmounted(() => mq?.removeEventListener('change', sync))
                 <span
                   v-if="mounted && countFor(item.badge)"
                   class="num shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] leading-none"
-                  :class="isActive(item.to) ? 'bg-paper/20 text-paper' : 'bg-amber/15 text-amber'"
+                  :class="isActive(item) ? 'bg-paper/20 text-paper' : 'bg-amber/15 text-amber'"
                 >
                   {{ countFor(item.badge) }}
                 </span>
