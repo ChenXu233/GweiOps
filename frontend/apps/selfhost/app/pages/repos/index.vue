@@ -222,7 +222,7 @@ onMounted(loadSources)
           <NuxtLink
             v-for="repo in group.rows"
             :key="repo.id"
-            :to="`/repos/${encodeURIComponent(repo.id)}`"
+            :to="scopedTo(`/repos/${encodeURIComponent(repo.id)}`)"
             class="panel panel-lift group flex flex-col p-5"
           >
             <div class="flex items-start justify-between gap-3">

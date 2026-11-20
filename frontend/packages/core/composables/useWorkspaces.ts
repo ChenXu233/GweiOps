@@ -11,10 +11,10 @@ import { WorkspacesApi } from '../api/client'
 import { setWorkspaceScope } from '../api/typed'
 import type { Workspace } from '../types/repos'
 
-// 服务端与客户端共用的一份:nitro 的 SSR 与浏览器都要知道"现在在哪个工作区"。
-const currentSlug = ref('')
-
 export function useWorkspaces() {
+  // 服务端每个请求一份:模块级的 ref 会让并发的 SSR 请求互相串账 —— 渲染出来的
+  // 链接可能指着另一个请求的工作区。客户端上它就是全站共享的那一份。
+  const currentSlug = useState<string>('gwei-workspace-slug', () => '')
   const useMock = useRuntimeConfig().public.useMock === true
   const items = ref<Workspace[]>([])
   const loading = ref(true)

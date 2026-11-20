@@ -60,7 +60,13 @@ export function setWorkspaceScope(read: () => string): void {
 export function scopePath(path: string): string {
   const slug = workspaceScope()
   if (!slug || !path.startsWith('/api/')) return path
-  if (path.startsWith('/api/workspaces')) return path
+  // 这三个不属于某个工作区:工作区列表、健康检查、登录注册。套上那一段会被
+  // 引擎当成"这个工作区里的 /api/health",登录更是直接找不到路由。
+  const global =
+    path.startsWith('/api/workspaces') ||
+    path.startsWith('/api/health') ||
+    path.startsWith('/api/auth/')
+  if (global) return path
   return `/api/workspaces/${encodeURIComponent(slug)}${path.slice(4)}`
 }
 
@@ -118,7 +124,9 @@ export const api = {
   },
 
   get<P extends RoutesWith<'get'>>(path: P, options?: CallOptions<P>): Promise<ResponseOf<P, 'get'>> {
-    const url = withQuery(fillPath(path, options?.path as never), options?.query)
+    // 读也带工作区段:引擎在没写那一段时按"他最早的那条成员关系"回答,多工作区
+    // 的人于是读的是另一道账;写接口已经带段,读写各落一个工作区就更糟。
+    const url = withQuery(scopePath(fillPath(path, options?.path as never)), options?.query)
     return send<ResponseOf<P, 'get'>>(url, { method: 'GET', signal: options?.signal })
   },
 

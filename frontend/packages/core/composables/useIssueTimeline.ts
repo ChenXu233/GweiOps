@@ -26,6 +26,13 @@ export function useIssueTimeline(id: string) {
   }
 
   async function refresh() {
+    // 地址里没有编号就不发请求:那会打到 /api/issues//timeline,引擎回的 404
+    // 跟"这条议题不存在"分不开,界面只能说一句看不懂的错误。
+    if (!id) {
+      loading.value = false
+      error.value = '这个地址里没有议题编号'
+      return
+    }
     if (!data.value) loading.value = true
     error.value = null
     try {

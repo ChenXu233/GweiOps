@@ -16,7 +16,7 @@ const config = useRuntimeConfig()
 
 // `useWorkspaces` 里那份是同一张表:列表、当前选中、以及把工作区补进接口路径
 // 的读法都在那儿,这里只是把路由那一段抄进去。
-const { current, syncFromRoute, hrefFor } = useWorkspaces()
+const { current, items, select, syncFromRoute, hrefFor } = useWorkspaces()
 
 const { init } = useTheme()
 const { open: paletteOpen, show: showPalette, hide: hidePalette, toggle: togglePalette } = usePalette()
@@ -25,9 +25,10 @@ const collapsed = useState<boolean>('gwei-nav-collapsed', () => false)
 
 const modeLabel = computed(() => (config.public.mode === 'saas' ? 'SaaS' : '单租户自部署'))
 
-const scoped = computed(() => {
+// 地址里那一段工作区,没有就是空串。
+const scopedSlug = computed(() => {
   const parts = route.path.split('/').filter(Boolean)
-  return parts[0] === 'workspaces' && Boolean(parts[1])
+  return parts[0] === 'workspaces' ? parts[1] ?? '' : ''
 })
 
 // 状态跟着路由走:路由里那段是唯一真相源,别处只读它。
@@ -37,15 +38,26 @@ watch(
   { immediate: true },
 )
 
-onMounted(async () => {
-  init()
-  // 首屏落在默认工作区时,把地址也换成带那一段的:刷新、收藏、分享都是同一道账。
-  // 只在挂载后做一次 —— 放在路由钩子里会和服务端渲染的地址打架。
-  if (scoped.value || !current.value?.slug) return
-  const parts = route.path.split('/').filter(Boolean)
-  const rest = parts.length ? `/${parts.join('/')}` : '/issues'
-  await navigateTo(`/workspaces/${current.value.slug}${rest}`, { replace: true })
-})
+onMounted(() => init())
+
+// 地址里没有工作区段时,等列表回来再把它补进地址:刷新、收藏、分享都是同一道账。
+// 挂载那一刻列表通常还没回来,所以不能在 onMounted 里做。
+// 地址里已经有、而且确实是他工作区之一时不动 —— 刚点的切换器自己负责导航。
+// 包里的那个已经不在了(被移出)也走这里:地址要说他真正在看的那一道账。
+watch(
+  () => current.value?.slug,
+  (slug) => {
+    if (!slug || scopedSlug.value === slug) return
+    if (items.value.some((w) => w.slug === scopedSlug.value)) return
+    const parts = route.path.split('/').filter(Boolean)
+    const rest = scopedSlug.value ? parts.slice(2) : parts
+    const tail = rest.length ? `/${rest.join('/')}` : '/issues'
+    // 先把"当前这道账"定下来,再换地址:新页面挂载时读工作区的那一层不能还是空的,
+    // 否则它这一轮请求会落到"他最早的那条成员关系"上。
+    select(slug)
+    navigateTo(`/workspaces/${encodeURIComponent(slug)}${tail}`, { replace: true })
+  },
+)
 
 function onHotkey(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {

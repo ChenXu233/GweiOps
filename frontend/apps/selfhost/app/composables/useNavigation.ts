@@ -1,4 +1,5 @@
 import { IssuesApi } from '@gwei/core/api/client'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 import { mockIssueBoard } from '@gwei/core/mock/index'
 
 export interface NavItem {
@@ -66,6 +67,8 @@ export function flattenNav(groups: NavGroup[] = navGroups): NavItem[] {
 export function useNavCounts() {
   const useMock = useRuntimeConfig().public.useMock === true
   const waiting = ref(0)
+  // 徽标是**当前工作区**的数:换工作区要跟着换,别拿上一道账的数字挂在那里。
+  const { picked } = useWorkspaces()
 
   async function fetch() {
     try {
@@ -79,6 +82,8 @@ export function useNavCounts() {
 
   if (import.meta.client) {
     fetch()
+    // 换工作区立刻换数,别等下一轮轮询(徽标会挂 30 秒的旧值)。
+    watch(picked, () => fetch())
     const timer = setInterval(fetch, 30_000)
     onUnmounted(() => clearInterval(timer))
   }

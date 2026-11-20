@@ -8,11 +8,11 @@ import { useIssueTimeline } from '@gwei/core/composables/useIssueTimeline'
 import type { SegmentKind, TimelineEvidence, TimelineSegment } from '@gwei/core/types/issues'
 import { outcomeChip, stateMeta, verdictLabel } from '@gwei/core/utils/verdict'
 import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
+import { useRouteParam } from '~/composables/useRouteParam'
 
-const route = useRoute()
 // 页面里的每个链接都带上工作区那一段:链接点了、刷新、转发出去都还是同一道账。
 const { hrefFor: scopedTo } = useWorkspaces()
-const id = computed(() => String(route.params.id || ''))
+const id = useRouteParam('id')
 const { data, loading, error, busy, refresh, act, continueRound } = useIssueTimeline(id.value)
 
 const { can } = useAuth()

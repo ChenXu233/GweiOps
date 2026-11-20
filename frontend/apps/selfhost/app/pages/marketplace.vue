@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { useRepoList } from '@gwei/core/composables/useRepoList'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
 
 const { plugins, enabledCount, loading, error, actionError, toggling, setEnabled, rescan } =
   useRepoList()
+// 插件页面也在工作区之内:链接带上那一段,刷新与转发才落回同一道账。
+const { hrefFor: scopedTo } = useWorkspaces()
 
 const { can } = useAuth()
 const canManage = computed(() => can('plugins.write'))
@@ -128,7 +131,7 @@ function forgot(reason: string): string {
         <div class="mt-auto flex items-center justify-between border-t border-line/70 pt-3.5">
           <NuxtLink
             v-if="plugin.pageTitle"
-            :to="'/plugins/' + encodeURIComponent(plugin.id)"
+            :to="scopedTo('/plugins/' + encodeURIComponent(plugin.id))"
             class="inline-flex items-center gap-1 text-[12px] font-medium text-ink-soft transition-colors hover:text-ink"
           >
             打开页面

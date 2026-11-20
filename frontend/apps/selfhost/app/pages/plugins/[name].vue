@@ -1,8 +1,12 @@
 <script setup lang="ts">
 // 插件沙箱页面:资产由 engine 提供,iframe opaque origin 隔离。
 // 沙箱内直接 fetch engine API 属跨域,所以走下面这条只读 postMessage 桥。
-const route = useRoute()
-const name = computed(() => String(route.params.name || ''))
+import { scopePath } from '@gwei/core/api/typed'
+import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
+import { useRouteParam } from '~/composables/useRouteParam'
+
+const name = useRouteParam('name')
+const { hrefFor: scopedTo } = useWorkspaces()
 
 interface PluginManifestPage {
   title: string
@@ -19,7 +23,7 @@ const notFound = ref(false)
 
 onMounted(async () => {
   try {
-    const plugins = await $fetch<PluginManifest[]>('/api/plugins')
+    const plugins = await $fetch<PluginManifest[]>(scopePath('/api/plugins'))
     manifest.value = plugins.find(p => p.name === name.value) || null
     if (!manifest.value?.pages?.length) notFound.value = true
   } catch {
@@ -54,7 +58,8 @@ async function onBridgeMessage(ev: MessageEvent) {
     payload = { id: msg.id, ok: false, status: 403, body: { error: 'forbidden' } }
   } else {
     try {
-      const body = await $fetch(msg.path)
+      // 沙箱要读的也是"当前这道账":桥只放行白名单路径,工作区段由这里补。
+      const body = await $fetch(scopePath(msg.path))
       payload = { id: msg.id, ok: true, status: 200, body }
     } catch (e: any) {
       payload = { id: msg.id, ok: false, status: e?.statusCode || 502, body: null }
@@ -73,7 +78,7 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
 <template>
   <div class="space-y-4">
     <NuxtLink
-      to="/marketplace"
+      :to="scopedTo('/marketplace')"
       class="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-faint transition-colors hover:text-ink"
     >
       <AppIcon name="arrow-right" :size="13" class="rotate-180" />

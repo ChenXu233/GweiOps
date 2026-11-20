@@ -76,6 +76,13 @@ const footer = computed(() => {
   return '会话存在 HttpOnly cookie 里,退出即失效。'
 })
 
+/** 登录、首启、注册之后:直接落到这个人的工作区,别让地址先裸一次再被接管。 */
+async function gotoConsole() {
+  const me = await $fetch<{ workspace?: string }>('/api/auth/me').catch(() => null)
+  const slug = me?.workspace || ''
+  await navigateTo(slug ? `/workspaces/${encodeURIComponent(slug)}/issues` : '/issues', { replace: true })
+}
+
 async function loadStatus() {
   try {
     const [s, p] = await Promise.all([
@@ -85,7 +92,7 @@ async function loadStatus() {
     policy.value = p
     if (method.value === 'phone' && !p?.methods.includes('phone')) method.value = 'email'
     if (s.authenticated) {
-      await navigateTo('/issues', { replace: true })
+      await gotoConsole()
       return
     }
     resetToken.value = String(route.query.reset || '')
@@ -131,7 +138,7 @@ async function submitAuth() {
         body: { email: email.value, password: password.value },
       })
     }
-    await navigateTo('/issues', { replace: true })
+    await gotoConsole()
   } catch (err) {
     fail(err)
   } finally {
@@ -175,11 +182,9 @@ async function submitRegister() {
         password: password.value,
       },
     })
-    // 落在哪一道账由服务端说了算(自助注册会给自己建一个工作区)。跳过去时把
-    // 那一段带进路径:工作区在路径里,不带就等于让下一跳去猜。
-    const me = await $fetch<{ workspace?: string }>('/api/auth/me').catch(() => null)
-    const slug = me?.workspace || ''
-    await navigateTo(slug ? `/workspaces/${encodeURIComponent(slug)}/issues` : '/issues', { replace: true })
+    // 落在哪一道账由服务端说了算(自助注册会给自己建一个工作区),由 gotoConsole
+    // 去问,跳过去时把那一段直接带进路径。
+    await gotoConsole()
   } catch (err) {
     fail(err)
   } finally {

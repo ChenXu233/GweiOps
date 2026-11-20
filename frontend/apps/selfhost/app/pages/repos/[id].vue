@@ -6,13 +6,13 @@
 import { useRepos } from '@gwei/core/composables/useRepos'
 import { useAuth } from '~/composables/useAuth'
 import { useWorkspaces } from '@gwei/core/composables/useWorkspaces'
+import { useRouteParam } from '~/composables/useRouteParam'
 
-const route = useRoute()
 const { hrefFor: scopedTo } = useWorkspaces()
 const { repos, loading } = useRepos()
 const { can } = useAuth()
 
-const repoId = computed(() => String(route.params.id ?? ''))
+const repoId = useRouteParam('id')
 const repo = computed(() => repos.value.find((r) => r.id === repoId.value) ?? null)
 
 // 写发布配置要 settings.write:界面只是提前把按钮关掉,拦还是引擎拦。
