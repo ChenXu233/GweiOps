@@ -48,27 +48,48 @@ function onboardingSteps(slug: string): OnboardingStep[] {
   ]
 }
 
-async function loadOnboarding() {
+// 同一个工作区的进度只读一份:挂载时的 refreshAll 与"当前工作区变化"的 watch
+// 会同时要它,合到一次请求上。换了工作区则另起一次,旧答案不再写回。
+let onboardingFlight: { slug: string; promise: Promise<void> } | null = null
+
+async function loadOnboarding(): Promise<void> {
   const slug = current.value?.slug
   if (!slug) return
+  if (onboardingFlight?.slug === slug) return onboardingFlight.promise
   onboardingLoading.value = true
   onboardingError.value = ''
   // 换工作区时先把上一道账的进度清掉。留着旧数字会让人以为新工作区已经跑通。
   onboarding.value = null
-  try {
-    if (useMock) {
-      const steps = onboardingSteps(slug)
-      onboarding.value = { workspace: slug, complete: false, steps }
-    } else {
-      onboarding.value = await $fetch<Onboarding>(scopePath('/api/workspaces/{slug}/onboarding').replace('{slug}', encodeURIComponent(slug)))
+  const run = (async () => {
+    try {
+      if (useMock) {
+        if (current.value?.slug === slug) {
+          onboarding.value = { workspace: slug, complete: false, steps: onboardingSteps(slug) }
+        }
+      } else {
+        const data = await $fetch<Onboarding>(
+          scopePath('/api/workspaces/{slug}/onboarding').replace('{slug}', encodeURIComponent(slug)),
+        )
+        // 读的过程中又换了工作区:这一份是上一道账的,不写回。
+        if (current.value?.slug === slug) onboarding.value = data
+      }
+    } catch (e) {
+      if (current.value?.slug !== slug) return
+      onboarding.value = null
+      const err = e as { data?: { detail?: string } }
+      onboardingError.value = err.data?.detail || '读不到开通进度'
+    } finally {
+      // 被新工作区顶替的那一次不能关掉新请求的 loading。
+      if (current.value?.slug === slug) onboardingLoading.value = false
     }
-  } catch (e) {
-    onboarding.value = null
-    const err = e as { data?: { detail?: string } }
-    onboardingError.value = err.data?.detail || '读不到开通进度'
-  } finally {
-    onboardingLoading.value = false
+  })()
+  onboardingFlight = {
+    slug,
+    promise: run.finally(() => {
+      if (onboardingFlight?.slug === slug) onboardingFlight = null
+    }),
   }
+  return onboardingFlight.promise
 }
 
 async function refreshAll() {
